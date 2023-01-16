@@ -1,0 +1,15 @@
+bootstrap: localimage
+From: tm5env.sif 
+
+%post
+    rm -Rf /opt/build
+    rm -Rf /opt/curl-7.77.0
+    rm -Rf /opt/hdf4-4.2.13
+    rm -Rf /opt/hdf5-1_8_18
+    rm -Rf /opt/netCDF-C-4.4.1.1
+    rm -Rf /opt/netCDF-Fortran-4.4.4
+    rm -Rf /opt/szip-2.1.1
+    rm -Rf /opt/udunits-1.12.11
+    rm -Rf /opt/z-1.2.11
+    rm /.singularity.d/env/91-environment.sh
+    /opt/intel/oneapi/intelpython/latest/bin/conda env remove -n tm5

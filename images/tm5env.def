@@ -1,0 +1,222 @@
+Bootstrap: docker
+From: ubuntu:20.04
+
+%post
+
+    # ===========================================================================================
+    # Install base system
+
+    apt-get -y update
+    apt-get -y upgrade
+
+    # Universe is needed for python packages:
+    apt -y install software-properties-common
+    add-apt-repository universe
+
+    # Extra packages
+    apt -y install wget gnupg build-essential bison flex libjpeg-dev
+    apt -y install vim htop git rclone makedepf90
+
+    export BUILD=/opt/build
+    export LIBDIR=/opt
+    mkdir $BUILD
+
+    # ===========================================================================================
+    # Install Intel packages
+
+    # Setup intel apt repository
+    wget https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2023.PUB
+    apt-key add GPG-PUB-KEY-INTEL-SW-PRODUCTS-2023.PUB
+    rm -f GPG-PUB-KEY-INTEL-SW-PRODUCTS-2023.PUB
+    echo "deb https://apt.repos.intel.com/oneapi all main" > /etc/apt/sources.list.d/oneAPI.list
+    apt-get -y update
+
+    apt -y install intel-oneapi-common-vars
+    apt -y install intel-oneapi-compiler-fortran
+    apt -y install intel-oneapi-compiler-dpcpp-cpp-and-cpp-classic
+    #apt -y install intel-oneapi-python
+    apt -y install intel-oneapi-mkl-devel
+
+    bash -c "env > default_env_vars"
+    bash -c ". /opt/intel/oneapi/setvars.sh intel64; env > env_vars"
+    diff default_env_vars env_vars | grep ">" | sed  s/..// | sort | sed 's/^/export /' | sed "s/=/='/" | sed "s/$/'/" >> /root/.oneapi_env_vars;
+    . /root/.oneapi_env_vars
+    env > default_env_vars2
+
+    export CC=icx
+    export F9X=ifort
+    export F90=ifort
+    export F77=ifort
+    export CXX=icx
+    #export CPP=icpx
+
+    # ===========================================================================================
+    # Install TM5-specific libraries
+
+    # Packages versions
+    export UDUNITS_VER=1.12.11
+    export Z_VER=1.2.13
+    export SZ_VER=2.1.1
+    export HDF4_VER=4.2.15
+    export HDF5_VER=1_8_18
+    export CURL_VER=7.77.0
+    export NETCDFC_VER=4.4.1.1
+    export NETCDFF_VER=4.4.4
+
+    # UDUnits
+    cd $BUILD
+    export UDUNITS_DIR=${LIBDIR}/udunits-${UDUNITS_VER}
+    wget https://artifacts.unidata.ucar.edu/repository/downloads-udunits/1.12.11/udunits-1.12.11.tar.gz
+    tar xvf udunits-${UDUNITS_VER}.tar.gz
+    cd udunits-${UDUNITS_VER}/src
+    PERL='' CC=gcc CFLAGS='-O -fno-builtin' CPPFLAGS='-DNDEBUG -Df2cFortran' ./configure --prefix=$UDUNITS_DIR
+    make
+    make install
+    export LD_LIBRARY_PATH=$UDUNITS_DIR/lib:$LD_LIBRARY_PATH
+    export PATH=$UDUNITS_DIR/bin:$PATH
+
+    # zlib
+    cd $BUILD
+    export Z_DIR=${LIBDIR}/z-${Z_VER}
+    wget https://zlib.net/zlib-${Z_VER}.tar.gz
+    tar xvf zlib-${Z_VER}.tar.gz
+    cd zlib-${Z_VER}
+    ./configure --prefix=$Z_DIR
+    make
+    make install
+    export LD_LIBRARY_PATH=$Z_DIR/lib:$LD_LIBRARY_PATH
+
+    # Install szip
+    cd $BUILD
+    export SZ_DIR=${LIBDIR}/szip-${SZ_VER}
+    wget https://support.hdfgroup.org/ftp/lib-external/szip/2.1.1/src/szip-${SZ_VER}.tar.gz
+    tar xvf szip-${SZ_VER}.tar.gz
+    cd szip-${SZ_VER}
+    ./configure --prefix=$SZ_DIR
+    make
+    make install
+    export LD_LIBRARY_PATH=$SZ_DIR/lib:$LD_LIBRARY_PATH
+
+    # Install HDF4
+    cd $BUILD
+    export HDF4_DIR=${LIBDIR}/hdf4-${HDF4_VER}
+    wget https://support.hdfgroup.org/ftp/HDF/releases/HDF${HDF4_VER}/src/hdf-${HDF4_VER}.tar.gz
+    tar xvf hdf-${HDF4_VER}.tar.gz
+    cd hdf-$HDF4_VER
+    ./configure --disable-netcdf --prefix=$HDF4_DIR --with-zlib=$Z_DIR --with-szlib=$SZ_DIR
+    make
+    make install
+    export LD_LIBRARY_PATH=$HDF4_DIR/lib:$LD_LIBRARY_PATH
+    export PATH=$HDF4_DIR/bin:$PATH
+
+    # Install HDF5
+    cd $BUILD
+    export HDF5_DIR=${LIBDIR}/hdf5-${HDF5_VER}
+    wget https://github.com/HDFGroup/hdf5/archive/refs/tags/hdf5-${HDF5_VER}.tar.gz
+    tar xvf hdf5-${HDF5_VER}.tar.gz
+    cd hdf5-hdf5-$HDF5_VER
+    ./configure --prefix=$HDF5_DIR  --with-szlib=$SZ_DIR  --with-zlib=$Z_DIR  --with-pic --with-pthread --enable-shared  --disable-cxx --enable-fortran --enable-unsupported
+    make
+    make install
+    export LD_LIBRARY_PATH=$HDF5_DIR/lib:$LD_LIBRARY_PATH
+    export PATH=$HDF5_DIR/bin:$PATH
+
+    # Install curl
+    cd $BUILD
+    export CURL_DIR=${LIBDIR}/curl-${CURL_VER}
+    wget https://github.com/curl/curl/releases/download/curl-7_77_0/curl-${CURL_VER}.tar.gz
+    tar xvf curl-${CURL_VER}.tar.gz
+    cd curl-${CURL_VER}
+    ./configure --prefix=$CURL_DIR --without-ssl
+    make
+    make install
+    export LD_LIBRARY_PATH=$CURL_DIR/lib:$LD_LIBRARY_PATH
+
+    # Install netCDF4
+    cd $BUILD
+    export NETCDFC_DIR=${LIBDIR}/netCDF-C-${NETCDFC_VER}
+    wget https://github.com/Unidata/netcdf-c/archive/refs/tags/v${NETCDFC_VER}.tar.gz
+    tar xvf v${NETCDFC_VER}.tar.gz
+    cd netcdf-c-${NETCDFC_VER}
+    CPPFLAGS="-I$HDF5_DIR/include -I$CURL_DIR/include -I$SZ_DIR/include -I${Z_DIR}/include" LDFLAGS="-L$HDF5_DIR/lib -L$CURL_DIR/lib -L$SZ_DIR/lib -L${Z_DIR}/lib" LIBS="-lhdf5 -lhdf5_hl -lsz -lcurl" CFLAGS="-O2 -xHost -ftz -fp-speculation=safe -fp-model source -fPIC" ./configure --prefix=${NETCDFC_DIR} --disable-hdf4 --disable-shared
+    make
+    make install
+    export LD_LIBRARY_PATH=$NETCDFC_DIR/lib:$LD_LIBRARY_PATH
+    export PATH=$NETCDFC_DIR/bin:$PATH
+
+    # Install netCDF-fortran
+    cd $BUILD
+    export NETCDFF_DIR=${LIBDIR}/netCDF-Fortran-${NETCDFF_VER}
+    wget https://github.com/Unidata/netcdf-fortran/archive/refs/tags/v${NETCDFF_VER}.tar.gz
+    tar xvf v${NETCDFF_VER}.tar.gz
+    cd netcdf-fortran-${NETCDFF_VER}/
+    FCFLAGS="-O2 -xHost -ftz -fp-speculation=safe -fp-model source -fPIC" CFLAGS="-O2 -xHost -ftz -fp-speculation=safe -fp-model source -fPIC" CPPFLAGS="-I${NETCDFC_DIR}/include -I${CURL_DIR}/include -I${HDF5_DIR}/include -I${SZ_DIR}/include -I${Z_DIR}/include" LDFLAGS="-L${NETCDFC_DIR}/lib -L${CURL_DIR}/lib -L${HDF5_DIR}/lib -L${SZ_DIR}/lib -L${Z_DIR}/lib" LIBS="-lnetcdf -lhdf5 -lhdf5_hl -lsz -lcurl -lz" ./configure --prefix=$NETCDFF_DIR --disable-shared
+    make
+    make install
+    export LD_LIBRARY_PATH=/opt/$NETCDFF_DIR/lib:$LD_LIBRARY_PATH
+    export PATH=$NETCDFF_DIR/bin:$PATH
+
+    env > env_vars2
+    diff default_env_vars2 env_vars2 | grep ">" | sed  s/..// | sort | sed 's/^/export /' | sed "s/=/='/" | sed "s/$/'/" >> /root/.oneapi_env_vars2;
+
+    # ===========================================================================================
+    # Create a python2.7 environment and make sure it is automatically activated
+
+    conda init
+    conda create -y -n tm5 python=2.7
+    . /opt/intel/oneapi/intelpython/latest/etc/profile.d/conda.sh
+    conda activate tm5
+    conda install -y numpy scipy tqdm netCDF4 h5py python-dateutil ipython pandas flake8 pycurl
+    export LC_ALL=C
+    pip install progressbar urlgrabber
+    echo ". /opt/intel/oneapi/intelpython/latest/etc/profile.d/conda.sh" >> $SINGULARITY_ENVIRONMENT
+    echo "conda activate tm5" >> $SINGULARITY_ENVIRONMENT
+
+    # ===========================================================================================
+    # Make sure that the env variables remain available when the container is run
+    cat /root/.oneapi_env_vars >> $SINGULARITY_ENVIRONMENT
+    echo "export BUILD=$BUILD" >> $SINGULARITY_ENVIRONMENT
+    echo "export LIBDIR=$LIBDIR" >> $SINGULARITY_ENVIRONMENT
+    echo "export LC_ALL=$LC_ALL" >> $SINGULARITY_ENVIRONMENT
+    echo "export CC=$CC" >> $SINGULARITY_ENVIRONMENT
+    echo "export CXX=$CXX" >> $SINGULARITY_ENVIRONMENT
+    echo "export F77=$F77" >> $SINGULARITY_ENVIRONMENT
+    echo "export F90=$F90" >> $SINGULARITY_ENVIRONMENT
+    echo "export F9X=$F9X" >> $SINGULARITY_ENVIRONMENT
+    echo "export UDUNITS_VER=$UDUNITS_VER" >> $SINGULARITY_ENVIRONMENT
+    echo "export UDUNITS_DIR=$UDUNITS_DIR" >> $SINGULARITY_ENVIRONMENT
+    echo "export Z_VER=$Z_VER" >> $SINGULARITY_ENVIRONMENT
+    echo "export Z_DIR=$Z_DIR" >> $SINGULARITY_ENVIRONMENT
+    echo "export SZ_VER=$SZ_VER" >> $SINGULARITY_ENVIRONMENT
+    echo "export SZ_DIR=$SZ_DIR" >> $SINGULARITY_ENVIRONMENT
+    echo "export HDF4_VER=$HDF4_VER" >> $SINGULARITY_ENVIRONMENT
+    echo "export HDF4_DIR=$HDF4_DIR" >> $SINGULARITY_ENVIRONMENT
+    echo "export HDF5_VER=$HDF5_VER" >> $SINGULARITY_ENVIRONMENT
+    echo "export HDF5_DIR=$HDF5_DIR" >> $SINGULARITY_ENVIRONMENT
+    echo "export CURL_VER=$CURL_VER" >> $SINGULARITY_ENVIRONMENT
+    echo "export CURL_DIR=$CURL_DIR" >> $SINGULARITY_ENVIRONMENT
+    echo "export NETCDFC_VER=$NETCDFC_VER" >> $SINGULARITY_ENVIRONMENT
+    echo "export NETCDFC_DIR=$NETCDFC_DIR" >> $SINGULARITY_ENVIRONMENT
+    echo "export NETCDFF_VER=$NETCDFF_VER" >> $SINGULARITY_ENVIRONMENT
+    echo "export NETCDFF_DIR=$NETCDFF_DIR" >> $SINGULARITY_ENVIRONMENT
+    echo "export LD_LIBRARY_PATH=$LD_LIBRARY_PATH" >> $SINGULARITY_ENVIRONMENT
+    echo "export SINGULARITY_ENVIRONMENT=$SINGULARITY_ENVIRONMENT" >> $SINGULARITY_ENVIRONMENT
+    echo "export UDUNITS_PATH=$UDUNITS_DIR/etc/udunits.dat" >> $SINGULARITY_ENVIRONMENT
+    echo "export PATH=$PATH" >> $SINGULARITY_ENVIRONMENT
+
+    # Pre-install TM5 (simulate a "pip install -e /tm5")
+    mkdir /tm5
+    export PYPTH=/opt/intel/oneapi/intelpython/latest/envs/tm5/lib/python2.7/site-packages
+    echo /tm5 >> $PYPTH/easy-install.pth
+    echo /tm5 >> $PYPTH/tm5.egg-link
+
+%environment
+    export machine=singularity
+
+%runscript
+    if [ $# -ne 0 ]
+    then
+        python3 /tm5/singularity/runscript.py $@
+    else
+        /bin/bash
+    fi

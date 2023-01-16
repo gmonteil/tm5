@@ -1,0 +1,157 @@
+Bootstrap: localimage
+From: intel-ubuntu.simg
+
+
+%post
+
+    # This container has been generated based on a previous container that cannot be re-created, because
+    # the intel oneAPI version it used is no longer available for download (and HDF4 doesn't compile with
+    # recent versions of the intel compiler ...)
+    #
+    # The part of the setup inherited from the previous container is shown below as commented code:
+
+    #----------------------------------------------------------------------------------------------
+    # apt-get -y update
+    # apt-get -y upgrade
+
+    # # Universe is needed for python packages:
+    # apt -y install software-properties-common
+    # add-apt-repository universe
+
+    # # Extra packages
+    # apt -y install wget gnupg build-essential bison flex libjpeg-dev
+    # apt -y install vim htop git rclone makedepf90
+
+    # # Setup intel apt repository
+    # wget https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2023.PUB
+    # apt-key add GPG-PUB-KEY-INTEL-SW-PRODUCTS-2023.PUB
+    # rm -f GPG-PUB-KEY-INTEL-SW-PRODUCTS-2023.PUB
+    # echo "deb https://apt.repos.intel.com/oneapi all main" > /etc/apt/sources.list.d/oneAPI.list
+    # apt-get -y update
+
+    # apt -y install intel-oneapi-common-vars
+    # apt -y install intel-oneapi-compiler-fortran
+    # apt -y install intel-oneapi-compiler-dpcpp-cpp-and-cpp-classic
+    # apt -y install intel-oneapi-python
+    # apt -y install intel-oneapi-mkl-devel
+    #----------------------------------------------------------------------------------------------
+
+    # In practice, the following steps were taken:
+    #   1. Create a new image (intel-ubuntu.simg) based on the legacy one (tm5env.sif) and, as part of its definition file:
+    #       - remove manually installed libraries (in /opt)
+    #       - remove environment files (in /.singularity/env)
+    #       - remove the tm5 conda environment.
+    #   2. Use that image as a base for a new container (i.e. this definition file)
+    # The original image was working for TM5 but was quite messy and leading to conflicts between python 
+    # inside and outside, so it was better to generate a cleaner one.
+
+    bash -c "env > default_env_vars"
+    bash -c ". /opt/intel/oneapi/setvars.sh intel64; env > env_vars"
+    diff default_env_vars env_vars | grep ">" | sed  s/..// | sort | sed 's/^/export /' | sed "s/=/='/" | sed "s/$/'/" >> /tmp/.oneapi_env_vars;
+    . /tmp/.oneapi_env_vars
+
+    export CC=icc
+    export F9X=ifort
+    export F90=ifort
+    export F77=ifort
+
+    export LANG=en_US.UTF-8
+    export LC_ALL=C
+
+    # Setup intel apt repository:
+
+    # Disable the intel repository to avoid upgrades (HDF4 doesn't compile with newer versions ...)
+    sed -i 's/^/#/' /etc/apt/sources.list.d/oneAPI.list
+
+    mkdir /build
+
+    # udunits:
+    cd /build
+    wget https://artifacts.unidata.ucar.edu/repository/downloads-udunits/1.12.11/udunits-1.12.11.tar.gz
+    tar xvf udunits-1.12.11.tar.gz
+    cd udunits-1.12.11/src
+    PERL='' CC=gcc CFLAGS='-O -fno-builtin' CPPFLAGS='-DNDEBUG -Df2cFortran' ./configure --prefix=/opt
+    make 
+    make install
+    export LD_LIBRARY_PATH=/opt/lib:$LD_LIBRARY_PATH
+
+    # zlib
+    cd /build
+    export Z_VER=1.2.13
+    wget https://zlib.net/zlib-${Z_VER}.tar.gz
+    tar xvf zlib-${Z_VER}.tar.gz
+    cd zlib-${Z_VER}
+    ./configure --prefix=/opt
+    make
+    make install
+
+    # szip
+    cd /build 
+    wget https://support.hdfgroup.org/ftp/lib-external/szip/2.1.1/src/szip-2.1.1.tar.gz
+    tar xvf szip-2.1.1.tar.gz
+    cd szip-2.1.1
+    ./configure --prefix=/opt
+    make
+    make install
+
+    # HDF4
+    cd /build
+    export HDF4_VER=4.2.15
+    wget https://support.hdfgroup.org/ftp/HDF/releases/HDF${HDF4_VER}/src/hdf-${HDF4_VER}.tar.gz
+    tar xvf hdf-${HDF4_VER}.tar.gz
+    cd hdf-$HDF4_VER
+    ./configure --disable-netcdf --prefix=/opt --with-zlib=/opt --with-szlib=/opt
+    make
+    make install
+    export PATH=/opt/bin:$PATH
+
+    # HDF5
+    cd /build
+    export HDF5_VER=1_8_18
+    wget https://github.com/HDFGroup/hdf5/archive/refs/tags/hdf5-${HDF5_VER}.tar.gz
+    tar xvf hdf5-${HDF5_VER}.tar.gz
+    cd hdf5-hdf5-$HDF5_VER
+    ./configure --prefix=/opt  --with-szlib=/opt  --with-zlib=/opt  --with-pic --with-pthread --enable-shared  --disable-cxx --enable-fortran --enable-unsupported
+    make
+    make install
+
+    # curl
+    cd /build
+    export CURL_VER=7.77.0
+    wget https://github.com/curl/curl/releases/download/curl-7_77_0/curl-${CURL_VER}.tar.gz
+    tar xvf curl-${CURL_VER}.tar.gz
+    cd curl-${CURL_VER}
+    ./configure --prefix=/opt --without-ssl
+    make
+    make install
+
+    #netcdf
+    cd /build
+    export NETCDFC_VER=4.4.1.1
+    wget https://github.com/Unidata/netcdf-c/archive/refs/tags/v${NETCDFC_VER}.tar.gz
+    tar xvf v${NETCDFC_VER}.tar.gz
+    cd netcdf-c-${NETCDFC_VER}
+    CPPFLAGS="-I/opt/include" LDFLAGS="-L/opt/lib" opt="-lhdf5 -lhdf5_hl -lsz -lcurl" CFLAGS="-O2 -xHost -ftz -fp-speculation=safe -fp-model source -fPIC -no-multibyte-chars" ./configure --prefix=/opt --disable-hdf4 --disable-sharedC
+    make
+    make install
+
+    # netcdf-fortran
+    cd /build
+    export NETCDFF_VER=4.4.4
+    wget https://github.com/Unidata/netcdf-fortran/archive/refs/tags/v${NETCDFF_VER}.tar.gz
+    tar xvf v${NETCDFF_VER}.tar.gz
+    cd netcdf-fortran-${NETCDFF_VER}/
+    FCFLAGS="-O2 -xHost -ftz -fp-speculation=safe -fp-model source -fPIC" CFLAGS="-O2 -xHost -ftz -fp-speculation=safe -fp-model source -fPIC" CPPFLAGS="-I/opt/include" LDFLAGS="-L/opt/lib" opt="-lnetcdf -lhdf5 -lhdf5_hl -lsz -lcurl -lz" ./configure --prefix=/opt --disable-shared
+    make
+    make install
+
+    # Create a python2.7 environment
+    conda create -y -n tm5 python=2.7 numpy scipy tqdm netCDF4 h5py ipython pandas flake8 pycurl
+    /opt/intel/oneapi/intelpython/latest/envs/tm5/bin/python -m pip install progressbar urlgrabber
+
+
+%runscript
+    . /opt/intel/oneapi/setvars.sh intel64
+    . /opt/intel/oneapi/intelpython/latest/etc/profile.d/conda.sh
+    conda activate tm5
+    bash --norc
