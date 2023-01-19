@@ -54,3 +54,15 @@ From: images/tm5env_intel_ubuntu20.simg
     alias ls="ls --color=auto"
     alias ll="ls -ltr"
     alias ..="cd .."
+
+%runscript
+    . /opt/intel/oneapi/setvars.sh intel64
+    . /opt/intel/oneapi/intelpython/latest/etc/profile.d/conda.sh
+    conda activate tm5
+
+    if [ $# -ne 0]
+    then
+        bash --norc -c "$*"
+    else 
+        bash --norc
+    fi
