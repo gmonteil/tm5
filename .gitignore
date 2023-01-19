@@ -1,3 +1,3 @@
-/images/tm5env_intel_ubuntu20.simg
-/images/tm5env.sif
-/images/intel-ubuntu.simg
+/images/*
+.idea/*
+run/*
