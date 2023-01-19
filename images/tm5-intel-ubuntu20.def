@@ -1,0 +1,56 @@
+Bootstrap: localimage
+From: images/tm5env_intel_ubuntu20.simg
+
+
+%post
+
+    mkdir /data
+    mkdir /input
+    mkdir /output
+    mkdir /meteo
+
+    apt -y update
+    apt -y install locales gfortran
+    locale-gen en_US.UTF-8
+
+    # intel setvars doesn't work during build time, so use that trick:
+    bash -c "env > /tm5/default_env_vars"
+    bash -c ". /opt/intel/oneapi/setvars.sh intel64; env > /tm5/env_vars"
+    diff /tm5/default_env_vars /tm5/env_vars | grep ">" | sed  s/..// | sort | sed 's/^/export /' | sed "s/=/='/" | sed "s/$/'/" >> /tm5/.oneapi_env_vars;
+    . /tm5/.oneapi_env_vars
+
+    # Activate conda and pre-install packages:
+    . /opt/intel/oneapi/intelpython/latest/etc/profile.d/conda.sh
+    conda activate tm5
+    conda install netcdf4 numpy h5py scipy python-dateutil netcdf4
+    conda install -c conda-forge omegaconf
+    pip install --upgrade pip --ignore-installed
+
+    # Install pyshell python package
+    cd /tm5
+    python -m pip install -e .
+
+    # Build tm5-utils:
+    cd /tm5/f2py
+    f2py --compiler=gfortran -c interpolate_levels.pyf --f90flags='-fopenmp -ffree-line-length-0' -liomp5 interpolate_levels.F90
+    #mv tm5_utils.so ../pyshell
+    
+    # Remove whatever is in /tm5, so that it can be mounted externally: 
+    rm -Rf /tm5/*
+    
+%files
+    bin /tm5/bin
+    pyshell /tm5/pyshell
+    setup.py /tm5/
+    src /tm5/src
+    Makefile /tm5/
+    f2py /tm5/f2py
+
+%environment
+    export LC_ALL='en_US.UTF-8'
+    export LANG='en_US.UTF-8'
+    export LD_LIBRARY_PATH="/opt/lib":${LD_LIBRARY_PATH}
+    export UDUNITS_PATH=/opt/etc/udunits.dat
+    alias ls="ls --color=auto"
+    alias ll="ls -ltr"
+    alias ..="cd .."

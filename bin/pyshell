@@ -1,0 +1,30 @@
+#!/usr/bin/env python2.7
+import sys
+from argparse import ArgumentParser
+import sys
+from pyshell import ui
+import logging
+from omegaconf import OmegaConf
+
+
+if __name__ == '__main__':
+    p = ArgumentParser()
+    p.add_argument('action', choices=['forward', 'optim', 'compile'])
+    p.add_argument('--rc')
+    p.add_argument('--verbosity', '-v', default='INFO')
+    args = p.parse_args(sys.argv[1:])
+    
+    logging.basicConfig(format='[%(levelname)s] %(message)s', level=args.verbosity)
+    
+    # Parse config file (yaml format!)
+
+    rc = OmegaConf.load(args.rc)
+
+    if args.action == 'forward':
+        fwd = ui.forward(rc)
+        
+    elif args.action == 'optim':
+        opt = ui.optim(rc)
+
+    elif args.action == 'compile':
+        tm5 = ui.compile(rc)

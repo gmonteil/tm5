@@ -1,0 +1,12 @@
+#! /bin/sh
+
+# exit on error
+set -e
+
+# generate file_hdf modules:
+/bin/sed -e 's/<wp>/1/g' file_hdf_iwp.F90.in > file_hdf_i1.F90
+/bin/sed -e 's/<wp>/2/g' file_hdf_iwp.F90.in > file_hdf_i2.F90
+/bin/sed -e 's/<wp>/4/g' file_hdf_iwp.F90.in > file_hdf_i4.F90
+/bin/sed -e 's/<wp>/8/g' file_hdf_iwp.F90.in > file_hdf_i8.F90
+/bin/sed -e 's/<wp>/4/g' file_hdf_rwp.F90.in > file_hdf_r4.F90
+/bin/sed -e 's/<wp>/8/g' file_hdf_rwp.F90.in > file_hdf_r8.F90

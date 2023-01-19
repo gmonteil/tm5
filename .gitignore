@@ -1,3 +1,7 @@
 /images/*
 .idea/*
 run/*
+output/*
+*.mod
+*.pyc
+pyshell.egg-info/*

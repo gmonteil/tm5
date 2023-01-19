@@ -1,0 +1,77 @@
+#! /usr/bin/env python
+
+
+# ------------------------------------------------
+# help
+# ------------------------------------------------
+
+"""
+*            PYCASSO - PYthon Compile And Setup Scripts Organizer            *
+
+NAME
+    pycasso_setup_tm5  -  compile and setup 'TM5' application
+
+DESCRIPTION
+    Driver script to compile and setup a model application.
+
+    For information on arguments and options, try:
+  
+        pycasso_setup_tm5 [-h|--help]
+    
+RETURN VALUE
+    Non zero in case of any error.
+    
+"""
+
+
+# ------------------------------------------------
+# settings
+# ------------------------------------------------
+
+# name of file with PYCASSO user scripts for this setup:
+pycasso_user_scripts = 'pycasso_user_scripts_tm5'
+
+
+# ------------------------------------------------
+# begin
+# ------------------------------------------------
+
+if __name__ == '__main__':
+
+    # import standard modules:
+    import os
+    import sys
+    import logging
+    import traceback
+
+    print(sys.argv)
+    
+    # add location of PYCASSO modules to search path:
+    # import base
+    # sys.path.insert(0, os.path.join(base.__path__[0], 'bin'))
+    
+    # import PYCASSO tools:
+    from pyshell.base.bin import pycasso
+    
+    # extract arguments from sys.argv array:
+    #   0 = name of calling script, 1: = actual arguments
+    args = sys.argv[1:]
+    
+    # call main routine, parse arguments and name of module with user scripts:
+    try :
+        pycasso.Main( args, pycasso_user_scripts )
+    except :
+        for line in traceback.format_exc().split('\n') : logging.error(line)
+        logging.error( 'exception from pycasso.Main' )
+        sys.exit(1)
+    #endtry
+    
+    # ok:
+    sys.exit(0)
+
+#endif
+
+
+# ------------------------------------------------
+# end
+# ------------------------------------------------

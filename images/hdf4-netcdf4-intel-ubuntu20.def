@@ -1,5 +1,5 @@
 Bootstrap: localimage
-From: intel-ubuntu.simg
+From: images/intel-ubuntu.simg
 
 
 %post
@@ -146,7 +146,7 @@ From: intel-ubuntu.simg
     make install
 
     # Create a python2.7 environment
-    conda create -y -n tm5 python=2.7 numpy scipy tqdm netCDF4 h5py ipython pandas flake8 pycurl
+    conda create -y -n tm5 python=2.7 numpy scipy tqdm netCDF4 h5py ipython pandas flake8 pycurl readline
     /opt/intel/oneapi/intelpython/latest/envs/tm5/bin/python -m pip install progressbar urlgrabber
 
 
@@ -155,3 +155,13 @@ From: intel-ubuntu.simg
     . /opt/intel/oneapi/intelpython/latest/etc/profile.d/conda.sh
     conda activate tm5
     bash --norc
+
+
+%environment
+    export LC_ALL='en_US.UTF-8'
+    export LANG='en_US.UTF-8'
+    export LD_LIBRARY_PATH="/opt/lib":${LD_LIBRARY_PATH}
+    export UDUNITS_PATH=/opt/etc/udunits.dat
+    alias ls="ls --color=auto"
+    alias ls="lt -ltr"
+    alias ..="cd .."

@@ -1,0 +1,44 @@
+#! /bin/sh
+
+#
+# Usage:
+#   <thisscript> <cmndline>
+#
+
+# exit on error
+set -e
+
+# name of this job in messages:
+prog=`basename $0`
+
+# arguments:
+cmndline="$1"
+
+# set display environment for CINECA/SP6:
+test -f "${HOME}/.display_vnc"  &&  export DISPLAY=`${HOME}/.display_vnc`
+
+# file that is written just before program stops,
+# indicating a normal end of the run:
+# The following section has been removed, because the location of tm5.ok has been changed
+#okfile='tm5.ok'
+#/bin/rm -f ${okfile}
+
+echo "$prog - "
+echo "$prog - command line : ${cmndline}"
+echo "$prog - "
+echo "$prog - wall time before run : `/bin/date`"
+echo ""
+
+${cmndline}
+
+echo " "
+echo "$prog - wall time after  run : `/bin/date`"
+echo "$prog - "
+
+#if [ ! -f ${okfile} ]; then
+  #echo "$prog - ok file '${okfile}' not found;"
+  #echo "$prog - no normal end of program "
+  #exit 1
+#fi
+
+
