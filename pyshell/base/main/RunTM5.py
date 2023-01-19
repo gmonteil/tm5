@@ -540,7 +540,7 @@ class RunTM5(object):
         if os.path.exists(ok_file):
             os.remove(ok_file)
         # command to setup and submit a run:
-        command = [os.path.join(os.curdir,'submit_tm5'), self.rcf.get('job.step.run.exe'), rcfile]
+        command = ['submit_tm5', self.rcf.get('job.step.run.exe'), rcfile]
         # run, check status:
         with ExecEnvironment(curdir, exec_dir):
             print 'Nthreads = ', os.getenv('OMP_NUM_THREADS')
