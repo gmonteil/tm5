@@ -24,6 +24,7 @@ From: images/tm5env_intel_ubuntu20.simg
     conda install netcdf4 numpy h5py scipy python-dateutil netcdf4 readline
     conda install -c conda-forge omegaconf
     pip install --upgrade pip --ignore-installed
+    /opt/intel/oneapi/intelpython/latest/envs/tm5/bin/python -m pip install readline
 
     # Build tm5-utils:
     cd /tm5/src/f2py
@@ -44,12 +45,7 @@ From: images/tm5env_intel_ubuntu20.simg
     # rm -Rf /tm5/*
     
 %files
-    bin /tm5/bin
-    pyshell /tm5/pyshell
-    setup.py /tm5/
-    src /tm5/src
-    Makefile /tm5/
-    etc/bashrc /etc/bash.bashrc.local
+    pyshell /tm5
 
 %environment
     export LC_ALL='en_US.UTF-8'
@@ -65,7 +61,7 @@ From: images/tm5env_intel_ubuntu20.simg
 
     if [ $# -ne 0 ]
     then
-        bash --rcfile /etc/bash.bashrc.local -c "$*"
+        bash --rcfile /tm5/etc/bashrc -c "$*"
     else 
-        bash --rcfile /etc/bash.bashrc.local
+        bash --rcfile /tm5/etc/bashrc
     fi

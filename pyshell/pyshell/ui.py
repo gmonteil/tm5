@@ -36,6 +36,7 @@ def load_rcf(rc):
     rcf.substituteTimes()
     
     setup_environment(rcf)
+    setup_output(rc, rcf)
     
     rcf.setup_meteo_coarsening(rc.meteo.coarsen)
 
@@ -44,6 +45,17 @@ def load_rcf(rc):
         rcf.setkey(k, v)
 
     return rcf
+
+
+def setup_output(rc, rcf):
+    """
+    write the output.* keys:
+    """
+    output_mix = rc['output'].get('mix')
+    if output_mix:
+        rcf.setkey('output.mix', True)
+        rcf.setkey('output.mix.tstep', output_mix['tstep'])
+        rcf.setkey('output.mix.filename.prefix', output_mix['filename_prefix'])
 
 
 def setup_tm5(rc):
