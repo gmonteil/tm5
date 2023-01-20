@@ -18,5 +18,5 @@ setuptools.setup(
     python_requires='>=2.7',
     install_requires=['h5py', 'scipy', 'python-dateutil', 'netcdf4', 'progressbar'],
     extras_require={'interactive': ['ipython']},
-    scripts=['bin/pyshell', 'bin/submit_tm5_step_run', 'bin/submit_tm5', 'bin/setup_tm5'],
+    scripts=['bin/pyshell', 'bin/submit_tm5_step_run', 'bin/submit_tm5', 'bin/setup_tm5', 'bin/congrad.exe'],
 )

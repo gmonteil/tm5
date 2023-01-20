@@ -1,7 +1,7 @@
 
 tm5:
 	# Actual TM5 container
-	singularity build --sandbox images/tm5-intel-ubuntu20.simg images/tm5-intel-ubuntu20.def
+	singularity build images/tm5-intel-ubuntu20.simg images/tm5-intel-ubuntu20.def
 
 envcontainer: images/intel-ubuntu.simg
 	# install libraries needed by TM5: HDF4, HDF5, netCDF4, udunits, and their own dependencies
@@ -21,4 +21,4 @@ dev:
 		-B /data/projects/TM5/meteo:/meteo \
 		-B .:/tm5 \
 		-B output:/output \
-		--writable images/tm5-intel-ubuntu20.simg
+		images/tm5-intel-ubuntu20.simg

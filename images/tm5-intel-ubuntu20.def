@@ -3,7 +3,6 @@ From: images/tm5env_intel_ubuntu20.simg
 
 
 %post
-
     mkdir /data
     mkdir /input
     mkdir /output
@@ -22,16 +21,17 @@ From: images/tm5env_intel_ubuntu20.simg
     # Activate conda and pre-install packages:
     . /opt/intel/oneapi/intelpython/latest/etc/profile.d/conda.sh
     conda activate tm5
-    conda install netcdf4 numpy h5py scipy python-dateutil netcdf4
+    conda install netcdf4 numpy h5py scipy python-dateutil netcdf4 readline
     conda install -c conda-forge omegaconf
     pip install --upgrade pip --ignore-installed
 
     # Build tm5-utils:
     cd /tm5/src/f2py
-    f2py --compiler=gfortran -c interpolate_levels.pyf --f90flags='-fopenmp -ffree-line-length-0' -liomp5 interpolate_levels.F90
-    #mv tm5_utils.so ../pyshell
+    f2py --fcompiler=gfortran -c interpolate_levels.pyf --f90flags='-fopenmp -ffree-line-length-0' -liomp5 interpolate_levels.F90
+    mv tm5_utils.so ../pyshell
 
     # build congrad
+    export PATH=/opt/bin:${PATH}
     cd /tm5/src/congrad
     make congrad.exe
     mv congrad.exe /usr/bin/
@@ -41,7 +41,7 @@ From: images/tm5env_intel_ubuntu20.simg
     python -m pip install -e .
 
     # Remove whatever is in /tm5, so that it can be mounted externally: 
-    rm -Rf /tm5/*
+    # rm -Rf /tm5/*
     
 %files
     bin /tm5/bin
@@ -49,7 +49,7 @@ From: images/tm5env_intel_ubuntu20.simg
     setup.py /tm5/
     src /tm5/src
     Makefile /tm5/
-    f2py /tm5/f2py
+    etc/bashrc /etc/bash.bashrc.local
 
 %environment
     export LC_ALL='en_US.UTF-8'
@@ -57,18 +57,15 @@ From: images/tm5env_intel_ubuntu20.simg
     export LD_LIBRARY_PATH="/opt/lib":${LD_LIBRARY_PATH}
     export UDUNITS_PATH=/opt/etc/udunits.dat
     export PATH=/opt/bin:${PATH}
-    alias ls="ls --color=auto"
-    alias ll="ls -ltr"
-    alias ..="cd .."
 
 %runscript
-    . /opt/intel/oneapi/setvars.sh intel64
+    . /opt/intel/oneapi/setvars.sh intel64 1> /dev/null 
     . /opt/intel/oneapi/intelpython/latest/etc/profile.d/conda.sh
     conda activate tm5
 
-    if [ $# -ne 0]
+    if [ $# -ne 0 ]
     then
-        bash --norc -c "$*"
+        bash --rcfile /etc/bash.bashrc.local -c "$*"
     else 
-        bash --norc
+        bash --rcfile /etc/bash.bashrc.local
     fi
