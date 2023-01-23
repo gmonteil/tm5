@@ -1,0 +1,74 @@
+#!/usr/bin/env python
+
+"""
+Run TM5 inside a singularity container
+"""
+
+from argparse import ArgumentParser
+import subprocess
+from configparser import ConfigParser
+import sys
+from pathlib import Path
+from loguru import logger
+
+# Read defaults:
+conf = ConfigParser()
+conf.read(Path.home() / '.config/tm5.ini')
+conf.read('tm5.ini')
+
+p = ArgumentParser(add_help=False)
+p.add_argument('--meteo', help='path to be mounted in /meteo')
+p.add_argument('--machine', default=conf['tm5']['machine'])
+p.add_argument('--scratch', help='path to be mounted in /scratch')
+p.add_argument('--input', help='path to be mounted in /input')
+p.add_argument('--tm5', help='path to the tm5 code (to be mounted in /tm5 if --writable is set)')
+p.add_argument('--output', help='path to be mounted in /output')
+p.add_argument('--bind', '-B', action='append', help='extra mount paths')
+p.add_argument('--writable', action='store_true')
+p.add_argument('--dev', action='store_true', help='mount the directory specified by --tm5 into the /tm5 folder')
+p.add_argument('--container', '-c', help='path to the container')
+args, remaining = p.parse_known_args(sys.argv[1:])
+
+# if '--help' is the only non-recognized option, pring help of this script. Otherwise, continue 
+# if '--help' is a non-recognized option among others, pass it to the container
+if len(remaining) == 1 and ('--help' in remaining or '-h' in remaining):
+    p.print_help()
+    sys.exit()
+    
+# Set default values:
+defaults = conf[args.machine]
+if args.meteo is None :
+    args.meteo = Path(defaults['/meteo'])
+if args.input is None :
+    args.input = Path(defaults['/input'])
+if args.output is None :
+    args.output = Path(defaults.get('/output', 'output'))
+    if not args.output.exists():
+        args.output.mkdir()
+if args.scratch is None:
+    args.scratch = Path(defaults.get('/scratch', 'scratch'))
+    if not args.scratch.exists():
+        args.scratch.mkdir()
+if args.bind is None :
+    args.bind = defaults.get('bind', '').split()
+if args.tm5 is None :
+    args.tm5 = Path(defaults['/tm5']).expanduser()
+if args.container is None :
+    args.container = args.tm5 / defaults['container']
+
+cmd = f'singularity run --bind {args.meteo}:/meteo --bind {args.output}:/output --bind {args.input}:/input --bind {args.scratch}:/scratch'
+
+for bind in args.bind:
+    cmd += f' --bind {bind}'
+            
+if args.dev :
+    cmd += f' --bind {args.tm5}:/tm5'
+
+if args.writable:
+    cmd += ' --writable'
+    
+cmd  += f' {args.container}'
+
+cmd += ' ' + ' '.join([_ for _ in remaining])
+logger.info(cmd)
+subprocess.run(cmd.split())

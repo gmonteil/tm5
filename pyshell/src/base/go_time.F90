@@ -239,11 +239,11 @@ contains
     tp%n_period = np
     allocate(tp%period(np))
     do i = 1, np
-        tp%period(i)%t1 = tbeg(i)
-        tp%period(i)%t2 = tend(i)
-        dt = tend(i) - tbeg(i)
-        dt = dt/2
-        tp%period(i)%tmid = tbeg(i) + dt
+      tp%period(i)%t1 = tbeg(i)
+      tp%period(i)%t2 = tend(i)
+      dt = tend(i) - tbeg(i)
+      dt = dt/2
+      tp%period(i)%tmid = tbeg(i) + dt
     end do
     ! set the resolution to something that does not matter
     tp%reskey = 'arbitrary'
@@ -308,90 +308,90 @@ contains
     select case ( trim(sres) )
 
       ! ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      case ( 'monthly' )
+    case ( 'monthly' )
       ! ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-        ! first guess of number of time periods; round to upper value:
-        np = ceiling( real( (tw%t2%year-tw%t1%year) * 12 + (tw%t2%month-tw%t1%month+1) )/real(nres) )
+      ! first guess of number of time periods; round to upper value:
+      np = ceiling( real( (tw%t2%year-tw%t1%year) * 12 + (tw%t2%month-tw%t1%month+1) )/real(nres) )
 
-        ! storage for time info for each period:
-        allocate( tp%period(np) )
+      ! storage for time info for each period:
+      allocate( tp%period(np) )
 
-        ! loop over periods:
-        i = 0
-        do
-          ! increase counter:
-          i = i + 1
-          ! fill start time:
-          if ( i == 1 ) then
-            tp%period(i)%t1 = tw%t1
-          else
-            tp%period(i)%t1 = tp%period(i-1)%t2
-          end if
-          ! fill end time:
-          tp%period(i)%t2 = Get_End_Of( tp%period(i)%t1, 'month' )
-          if ( nres > 1 ) then
-            do j = 1, nres-1
-              tp%period(i)%t2 = Get_End_Of( tp%period(i)%t2, 'month' )
-            end do
-          end if
-          ! fill current number:
-          tp%n_period = i
-          ! finished ?
-          if ( tp%period(i)%t2 >= tp%t2 ) then
-            ! reset to end of window:
-            tp%period(i)%t2 = tp%t2
-            ! leave:
-            exit
-          end if
-        end do
-
-      ! ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      case ( 'daily' )
-      ! ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-        ! first guess of number of time periods; round to upper value:
-        np = ceiling( rTotal( tw%t2-tw%t1, 'day' )/real(nres) )
-
-        ! storage for time info for each period:
-        allocate( tp%period(np) )
-
-        ! loop over periods:
-        i = 0
-        do
-          ! increase counter:
-          i = i + 1
-          ! fill start time:
-          if ( i == 1 ) then
-            tp%period(i)%t1 = tw%t1
-          else
-            tp%period(i)%t1 = tp%period(i-1)%t2
-          end if
-          ! fill end time:
-          if ( i == 1 ) then
-            tp%period(i)%t2 = Get_End_Of( tp%period(i)%t1, 'day' )
-            ! if ( nres > 1 ) tp%period(i)%t2 = tp%period(i)%t1 + IncrDate(day=nres-1)
-            if ( nres > 1 ) tp%period(i)%t2 = tp%period(i)%t2 + IncrDate(day=nres-1)
-          else
-            tp%period(i)%t2 = tp%period(i)%t1 + IncrDate(day=nres)
-          end if
-          ! fill current number:
-          tp%n_period = i
-          ! finished ?
-          if ( tp%period(i)%t2 >= tp%t2 ) then
-            ! reset to end of window:
-            tp%period(i)%t2 = tp%t2
-            ! leave:
-            exit
-          end if
-        end do
+      ! loop over periods:
+      i = 0
+      do
+        ! increase counter:
+        i = i + 1
+        ! fill start time:
+        if ( i == 1 ) then
+          tp%period(i)%t1 = tw%t1
+        else
+          tp%period(i)%t1 = tp%period(i-1)%t2
+        end if
+        ! fill end time:
+        tp%period(i)%t2 = Get_End_Of( tp%period(i)%t1, 'month' )
+        if ( nres > 1 ) then
+          do j = 1, nres-1
+            tp%period(i)%t2 = Get_End_Of( tp%period(i)%t2, 'month' )
+          end do
+        end if
+        ! fill current number:
+        tp%n_period = i
+        ! finished ?
+        if ( tp%period(i)%t2 >= tp%t2 ) then
+          ! reset to end of window:
+          tp%period(i)%t2 = tp%t2
+          ! leave:
+          exit
+        end if
+      end do
 
       ! ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      case default
+    case ( 'daily' )
       ! ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-        write (gol,'("unsupported time profile key : ",a)') trim(tp%reskey); call goErr
-        TRACEBACK; status=1; return
+      ! first guess of number of time periods; round to upper value:
+      np = ceiling( rTotal( tw%t2-tw%t1, 'day' )/real(nres) )
+
+      ! storage for time info for each period:
+      allocate( tp%period(np) )
+
+      ! loop over periods:
+      i = 0
+      do
+        ! increase counter:
+        i = i + 1
+        ! fill start time:
+        if ( i == 1 ) then
+          tp%period(i)%t1 = tw%t1
+        else
+          tp%period(i)%t1 = tp%period(i-1)%t2
+        end if
+        ! fill end time:
+        if ( i == 1 ) then
+          tp%period(i)%t2 = Get_End_Of( tp%period(i)%t1, 'day' )
+          ! if ( nres > 1 ) tp%period(i)%t2 = tp%period(i)%t1 + IncrDate(day=nres-1)
+          if ( nres > 1 ) tp%period(i)%t2 = tp%period(i)%t2 + IncrDate(day=nres-1)
+        else
+          tp%period(i)%t2 = tp%period(i)%t1 + IncrDate(day=nres)
+        end if
+        ! fill current number:
+        tp%n_period = i
+        ! finished ?
+        if ( tp%period(i)%t2 >= tp%t2 ) then
+          ! reset to end of window:
+          tp%period(i)%t2 = tp%t2
+          ! leave:
+          exit
+        end if
+      end do
+
+      ! ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    case default
+      ! ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+      write (gol,'("unsupported time profile key : ",a)') trim(tp%reskey); call goErr
+      TRACEBACK; status=1; return
 
     end select
 
@@ -492,9 +492,9 @@ contains
     character(len=*), parameter   ::  rname = mname//'/Time_Window_overlap'
 
     if (tw1%t2 <= tw2%t1 .or. tw2%t2 <= tw1%t1) then
-        Time_Window_overlap = .false.
+      Time_Window_overlap = .false.
     else
-        Time_Window_overlap = .true.
+      Time_Window_overlap = .true.
     end if
 
   end function Time_Window_overlap
@@ -608,27 +608,27 @@ contains
     real                                :: dt_num, dt_den
 
     if (present(per_unit_time)) then
-        per_time = per_unit_time
+      per_time = per_unit_time
     else
-        per_time = .true.
+      per_time = .true.
     end if
 
     ov_mat = 0.0
 
     do i1 = 1, tp1%n_period
-        do i2 = 1, tp2%n_period
-            ! calculate how much of tp1(i1) is covered by tp2(i2)
-            if (tp2%period(i2)%t2 <= tp1%period(i1)%t1 .or. tp2%period(i2)%t1 >= tp1%period(i1)%t2) cycle
-            t_lb = max(tp2%period(i2)%t1, tp1%period(i1)%t1)
-            t_ub = min(tp2%period(i2)%t2, tp1%period(i1)%t2)
-            dt_num = rTotal(t_ub - t_lb, 'sec')
-            if (per_time) then
-                dt_den = rTotal(tp2%period(i2)%t2 - tp2%period(i2)%t1, 'sec')
-            else
-                dt_den = rTotal(tp1%period(i1)%t2 - tp1%period(i1)%t1, 'sec')
-            end if
-            ov_mat(i1, i2) = dt_num/dt_den
-        end do
+      do i2 = 1, tp2%n_period
+        ! calculate how much of tp1(i1) is covered by tp2(i2)
+        if (tp2%period(i2)%t2 <= tp1%period(i1)%t1 .or. tp2%period(i2)%t1 >= tp1%period(i1)%t2) cycle
+        t_lb = max(tp2%period(i2)%t1, tp1%period(i1)%t1)
+        t_ub = min(tp2%period(i2)%t2, tp1%period(i1)%t2)
+        dt_num = rTotal(t_ub - t_lb, 'sec')
+        if (per_time) then
+          dt_den = rTotal(tp2%period(i2)%t2 - tp2%period(i2)%t1, 'sec')
+        else
+          dt_den = rTotal(tp1%period(i1)%t2 - tp1%period(i1)%t1, 'sec')
+        end if
+        ov_mat(i1, i2) = dt_num/dt_den
+      end do
     end do
 
   end subroutine Time_Profile_Overlap_Matrix

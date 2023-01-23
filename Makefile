@@ -20,5 +20,5 @@ dev:
 		-B /data:/data \
 		-B /data/projects/TM5/meteo:/meteo \
 		-B .:/tm5 \
-		-B output:/output \
+		-B run/output:/output \
 		images/tm5-intel-ubuntu20.simg

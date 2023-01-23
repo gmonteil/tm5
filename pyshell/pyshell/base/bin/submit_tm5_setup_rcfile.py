@@ -33,22 +33,17 @@ def WriteRcfile( rcf ):
     # time format in rcfiles:
     tfmt = '%Y-%m-%d %H:%M:%S'
 
-    # create python datetime objects for overall time range:
     if sys.version_info[0:3] <= (2,4,3) :
         full_t1 = datetime.datetime( *map(int,rcf.get('timerange.start').replace('-',' ').replace(':',' ').split()) )
         full_t2 = datetime.datetime( *map(int,rcf.get('timerange.end'  ).replace('-',' ').replace(':',' ').split()) )
     else :
         full_t1 = datetime.datetime.strptime( rcf.get('timerange.start'), tfmt )
         full_t2 = datetime.datetime.strptime( rcf.get('timerange.end'  ), tfmt )
-    #endif
-    # info ...
     logging.info( '    timerange start : %s' % str(full_t1) )
     logging.info( '    timerange end   : %s' % str(full_t2) )
-    # check ...
     if full_t2 <= full_t1:
         logging.error( 'The start date (%s) is later than the end date (%s), please revise' % (full_t1.strftime(tfmt),full_t2.strftime(tfmt)) )
         raise ValueError
-    #endif
 
     # rcfile is valid for the previous step in the chain (or initial);
     # read the previous step number (or zero):

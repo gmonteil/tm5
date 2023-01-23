@@ -1,5 +1,5 @@
 Bootstrap: localimage
-From: images/tm5env_intel_ubuntu20.simg
+From: images/tm5env-intel-ubuntu20.simg
 
 
 %post
@@ -7,16 +7,17 @@ From: images/tm5env_intel_ubuntu20.simg
     mkdir /input
     mkdir /output
     mkdir /meteo
-
-    apt -y update
-    apt -y install locales gfortran
-    locale-gen en_US.UTF-8
+    mkdir /scratch
 
     # intel setvars doesn't work during build time, so use that trick:
     bash -c "env > /tm5/default_env_vars"
     bash -c ". /opt/intel/oneapi/setvars.sh intel64; env > /tm5/env_vars"
     diff /tm5/default_env_vars /tm5/env_vars | grep ">" | sed  s/..// | sort | sed 's/^/export /' | sed "s/=/='/" | sed "s/$/'/" >> /tm5/.oneapi_env_vars;
     . /tm5/.oneapi_env_vars
+
+    apt -y update
+    apt -y install locales gfortran
+    locale-gen en_US.UTF-8
 
     # Activate conda and pre-install packages:
     . /opt/intel/oneapi/intelpython/latest/etc/profile.d/conda.sh
@@ -27,25 +28,25 @@ From: images/tm5env_intel_ubuntu20.simg
     /opt/intel/oneapi/intelpython/latest/envs/tm5/bin/python -m pip install readline
 
     # Build tm5-utils:
-    cd /tm5/src/f2py
+    cd /tm5/pyshell/src/f2py
     f2py --fcompiler=gfortran -c interpolate_levels.pyf --f90flags='-fopenmp -ffree-line-length-0' -liomp5 interpolate_levels.F90
     mv tm5_utils.so ../pyshell
 
     # build congrad
     export PATH=/opt/bin:${PATH}
-    cd /tm5/src/congrad
+    cd /tm5/pyshell/src/congrad
     make congrad.exe
     mv congrad.exe /usr/bin/
     
     # Install pyshell python package
-    cd /tm5
+    cd /tm5/pyshell
     python -m pip install -e .
 
     # Remove whatever is in /tm5, so that it can be mounted externally: 
     # rm -Rf /tm5/*
     
 %files
-    pyshell /tm5
+    pyshell /tm5/pyshell
 
 %environment
     export LC_ALL='en_US.UTF-8'

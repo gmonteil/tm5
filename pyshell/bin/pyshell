@@ -11,6 +11,7 @@ if __name__ == '__main__':
     p.add_argument('action', choices=['forward', 'optim', 'compile'])
     p.add_argument('--rc')
     p.add_argument('--verbosity', '-v', default='INFO')
+    p.add_argument('--legacy', action='store_true')
     args = p.parse_args(sys.argv[1:])
     
     logging.basicConfig(format='[%(levelname)s] %(message)s', level=args.verbosity)
@@ -20,7 +21,10 @@ if __name__ == '__main__':
     rc = OmegaConf.load(args.rc)
 
     if args.action == 'forward':
-        fwd = ui.forward(rc)
+        if args.legacy:
+            fwd = ui.forward_legacy(rc)
+        else :
+            fwd = ui.forward(rc)
         
     elif args.action == 'optim':
         opt = ui.optim(rc)
