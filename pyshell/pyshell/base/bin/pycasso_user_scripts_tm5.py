@@ -1,16 +1,9 @@
+import logging
+import os
+import go
 
 
-"""
-PYCASSO User Scripts
-
-Do not change the arguments of the defined routines, only their content !
-"""
-
-#-------------------------------------------------
-# arguments and options 
-#-------------------------------------------------
-
-def DefineOptions( parser ) :
+def DefineOptions(parser) :
     
     """
     Usage : DefineOptions( parser )
@@ -30,12 +23,6 @@ def DefineOptions( parser ) :
                             an option '-C' or '--clean-all' was defined for this.""",
                          dest="clean", action="store_true", default=False )
 
-    # ok
-    return
-    
-#enddef
-
-# *
 
 def StoreOptions( settings, values ) :
         
@@ -48,16 +35,6 @@ def StoreOptions( settings, values ) :
     # translate options into a dictionairy if they should
     # replace rcfile values:
     if values.clean : settings['build.make.clean'    ] = True
-
-    # ok
-    return
-    
-#enddef
-
-
-#-------------------------------------------------
-# source 
-#-------------------------------------------------
 
 
 def Build_FlagGroups( rcf, basic=False ) :
@@ -958,22 +935,10 @@ def Build_Make( rcf ) :
       rcf  : dictionairy with settings from rc file
     """
     
-    # external
-    import sys
-    import os
-    import logging
-    
-    # tools:
-    import go
-    
-    # remove old object files ?
     clean     = rcf.get('build.make.clean','bool',default=False)
     if clean :
-        # info ...
         logging.debug( '  make clean ...' )
-        # loop over all files:
         for f in os.listdir(os.curdir) :
-            # remove ?
             if f.endswith('.o') or f.endswith('.mod') :
                 # skip the most basic toolboxes ..
                 if f.startswith('parray'   ) : continue
@@ -986,42 +951,22 @@ def Build_Make( rcf ) :
                 if f.startswith('phys'     ) : continue
                 if f.startswith('grid'     ) : continue
                 if f.startswith('tmm'      ) : continue
-                # info ...
-                logging.debug( '    remove %s ...' % f )
-                # remove:
                 os.remove(f)
-            #endif
-        #endfor
-    #endif
-    
+
     # module dir ?
     mdir = rcf.get('compiler.mdir',default='None')
     if mdir != 'None' :
-        # not present yet ? then create:
-        if not os.path.exists( mdir ) : os.makedirs( mdir )
-    #endif
-
-    # info ...
-    logging.debug( '  make ...' )
+        if not os.path.exists( mdir ) :
+            os.makedirs( mdir )
 
     # number of jobs available for make:
-    build_jobs = rcf.get( 'build.jobs', default='' )
+    build_jobs = rcf.get('build.jobs', default='')
 
     # get maker command; replace some keys:
     maker = rcf.get('maker').replace('%{build.jobs}',build_jobs)
-
-    # get target executable:
     exe   = rcf.get('build.make.exec')
-
-    # full command:
-    command = maker.split()+['-f','Makefile',exe]
-    # info ...
-    logging.debug( '  run command: %s' % str(command) )
-    # run:
-    p = go.subprocess.watch_call( command )
+    command = maker.split() + ['-f', 'Makefile', exe]
+    logging.info(str(command))
+    go.subprocess.watch_call(command)
+    import pdb; pdb.set_trace()
     
-    # ok
-    return
-    
-#enddef
-

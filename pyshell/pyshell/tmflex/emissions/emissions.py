@@ -35,7 +35,7 @@ class tm5Emis(Emissions):
        This is merely a tracer-specific copy of the readOptimFromFile method in the base Emissions class"""
 
     def __init__(self, rcf, tracer='CO2', *args, **kwargs):
-        self.emFile = rcf.get('tmflex.emfile')
+        self.emFile = rcf.get('emissions.filename')
         self.tracer = tracer
         Emissions.__init__(self, rcf, *args, **kwargs)
         if os.path.basename(self.emFile) == 'optimized_state.nc4':
@@ -52,7 +52,7 @@ class tm5Emis(Emissions):
         try :
             fid = Dataset(self.emFile, 'r')
         except RuntimeError :
-            print self.emFile
+            print(self.emFile)
             raise RuntimeError
         self.Emission[self.tracer]['emi_class'] = self.__class__.__name__
         self.Emission[self.tracer]['tf_bb_diurnal'] = None

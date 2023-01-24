@@ -3,9 +3,9 @@
 from pyshell.observations import observations, HDF5DB
 from pyshell.tmflex.RunTM5 import RunTM5
 from pyshell.tmflex.runtools import rcdat
-from pyshell.tmflex import eurocom
 from pyshell.tmflex.emissions.fluxes_verify import CO2_Emissions
 from pyshell.base.main.optimizer import conGrad as congrad
+from pyshell.tmflex.emissions.emissions import tm5Emis, tmflexEmis
 
 from pandas import Timestamp
 import os
@@ -24,10 +24,6 @@ def load_observations(rc):
 
 
 def setup_emissions(rc, rcf):
-    if 'filename' in rc['emissions']:
-        rcf.setkey('PyShell.em.filename', os.path.abspath(rc['emissions']['filename']))
-        rcf.setkey('dailycycle.folder', os.path.abspath(rc['emissions']['dailycycle_folder']))
-
     for tracer in rc['run']['tracers'] :
         for region in rc['run']['regions'] :
             rcf.setkey('emission.%s.%s.categories'%(tracer, region), len(rc.emissions[tracer][region]))
@@ -48,6 +44,16 @@ def setup_emissions(rc, rcf):
                         catinfo.optimize,
                         cat
                     ))
+        if rc.emissions[tracer].get('dailycycle'):
+            rcf.setkey("%s.dailycycle.type"%tracer, rc.emissions[tracer].dailycycle.type)
+            rcf.setkey("%s.emission.dailycycle"%tracer, 'T')
+            rcf.setkey('%s.dailycycle.prefix'%tracer, rc.emissions[tracer].dailycycle.prefix)
+
+    if 'filename' in rc['emissions']:
+        # Copy the emission file to the run directory:
+        shutil.copy(rc.emissions.filename, rcf.get('PyShell.em.filename'))
+        shutil.rmtree(rcf.get('dailycycle.folder'), ignore_errors=True)
+        shutil.copytree(rc.emissions.dailycycle_folder, rcf.get('dailycycle.folder'))
 
     return rcf
 
@@ -59,12 +65,14 @@ def load_rcf(rc):
     :return:
     """
     rcf = rcdat()
+
     rcf.setkey('my.project', rc['run']['project'])
     rcf.readfile(rc['run']['rcfile'])
     rcf.ti = Timestamp(rc['run']['start'])
     rcf.tf = Timestamp(rc['run']['end'])
     rcf.substituteTimes()
-    
+
+    rcf = setup_tmflex(rc, rcf)
     setup_environment(rcf)
     setup_output(rc, rcf)
     
@@ -75,6 +83,7 @@ def load_rcf(rc):
         rcf.setkey(k, v)
 
     rcf = setup_emissions(rc, rcf)
+
 
     return rcf
 
@@ -134,8 +143,8 @@ def setup_environment(rcf):
         os.environ['omp_num_threads'.upper()] = '%s'%nthreads
     os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
     
-    
-def forward(rc, step=None):
+
+def forward(rc):
     """
     Run a forward TM5 simulation
     :param rc: omegaconf.DictConfig or dictionary containing basic settings
@@ -143,12 +152,65 @@ def forward(rc, step=None):
     """
 
     obs = load_observations(rc)
-    emclasses = {'CO2': CO2_Emissions}
     run = setup_tm5(rc)
     run.SetupObservations(obs)
+    if rc.output.get('background'):
+        run.SetupEmissions(emclasses={'CO2': tm5Emis, 'CO2fg': tmflexEmis})
     run.Compile()
     run.RunForward()
     return run
+
+
+def setup_tmflex(rc, rcf):
+    """
+    Perform a forward run with extraction of the background concentration by TM5
+    This requires the following adjustments, compared to a normal forward run:
+    - creation of a new "fg" tracer, for each original tracer (e.g. CO2fg, if we had a CO2 tracer)
+    - appending the "tmflex" project to the list of source files
+    - creation of the emissions and daily_cycle files for the new tracer
+    - setting the "tmflex" rc-keys
+    """
+
+    if 'background' in rc.output:
+
+        # Adjust the list of source directories:
+        # We need to adjust it everywhere, because that **** rc module resolves keys at load time
+        for key in ['my.projects.basic', 'my.source.dirs', 'build.copy.dirs']:
+            value =  rcf.get(key)
+            value += ' ' + '%s/tmflex'%rcf.get('my.proj.root')
+            rcf.setkey(key, value)
+
+        # Create the new tracer:
+        assert len(rc.output.background.tracers) == 1, "Rodenbeck scheme available only for one tracer (might work with more, but untested)"
+
+        # Copy keys from the main tracer to the background one:
+        for tracer in rc.output.background.tracers:
+            for region in rc.run.regions :
+                rc.emissions[tracer + 'fg'] = {region : '${emissions.%s.%s}'%(tracer, region)}
+
+            # For dailycycle, we need to replace the tracer name:
+            if rc.emissions[tracer].get('dailycycle'):
+                rc.emissions[tracer + 'fg']['dailycycle'] = {
+                    'type': rc.emissions[tracer].dailycycle.type,
+                    'prefix': rc.emissions[tracer].dailycycle.prefix.replace(tracer, tracer + 'fg')
+                }
+
+            # Fix one key in the obs that needs adjusting ...
+            rcf.setkey('output.point.%s.minerror'%(tracer + 'fg'), rcf.get('output.point.%s.minerror'%tracer))
+
+        # Add the tracer(s) to the rc-file
+        rc.run.tracers.extend([tr+'fg' for tr in rc.output.background.tracers])
+        rcf.setkey('my.tracer', ', '.join([_ for _ in rc.run.tracers]))
+        rcf.setkey('my.tracer.name', ', '.join([_ for _ in rc.run.tracers]))
+        rcf.setkey('tracers', len(rc.run.tracers))
+
+        rcf.setkey('tmflex.compute.backgrounds', True)
+        rcf.setkey('tmflex.lon0', rc.output.background.lon_range[0])
+        rcf.setkey('tmflex.lon1', rc.output.background.lon_range[1])
+        rcf.setkey('tmflex.lat0', rc.output.background.lat_range[0])
+        rcf.setkey('tmflex.lat1', rc.output.background.lat_range[1])
+
+    return rcf
 
 
 def forward_legacy(rc, step=None):

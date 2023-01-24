@@ -1,126 +1,92 @@
 #! /usr/bin/env python
+import sys
+import os
+import subprocess
+import shutil
+import re
+import logging
+import datetime
 
-"""
-*            PYCASSO - PYthon Compile And Setup Scripts Organizer            *
-
-INSTALL FOR YOUR APPLICATION
-
-    Assume you have an application named 'yourmodel'.
-    To create a compile/setup script for this application,
-    copy the template setup script to a name that you and other users
-    will recoqnize as the main setup script:
-
-       cp  pycasso/py/pycasso_setup_template  setup_yourmodel
-
-    Edit the 'Settings' section in this new script to set the location 
-    of the PYCASSO scripts. Also specify the name of the module file
-    with user scripts. If these are in a subdirectory './base/py', use fore example:
-
-       # path to the PYCASSO modules:
-       base_py = os.path.join('.','pycasso','py')
-
-       # name of file with PYCASSO user scripts for this setup:
-       pycasso_user_scripts = 'pycasso_user_scripts_tm5'
-
-    Copy the template settings file 'pycasso__template.rc'
-    to a suitable name:
-
-        cp  pycasso/rc/pycasso_template.rc  yourmodel.rc
-
-    Edit the settings if necessary, and start with:
-
-      ./setup_yourmodel yourmodel.rc
+from pyshell.base.bin import rc
+from pyshell.base.bin import pycasso_tools
+from pyshell.base.bin import pycasso_user_scripts_tm5 as pycus
 
 
-LOGGING
+def main2(rcfile):
+    rcf = rc.RcFile(rcfile)
 
-    Logging is implemented via the standard python 'logging' module.
-    
-    By default, one logger is defined that writes to the standard output;
-    usually this is the terminal window, but in a batch environment this
-    could be redirected to a file.
-    In addition, a second logger could be setup if the 'logfile'
-    option in the rc file is set.
-    
-    To add a new message to one of the logs, follow the examples in the code:
+    key = 'logfile'
+    if rcf.has_key(key):
+        logfile = rcf.get(key)
 
-        logging.info( 'rc-file read successfully' )
+    if rcf.get('build.copy', 'bool'):
+        Build_Copy(rcf, pycus)
 
-    This would create a log-message of level INFO.
-    Other options for log messages are:
+    if rcf.get('build.configure', 'bool'):
+        Build_Configure(rcf, pycus)
 
-        logging.debug    (msg)     # extra information to debug the scripts
-        logging.warning  (msg)     # warnings about undesired behaviour
-        logging.info     (msg)     # the standard messages
-        logging.exception(msg)     # something wrong, not fatal
-        logging.error    (msg)     # something wrong, nearly fatal
-        logging.critical (msg)     # something wrong, probably fatal
+    if rcf.get('build.make', 'bool'):
+        Build_Make(rcf, pycus)
 
-    The threshold level for messages to be included is DEBUG for the file output.
-    The threshold level for messages to be included is INFO for the screen, 
-    unless 'options.verbose' is True (set by '-v' or '--verbose' on the 
-    command line).
+    rundir = rcf.get('rundir')
+    if len(rundir) > 0:
+        pycasso_tools.CreateDirs(rundir)
+        os.chdir(rundir)
 
-"""
+    ifiles = rcf.get('install.copy')
+    if len(ifiles) > 0:
+        for ifile in ifiles.split():
+            # if the file contains a colon ':' ...
+            if ':' in ifile:
+                # ... the name after the colon is the target name
+                sour, targ = ifile.split(':')
+            else:
+                # ... otherwise, copy to current directory:
+                sour, targ = ifile, os.path.curdir
+            if not os.path.exists(sour):
+                logging.error('source file not found : %s' % sour)
+                raise IOError
+            shutil.copy(sour, targ)
 
-# ------------------------------------------------
-# begin
-# ------------------------------------------------
+    newrc = rcf.get('install.rc')
+    if len(newrc) > 0:
+        rcf.WriteFile(newrc)
+
+    submit_command = rcf.get('submit.command')
+
+    build_prefix = rcf.get('build.prefix')
+    if rcf.get('submit.relpaths', 'bool'):
+        build_prefix = os.path.relpath(build_prefix, start=rundir)
+
+    flag = rcf.get('submit.auto', 'bool')
+    if flag:
+        # change to run directory:
+        os.chdir(rundir)
+        retcode = subprocess.call(submit_command.split())
+        if retcode != 0:
+            logging.error('from submission of : %s' % submit_command)
+            raise Exception
 
 
-def Main( args, pycasso_user_scripts ) :
+def Main( args, pycasso_user_scripts) :
 
-    """
-    Start the compilation and setup of the application.
-        args
-                List of unparsed arguments, probalby from 'sys.argv[1:]'.
-        pycasso_user_scripts
-                Name of file with user scripts for this particular setup.
-    """
-    
-    # external:
-    import sys
-    import os
-    import exceptions
-    import subprocess
-    import shutil
-    import logging
-    import traceback
-    import datetime
-    
-    # tools:
-    from pyshell.base.bin import rc
-    from pyshell.base.bin import pycasso_tools
-    from pyshell.base.bin import pycasso_user_scripts_tm5 as pycus
     options, rcfile = ParseArguments( args, pycus )
     
     # initialise logging system:
-    logger = Start_Logger()
-    
+    logger = logging.getLogger('')
+    logger.setLevel(logging.DEBUG)
+
     # initialise messages to standard output:
     stdout_handler = Start_StdOut_Log(logger)
     
-    # info ...
-    logging.info( '' )
-    tnow = datetime.datetime.now().isoformat(' ').split('.',1)[0]
-    logging.info( 'Started script at %s ...' % tnow )
-    logging.info( '' )
-    
-    # info ...
     logging.info( 'options and arguments ...' )
     logging.info( '  parsed options         : %s' % options )
     logging.info( '  parsed rcfile argument : %s' % rcfile )
-    
-    # info ...
     logging.info( 'read settings from %s ...' % rcfile )
     
-    # read settings:
     rcf = rc.RcFile(rcfile)
     
-    # options provided at command line ?
-    if len(options) == 0 :
-        logging.info( 'no rcfile settings to be added or changed by options' )
-    else :
+    if len(options) > 0 :
         logging.info( 'change rcfile settings given options ...' )
         for key,val in options.iteritems() :
             if rcf.has_key(key) :
@@ -130,82 +96,32 @@ def Main( args, pycasso_user_scripts ) :
                 logging.info( '  set "%s" to "%s" ...' % (key,str(val)) )
                 rcf.add( key, str(val), comment='new key added after options passed to setup script' )
     
-    logging.info( 'setup logging according to settings ...')
-    
-    flag = rcf.get( 'verbose', 'bool', default=False )
-    if flag : 
-        logging.info( '  verbose mode for standard output; print all messages ...' )
-        stdout_handler.setLevel(logging.DEBUG)
-    else :
-        logging.info( '  quiet mode for standard output; print info messages only ...' )
-    
-    # setup logfile ?
     key = 'logfile'
     if rcf.has_key(key) :
         logfile = rcf.get(key)
-        logging.info( '  open additional log file : %s' % logfile )
         logfile_handler = Start_File_Log( logger, logfile )
     else :
-        logging.info( '  no log file; print to standard output only ...' )
         logfile_handler = None
 
-    # test logging:
-    logging.info    ('  test messages ...')
-    logging.debug   ('    testing debug    message ...')
-    logging.info    ('    testing info     message ...')
-    logging.warning ('    testing warning  message ...')
-    logging.error   ('    testing error    message ...')
-    logging.critical('    testing critical message ...')
-    
-    # display settings:
-    logging.debug( '' )
-    logging.debug( 'Content of rc dictionary:' )
-    for key in rcf.keys() :
-        logging.debug( '  %s : %s' % (key,rcf.get(key)) )
-    logging.debug( '[done]' )
-    
     # create a source ?
-    flag = rcf.get('build.copy','bool')
-    if flag :
-        logging.info( 'copy source to build directory ...' )
+    if rcf.get('build.copy','bool'):
         Build_Copy( rcf, pycus )
-    else :
-        logging.info( 'no source to be copied ...' )
 
-    # configure a source ?
-    flag = rcf.get('build.configure','bool')
-    if flag :
-        logging.info( 'configure source ...' )
+    if rcf.get('build.configure','bool'):
         Build_Configure( rcf, pycus )
-    else :
-        logging.info( 'no source to be configured ...' )
 
-    # make an executable ?
-    flag = rcf.get('build.make','bool')
-    if flag :
-        logging.info( 'make source ...' )
+    if rcf.get('build.make','bool'):
         Build_Make( rcf, pycus )
-    else :
-        logging.info( 'no source to be made ...' )
 
     # change to destination directory ?  
     rundir = rcf.get('rundir')
     if len(rundir) > 0 :
-        # create target directory if necessary:
-        pycasso_tools.CreateDirs( rundir )
-        # info ...
-        logging.info( 'change to run directory %s ...' % rundir )
-        # goto this directory:
+        pycasso_tools.CreateDirs(rundir)
         os.chdir(rundir)
-    else :
-        # info ...
-        logging.info( 'no run directory specified; stay here ...' )
-    #endif
 
     # copy files ?
     ifiles = rcf.get('install.copy')
     if len(ifiles) > 0 :
-        logging.info( 'install files ...' )
         for ifile in ifiles.split() :
             # if the file contains a colon ':' ...
             if ':' in ifile :
@@ -214,153 +130,38 @@ def Main( args, pycasso_user_scripts ) :
             else :
                 # ... otherwise, copy to current directory:
                 sour,targ = ifile,os.path.curdir
-            logging.info( '  copy "%s" to "%s" ...' % (sour,targ) )
             if not os.path.exists(sour) :
                 logging.error( 'source file not found : %s' % sour )
                 raise IOError
-            shutil.copy( sour, targ )
-    else :
-        logging.info( 'no files to be installed ...' )
-    
-    # write rcfile ...
+            shutil.copy(sour, targ)
+
     newrc = rcf.get('install.rc')
     if len(newrc) > 0 :
-        # info ...
-        logging.info( '  install processed rcfile ...' )
-        # write pre-processed rcfile:
-        rcf.WriteFile( newrc )
-    #endif
+        rcf.WriteFile(newrc)
 
-    #
-    # * submit script / info / submitting
-    #
-    
-    # settings for submit script:
-    submit_script = rcf.get( 'submit.script' )
     submit_command = rcf.get( 'submit.command' )
 
-    # where to search for scripts ?    
     build_prefix = rcf.get('build.prefix')
-    # use paths relative to run directory ?
     if rcf.get('submit.relpaths','bool') :
-        # only available in recent versions ...
-        if sys.version_info[0]+0.1*sys.version_info[1] >= 2.6 :
-            build_prefix = os.path.relpath(build_prefix,start=rundir)
-        else :
-            logging.warning( "Option `submit.relpaths` requires at least python version 2.6 ; use absolute path instead" )
-        #endif
-    #endif
+        build_prefix = os.path.relpath(build_prefix,start=rundir)
 
-    # full path to submit script:
-    #submit_script_path = submit_script
-    #submit_script_path = os.path.join( rundir, submit_script )
-    # should exist ...
-    #import pdb; pdb.set_trace()
-    #if not os.path.exists(submit_script_path) :
-    #    logging.error( 'submit script not found:' )
-    #    logging.error( '  %s' % submit_script_path )
-    #    logging.error( 'not included in "install.copy" list ?' )
-    #    raise Exception
-    #endif
-    # insert path to submit modules:
-    # pycasso_tools.modify_text_file( submit_script_path, 
-    #                 "pypath_default = os.path.join( os.pardir, 'build', 'bin' )", 
-    #                  "pypath_default = os.path.join('%s','bin')" % build_prefix )
-    
-    # info ...
-    logging.info( '' )
-    logging.info( 'To submit a job:' )
-    logging.info( '' )
-    indent = '  '
-    # need to change to run directory ?
-    if len(rundir) > 0 :
-        logging.info( indent+'# change to the run directory:' )
-        logging.info( indent+'cd %s' % rundir )
-        logging.info( '' )
-    #endif
-    # disply usage text:
-    logging.info( indent+'# submit a job (use --help for more information):' )
-    logging.info( indent+'%s' % submit_command )
-    # advertisement ...
-    logging.info( '' )
-    logging.info( 'For first glance on settings and results:' )
-    logging.info( '' )
-    logging.info( indent+'# run diadem postprocessor:' )
-    logging.info( indent+'./tools/diadem/py/diadem %s' % rcfile )
-    
-    # submit automatically ?
-    flag = rcf.get( 'submit.auto', 'bool' )
-    if flag :
-        # change to run directory:
+    if rcf.get('submit.auto', 'bool'):
         os.chdir( rundir )
-        # info ...
-        logging.info( '' )
-        logging.info( 'submit automatically ...' )
         logging.info( '  %s' % submit_command )
-        logging.info( '' )
-        # call script:
         retcode = subprocess.call( submit_command.split() )
         if retcode != 0 :
             logging.error( 'from submission of : %s' % submit_command )
             raise Exception
-        #endif
-    #endif
-    
-    
-    #
-    # * end
-    #
-    
-    # info ...
-    logging.info( '' )
-    tnow = datetime.datetime.now().isoformat(' ').split('.',1)[0]
-    logging.info( 'End of script at %s .' % tnow )
-    logging.info( '' )
-    
-    # close logs:
-    if logfile_handler != None : logfile_handler.close()
+
+    if logfile_handler != None :
+        logfile_handler.close()
     stdout_handler.close()
     
-    # ok
-    return
-         
-#enddef
-
-
-# ***
-
 
 def ParseArguments( args, pycus ) :
 
-    """
-    Define the arguments accepted by a pycasso run script.
-
-    Usage:
-
-        options,rcfile = ParseArguments( args )
-
-    Arguments:
-
-        args
-                Passed from the calling script, probably equal to : sys.argv[1:]
-        pycasso_user_scripts
-                Name of file with user scripts for this particular setup.
-
-    Return values:
-
-        options       # object with following data fields:
-          .verbose    # (boolean) gives extra logging messages to the screen
-
-        rcfile    # name of settings file
-      
-    """
-
     # external:
-    import logging
     import optparse
-    
-    # load user scripts:
-    # pycus = __import__( pycasso_user_scripts )
     
     # set text for 'usage' help line:
     usage = "\n    %prog [options] rcfile\n    %prog -h|--help"
@@ -431,8 +232,7 @@ def ParseArguments( args, pycus ) :
     # and no other arguments:
     if len(args) != 1 :
         parser.error("incorrect number of arguments\n")
-    #endif
-    
+
     # translate options into a dictionairy 
     # if they should replace rcfile values:
     opts = {}
@@ -452,47 +252,10 @@ def ParseArguments( args, pycus ) :
     # return values:
     return opts,rcfile
     
-#enddef
-
-
-# ***
-
-
-def Start_Logger() :
-
-    """
-    logger = Start_Logger()
-    """
-
-    # external:
-    import logging
-
-    # create logger
-    logger = logging.getLogger('')
-    logger.setLevel(logging.DEBUG)
-    
-    # ok
-    return logger
-
-#enddef
-
-
-# ***
-
 
 def Start_StdOut_Log(logger) :
 
-    """
-    stdout_handler = Start_StdOut_Log(logger)
-    """
-
-    # external:
-    import sys
-    import logging
-
-    # set a format for screen use:
     logformat = '[%(levelname)-8s] %(message)s'
-    # create formatter:
     formatter = logging.Formatter(logformat)
     
     # handler for standard output:
@@ -501,183 +264,131 @@ def Start_StdOut_Log(logger) :
     stdout_handler.setFormatter(formatter)
     logger.addHandler(stdout_handler)
 
-    ## first messages:
-    #logging.debug('testing debug message after start stdout log ...')
-    #logging.info ('testing info  message after start stdout log ...')
-    
-    # ok
     return stdout_handler
     
-#endif
-
-
-# ***
-
 
 def Start_File_Log(logger,logfile) :
 
-    """
-    logfile_handler = Start_File_Log(logger,logfile)
-    
-    Create handler for log file.
-    Initial level is 'DEBUG', thus all messages will be written to the file.
-    """
-    
-    # external:
-    import sys
-    import logging
-    
     # set format of lines written to logging:
     if sys.version_info < (2, 5):
         logformat   = "%(asctime)s %(name)-10s, line %(lineno)4i  [%(levelname)-10s] %(message)s"
     else:
         logformat   = '%(lineno)4i %(filename)-30s -> %(funcName)-30s [%(levelname)-8s] %(message)s'
-    #endif
-    # create formatter:
     formatter = logging.Formatter(logformat)
     
-    # now create a handler for the log file;
-    # mode 'w' will cause the log file to be re-written:
     logfile_handler = logging.FileHandler(filename=logfile,mode='w')
     logfile_handler.setLevel(logging.DEBUG)
     logfile_handler.setFormatter(formatter)
     logger.addHandler(logfile_handler)
     
-    ## first messages:
-    #logging.debug('testing debug message after start file log ...')
-    #logging.info ('testing info  message after start file log ...')
-    
-    # ok
     return logfile_handler
-
-#enddef
-
-
-# ***
 
 
 def Build_Copy( rcf, pycus ) :
 
-    import os
-    import sys
-    import shutil
-    import logging
-    from pyshell.base.bin import pycasso_tools
-    import re
-    
     remove_existing_build = rcf.get('build.new','bool')
-
     prefix = rcf.get('build.prefix')
-    logging.info( '  build prefix : %s ' % prefix )
-    
+
     if rcf.get('build.prefix.extend','bool') :
         prefix_ext = prefix
-        flags = pycus.Build_FlagGroups( rcf )
+        flags = pycus.Build_FlagGroups(rcf)
         if len(flags) > 0 :
             for flag in flags : prefix_ext = prefix_ext+'_'+flag
         else :
             prefix_ext = prefix_ext+'_'
-        logging.info( '  build prefix extended : %s ' % prefix_ext )
-        pycasso_tools.CreateDirs( prefix_ext, forceclean=remove_existing_build )
+        logging.info('  build prefix extended : %s ' % prefix_ext)
+        pycasso_tools.CreateDirs(prefix_ext, forceclean=remove_existing_build)
         if os.path.lexists(prefix) :
-            if os.path.islink(prefix) :
-                os.remove( prefix )
-            else :
-                logging.error( 'could not replace "'+prefix+'" by a symbolic link; remove first' )
-                raise Exception
-        os.symlink( os.path.basename(prefix_ext), prefix )
+            os.remove(prefix)
+        os.symlink(os.path.basename(prefix_ext), prefix)
     else :
-        pycasso_tools.CreateDirs( prefix, forceclean=remove_existing_build )
+        pycasso_tools.CreateDirs(prefix, forceclean=remove_existing_build)
     
     subdirs = rcf.get('build.copy.subdirs').split()
     for subdir in subdirs :
         sdir = os.path.join(prefix,subdir)
         pycasso_tools.CreateDirs(sdir)
-    
+
     # loop over source directories:
     sourcedirs = rcf.get('build.copy.dirs')
-    if len(sourcedirs) > 0 :
-        # info ...
-        logging.info( '  copy files from source directories...' )
-        # some flags ...
-        flag_remove__part = rcf.get('build.copy.remove.__part', 'bool')
-        if flag_remove__part :
-            logging.info( '    remove "__<name>" parts from sources files ...' )
-
-        # loop over source directories:
-        for sourcedir in sourcedirs.split():
-            found_some_files = False
-            # info ...
-            logging.info( '    scanning %s ...' % sourcedir)
-            # should be a directory ...
-            if not os.path.isdir(sourcedir) :
-                logging.error( 'specified source dir is not an existing directory : %s' % sourcedir )
-                raise IOError
-            
-            # empty ? then add something for current directory:
-            if len(subdirs) == 0 : subdirs = os.path.curdir
-            # loop over sub directories:
-            
-            for subdir in  subdirs :
-                sourcepath = os.path.join(sourcedir, subdir)
-                for sfile in os.listdir(sourcepath) :
-                    sourcefile = os.path.join(sourcepath, sfile)
-                    if not os.path.isdir(sourcefile):
-                        name, ext = os.path.splitext(sfile)
-                        skipit = False
-                        for pattern in rcf.get('build.copy.skip.ext').split() :
-                            if re.search(pattern, ext) :
-                                logging.debug( '        %-50s     %-30s [%-8s]' % (sourcefile,'','skip') )
-                                skipit = True
-                        if not skipit:
-                            outfile = sfile
-                            if flag_remove__part:
-                                if '__' in sfile:
-                                    name, ext = os.path.splitext(sfile)
-                                    outfile = name.split('__')[0] + ext
-                            if outfile not in rcf.get('build.copy.skip.file').split():
-                                targetfile = os.path.join(prefix, subdir, outfile)
-                                stat = 'new'
-                                if os.path.exists(targetfile):
-                                    if pycasso_tools.diff_text_files(sourcefile, targetfile):
-                                        stat = 'differ'
-                                    else:
-                                        stat = '...'
-                                logging.info('        %-50s  -> %-30s [%-8s]'%(sourcefile, os.path.join(subdir, outfile), stat))
-                                # copy source to target, preserve times etc:
-                                shutil.copy2(sourcefile, targetfile)
-                    
-                    found_some_files = True
-                        
-
-            if not found_some_files:
-                logging.warning('  found no source files in standard subdirs %s of %s.  Mistake in source.dirs?' % (str(subdirs),sourcedir))
-    else :
+    if len(sourcedirs) == 0 :
         logging.info( '  no source directories specified ...' )
+        return
 
-    # # add a new formed directory to the python path?
-    # flag = rcf.get('build.copy.pypath','bool')
-    # if flag :
-    #     logging.info( '  add subdir <prefix>/py to python path ...' )
-    #     newdir = os.path.join(prefix,'py')
-    #     sys.path.insert(0,newdir)
-    # else :
-    #     logging.info( '  no request for extension of the python path ...' )
+    # info ...
+    logging.info( '  copy files from source directories...' )
+    # some flags ...
+    flag_remove__part = rcf.get('build.copy.remove.__part', 'bool')
+
+    # Create a dict with files to copy
+    # dict key is the filename, dict value is the path
+    # if a same file is found in several projects, the value of the last scanned project is kept
+    #
+    # we copy only the files needed, and don't preserve their access time (so make doesn't consider them as up-to-date)
+    files_to_copy = {}
+
+    for sourcedir in sourcedirs.split():
+        # info ...
+        logging.info('    scanning %s ...' % sourcedir)
+        # should be a directory ...
+        if not os.path.isdir(sourcedir) :
+            logging.error('specified source dir is not an existing directory : %s' % sourcedir)
+            raise RuntimeError
+
+        # empty ? then add something for current directory:
+        if len(subdirs) == 0 :
+            subdirs = os.path.curdir
+
+        # loop over sub directories:
+        for subdir in subdirs :
+            sourcepath = os.path.join(sourcedir, subdir)
+            for sfile in os.listdir(sourcepath) :
+                sourcefile = os.path.join(sourcepath, sfile)
+                if not os.path.isdir(sourcefile):
+                    name, ext = os.path.splitext(sfile)
+                    skipit = False
+                    for pattern in rcf.get('build.copy.skip.ext').split() :
+                        if re.search(pattern, ext) :
+                            logging.debug( '        %-50s     %-30s [%-8s]' % (sourcefile,'','skip') )
+                            skipit = True
+                    if not skipit:
+                        outfile = sfile
+                        if flag_remove__part:
+                            if '__' in sfile:
+                                name, ext = os.path.splitext(sfile)
+                                outfile = name.split('__')[0] + ext
+                        if outfile not in rcf.get('build.copy.skip.file').split():
+                            targetfile = os.path.join(prefix, subdir, outfile)
+                            stat = 'new'
+                            if os.path.exists(targetfile):
+                                if pycasso_tools.diff_text_files(sourcefile, targetfile):
+                                    stat = 'differ'
+                                else:
+                                    stat = '...'
+                            logging.info('        %-50s  -> %-30s [%-8s]'%(sourcefile, os.path.join(subdir, outfile), stat))
+
+                            if stat in ['new', 'differ']:
+                                # if file is new or different from what's already in the build dir, add it to the list
+                                files_to_copy[os.path.join(subdir, outfile)] = sourcefile
+                            elif os.path.join(subdir, outfile) in files_to_copy:
+                                # if the file is identical to what is already in the build dir AND the file has been marked
+                                # as file to copy from a previously scanned directory, then delete that previous marking
+                                # e.g. if file x.f90 has a version in base and a version in proj A:
+                                # - the version from proj A will be in the build dir (from a previous build with proj A),
+                                # - when scanning the base, its status will be "differ", therefore it will be marked as file to copy
+                                # - when scanning proj A, its status will be "...", therefore it won't be marked as file to copy
+                                # - if we leave it like that, base/x.f90 will be copied to build, instead of proj/A/x.f90
+                                # - if we delete it from the list of files to copy at this stage, we get the correct version (from proj A) in the build dir.
+                                # - if a proj B comes after and has a third version of this file, it will be marked as file to copy normally.
+                                del files_to_copy[os.path.join(subdir, outfile)]
+
+    for k, v in files_to_copy.items():
+        print("Copy %s to %s"%(v, os.path.join(prefix, k)))
+        shutil.copy(v, os.path.join(prefix, k))
 
 
 def Build_Configure( rcf, pycus ) :
 
-    # external:
-    import os
-    import sys
-    import logging
-    import subprocess
-    
-    # tools:
-    from pyshell.base.bin import go
-    from pyshell.base.bin import pycasso_tools
-    
-    # change directory:
     current_dir = os.getcwd()
     configure_dir = rcf.get('build.sourcedir')
     logging.debug( '  change to %s ...' % configure_dir )
@@ -696,24 +407,14 @@ def Build_Configure( rcf, pycus ) :
     
     # get list with names of compiler flag groups to be used:
     flaggroups = pycus.Build_FlagGroups( rcf )
-    # loop over groups:
     for flaggroup in flaggroups :
-        # add flags for this group:
         fflags  =  fflags.strip()+' '+rcf.get('compiler.flags.'+flaggroup+'.fflags' )
         ldflags = ldflags.strip()+' '+rcf.get('compiler.flags.'+flaggroup+'.ldflags')
-    #endfor
-    logging.info( '      fflags       : %s' % fflags )
-    logging.info( '      ldflags      : %s' % ldflags )
-    
-    # idem for basic flags:
+
     flaggroups_basic = pycus.Build_FlagGroups( rcf, basic=True )
-    # loop over groups:
     for flaggroup in flaggroups_basic :
-        # add flags for this group:
         fflags_basic = fflags_basic.strip()+' '+rcf.get('compiler.flags.'+flaggroup+'.fflags' )
-    #endfor
-    logging.info( '      fflags basic : %s' % fflags_basic )
-    
+
     # default defined macro's:    
     macros_def   = rcf.get('build.configure.macro.define' ).split()
 
@@ -735,9 +436,7 @@ def Build_Configure( rcf, pycus ) :
 
     # loop over groups:
     for group in groups :
-        # start of the rc keys:
         keybase = 'build.configure.macro.'+group
-        # values for this group:
         macros_all   = rcf.get(keybase+'.all'    ).split()
         macros_hfile = rcf.get(keybase+'.hfile'  )
         # write header file ?
@@ -750,78 +449,55 @@ def Build_Configure( rcf, pycus ) :
             src.append( '!\n' )
             src.append( '! Include file with macro definitions.\n' )
             src.append( '!\n' )
-            # loop over macro's to be defined:
             for mdef in macros_def :
-                # vallue assigned ?
                 if '=' in mdef :
-                    # split in name and value:
                     mname,mval = mdef.split('=')
-                    # in this group ?
                     if mname in macros_all :
-                        # add line to file:
                         src.append( '#define %s %s\n' % (mname,mval) )
-                else :
-                    # in this group ?
-                    if mdef in macros_all :
-                        # add line to file:
-                        src.append( '#define %s\n' % mdef )
+                elif mdef in macros_all :
+                    src.append( '#define %s\n' % mdef )
+
             # write the source, replace existing file only if it was different:
             pycasso_tools.update_text_file( macros_hfile, src )
-        # extend list:
+
         for m in macros_all :
             if m not in macros_supported : macros_supported = macros_supported + macros_all
     
     # check for macro's that are not supported yet:
     any_error = False
     for macr in macros_defined :
-        # not supported ?
         if macr not in macros_supported :
-            # any unsupported macro's found yet ?
             if not any_error :
                 # initial error message:
                 logging.error( "one or more macro's have been defined that are not listed" )
                 logging.error( "in any 'build.configure.macro.*.all' lists:" )
-            #endif
-            # display problematic macro:
             logging.error( "  %s" % macr )
-            # reset flag:
             any_error = True
     
-    # any error ? then leave:
-    if any_error : raise Exception
+    if any_error :
+        raise Exception
 
     # create list of macro definitions as command line arguments, e.g. -Dwith_this_flag etc:
     fc_defs = ''   # for fortran compiler
     mk_defs = ''   # for makedepf90
+
     # add macro definitions ?
     define_D = rcf.get( 'build.configure.define.D', 'bool' )
     if define_D :
-        # compiler depended prefix for macro definition:
         fc_D = rcf.get('compiler.defineflag',default='-D')
         mk_D = '-D'
-        # loop over macro's to be defined:
         for mdef in macros_defined :
-            # add definition to command line argument list:
             fc_defs = fc_defs.strip()+(' %s%s' % (fc_D,mdef) )
             mk_defs = mk_defs.strip()+(' %s%s' % (mk_D,mdef) )
-        #endfor
-    #endif
-    # add definitions to flags:
     fflags = fflags.strip()+' '+fc_defs
-    # idem for basic flags:
     fflags_basic = fflags_basic.strip()+' '+fc_defs
     
-
     #
     # * libraries
     #
     
     # get list of default library names to be linked:
-    libnames = rcf.get( 'build.configure.libs' )
-    
-    # info ...
-    logging.debug( '  libraries to be used:' )
-    if len(libnames) > 0 : logging.debug( '    %s    (default)' % libnames )
+    libnames = rcf.get('build.configure.libs')
     
     # convert to list:
     libnames = libnames.split()
@@ -830,13 +506,10 @@ def Build_Configure( rcf, pycus ) :
     for mdef in macros_defined :
         # read list of libraries that should be added if this macro is defined:
         libnames_ifdef = rcf.get( 'build.configure.libs.ifdef.%s' % mdef, default='' )
-        # defined ?
         if len(libnames_ifdef) > 0 :
-            # add:
             libnames = libnames+libnames_ifdef.split()
-            # info ...
             logging.debug( '    %s    (macro `%s` defined)' % (libnames_ifdef,mdef) )
-    
+
     # get list of all supported library names:
     libnames_all = rcf.get( 'build.configure.libs.all' ).split()
     
@@ -846,20 +519,17 @@ def Build_Configure( rcf, pycus ) :
             logging.error( 'library name `%s` not in `build.configure.libs.all` list ...' % libname )
             raise Exception
     
-    # info ...
     logging.debug( '  libraries linked (in this order):' )
     # now add compiler and linker flags ;
     # loop over all supported libraries (this specfifies the linking order!)
     for libname in libnames_all :
-        # not in use ? then skip:
-        if libname not in libnames : continue
-        # info ...
-        logging.debug( '    %s' % libname )
-        # add include, module, and link flags:
-        fflags = fflags.strip()+' '+rcf.get('compiler.lib.'+libname+'.fflags')
-        libs   =   libs.strip()+' '+rcf.get('compiler.lib.'+libname+'.libs')
-        # idem for basic flags:
-        fflags_basic = fflags_basic.strip()+' '+rcf.get('compiler.lib.'+libname+'.fflags')
+        if libname in libnames :
+            logging.debug( '    %s' % libname )
+            # add include, module, and link flags:
+            fflags = fflags.strip()+' '+rcf.get('compiler.lib.'+libname+'.fflags')
+            libs   =   libs.strip()+' '+rcf.get('compiler.lib.'+libname+'.libs')
+            # idem for basic flags:
+            fflags_basic = fflags_basic.strip()+' '+rcf.get('compiler.lib.'+libname+'.fflags')
     
 
     #
@@ -973,49 +643,13 @@ def Build_Configure( rcf, pycus ) :
         command = 'makedepf90 %s -o %s %s > %s' % (mk_defs, exe, files, makefile_deps)
         logging.info(command)
         os.system(command)
-        # info ...
-        # logging.info( '    run command: %s' % command )
-        # import pdb; pdb.set_trace()
-        # # run command:
-        # try :
-        #     # run as a shell command since the file list is probably '*.F90' :
-        #     p = go.subprocess.call( command, shell=True )
-        # except go.subprocess.CallingError, err :
-        #     logging.error( err )
-        #     raise Exception
-        # except go.subprocess.StatusError, err :
-        #     for line in err.stderr : logging.error(line)
-        #     logging.error( err )
-        #     raise Exception
-        
-        # # write result:
-        # f = open( makefile_deps, 'w' )
-        # for line in p.stdout : f.write(line+'\n')
-        # f.close()
-        # # add to log file:
-        # logging.debug( '' )
-        # logging.debug( '---[%s]------------------------------------------------------------' % makefile_deps )
-        # for line in p.stdout : logging.debug(line)
-        # logging.debug( '-------------------------------------------------------------------' )
-        # logging.debug( '' )
-        
+
     logging.debug( '  change back to %s ...' % current_dir )
     os.chdir( current_dir )
     
 
 def Build_Make( rcf, pycus ) :
-
-    # external:
-    import os
-    import logging
-    
-    # info ...
-    logging.info( 'make executable ...' )
-    
-    # change directory:
+    logging.info('make executable ...')
     Make_dir = rcf.get('build.make.dir')
-    logging.debug( '  change to %s ...' % Make_dir )
-    os.chdir( Make_dir )
-
-    # call user script:
-    pycus.Build_Make( rcf )
+    os.chdir(Make_dir)
+    pycus.Build_Make(rcf)

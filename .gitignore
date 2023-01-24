@@ -4,4 +4,4 @@ run/*
 output/*
 *.mod
 *.pyc
-pyshell.egg-info/*
+*.egg-info*

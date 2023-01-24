@@ -36,12 +36,12 @@ module redgridZoom
   integer,parameter                     :: nredmax=30
   logical,parameter                     :: grid_reduced = .true.
   ! the number of reduced latitude circles per region
-  integer,dimension(nregions)           :: nred 
+  integer,dimension(nregions)           :: nred
   ! number of joined cells per latitude circle and region
   integer,dimension(nredmax,nregions)   :: clustsize
   ! reduced dimension......
   integer,dimension(nredmax,nregions)   :: imredj
-  ! reduced dimension over the full jm 
+  ! reduced dimension over the full jm
   integer,dimension(180    ,nregions)   :: imred
   ! latitude numbers where the reduction applies...
   integer,dimension(nredmax,nregions)   :: jred
@@ -56,16 +56,16 @@ module redgridZoom
 
 contains
 
-  !  Fortran code for Split-rg (reduced grid) scheme for advection on the 
+  !  Fortran code for Split-rg (reduced grid) scheme for advection on the
   !  globe.
   !
   !  VERSION:        1.1
   !  DATE:           November 12, 1998
   !
   !  Version 1.0     Dated October 19, 1998.
-  !  Version 1.1     Corrected red2uni routine and added new uni2red_m 
+  !  Version 1.1     Corrected red2uni routine and added new uni2red_m
   !                  routine.
-  !                  (Orography effects were erroneously not taken into 
+  !                  (Orography effects were erroneously not taken into
   !                  account in the reduced to uniform grid conversion)
   !
   !  This code solves the discrete advection equation for the tracer
@@ -114,14 +114,14 @@ contains
   !
   !  mw = vertical massflux         real(im,jm,lm) [kg/s]
   !                                 (defined on upper side of grid cell;
-  !                                 only l=1,..,lm-1 are used since it is 
-  !                                 assumed that there is no flux across 
+  !                                 only l=1,..,lm-1 are used since it is
+  !                                 assumed that there is no flux across
   !                                 the top of the model)
   !
   !  The number of latitudinal elements actually used for mu, mv, and mw
   !  depends on the advection grid; for mv this number is the determined
   !  by the latitude row with the largest number of cells bordering a
-  !  certain cell-bounding latitude circle. 
+  !  certain cell-bounding latitude circle.
   !
   !  mass = air mass                real(im,jm,lm) [kg]
   !
@@ -131,36 +131,36 @@ contains
   !  but can be changed for other global tracer models, provided that
   !  the calculation of the fluxes is done with an equivalent of tracer
   !  mixing ratios and not of tracer concentrations (make for other tracer
-  !  models, if necessary, the appropriate changes in the routines 
-  !  split_lab, split_phi, and split_eta, where now tracer mixing ratios 
+  !  models, if necessary, the appropriate changes in the routines
+  !  split_lab, split_phi, and split_eta, where now tracer mixing ratios
   !  are calculated as tracm / mass; also the grid transformations as done
   !  in advect_split are different for tracer mass and concentration).
   !
-  !  The longitude is counted from west to east, the latitude from south 
+  !  The longitude is counted from west to east, the latitude from south
   !  to north, and the height from surface to top.
   !
   !  The variables tracm, mu, mv, mw and mass should be declared in
-  !  the calling program under any name; dt is a  parameter. The 
-  !  parameters im, jm, and lm denote the number of grid cells in 
-  !  longitudinal, latitudinal, and vertical direction, respectively. 
-  !  ntracet is the number of transported tracers. The letters 'u', 'v', 
-  !  and 'w' for the three dimensions are in the code often replaced by 
-  !  'l', 'p', and 'e', denoting the coordinates lambda, phi, and eta, 
-  !  respectively (see Petersen et al. 1998). The advection scheme works 
-  !  in principle with any grid and coordinate system of the main model. 
-  !  However, in the current implementation (made for the TM3 model) the 
-  !  variables tracm and mass are assumed to be defined in the main 
-  !  program on a uniform grid with polar cap, and the variables mu, mv, 
-  !  and mw on the advection grid (i.e., reduced grid with polar cap). 
+  !  the calling program under any name; dt is a  parameter. The
+  !  parameters im, jm, and lm denote the number of grid cells in
+  !  longitudinal, latitudinal, and vertical direction, respectively.
+  !  ntracet is the number of transported tracers. The letters 'u', 'v',
+  !  and 'w' for the three dimensions are in the code often replaced by
+  !  'l', 'p', and 'e', denoting the coordinates lambda, phi, and eta,
+  !  respectively (see Petersen et al. 1998). The advection scheme works
+  !  in principle with any grid and coordinate system of the main model.
+  !  However, in the current implementation (made for the TM3 model) the
+  !  variables tracm and mass are assumed to be defined in the main
+  !  program on a uniform grid with polar cap, and the variables mu, mv,
+  !  and mw on the advection grid (i.e., reduced grid with polar cap).
   !  Locally in the advection routines a transformation of tracm and mass,
-  !  if necessary, is made to the advection grid. Please contact us for 
-  !  information on the changes that have to be made to work with other 
-  !  main model grids. Depending on the interests of users, we intend to 
-  !  generalize the code with respect to the main model grid in the next 
+  !  if necessary, is made to the advection grid. Please contact us for
+  !  information on the changes that have to be made to work with other
+  !  main model grids. Depending on the interests of users, we intend to
+  !  generalize the code with respect to the main model grid in the next
   !  version.
   !
   !  The following parameters and variables, related to the specification
-  !  of the advection grid are used by the routines of the advection 
+  !  of the advection grid are used by the routines of the advection
   !  scheme:
   !
   !     integer, parameter :: nredmax = 10
@@ -176,15 +176,15 @@ contains
   !               (in this implementation the minimum number of grid
   !               reductions per hemisphere equals one, since use is
   !               made of polar caps)
-  !   dl        = longitudinal uniform grid cell size in lambda 
+  !   dl        = longitudinal uniform grid cell size in lambda
   !               coordinates
   !   dp        = latitudinal grid cell size in phi coordinates
   !   nred      = number of grid reductions
-  !   clustsize = array with the ratio im / imred, as a function of the 
-  !               absolute value of the latitude zone index, where imred 
+  !   clustsize = array with the ratio im / imred, as a function of the
+  !               absolute value of the latitude zone index, where imred
   !               is the actually used number of cells in the longitudinal
   !               direction for the given latitude zone
-  !   jred      = latitude number where grid reduction starts (seen from 
+  !   jred      = latitude number where grid reduction starts (seen from
   !               SP), as a function of the reduction zone index
   !   imredj(j) = number of cells for latitude #j
   !   maxtau    = time step such that CFL <= 1 in all directions (given
@@ -192,17 +192,17 @@ contains
   !   advsub    = largest integer such that dtadv / advsub <= maxtau,
   !               with dtadv the advection time step in operator splitting
   !
-  !  The advection grid variables for the reduced grid are automatically 
+  !  The advection grid variables for the reduced grid are automatically
   !  set by the following line:
   !
   !     call initredgrid(clustsize, jred, imredj, nred, nredmax, im, jm,
   !   .                  pi, .false.)
   !
-  !  The variables maxtau and advsub should be set each time new mass 
+  !  The variables maxtau and advsub should be set each time new mass
   !  fluxes (wind fields) are available in the model through
   !
   !     call split_maxtau(mu, mv, mw, mass, dtadv)
-  !  
+  !
   !  where dtadv is the advection time step in the main model.
   !
   !  Furthermore, some routines in the advection scheme need information
@@ -215,9 +215,9 @@ contains
   !  epsilon is a Fortran 90 intrinsic function. For example, for our Cray
   !  C90 eps is about 1e-14.
   !
-  !  The above-mentioned parameters and variables are assumed to be 
-  !  declared in the module global_data (Fortran 90) or in some common 
-  !  block (Fortran 77). The current implementation (Fortran 90) uses the 
+  !  The above-mentioned parameters and variables are assumed to be
+  !  declared in the module global_data (Fortran 90) or in some common
+  !  block (Fortran 77). The current implementation (Fortran 90) uses the
   !  statements
   !
   !     use global_data
@@ -231,13 +231,13 @@ contains
   !     (declarations as given in the above)
   !     common/advgrid/nredmax,dl,dp,nred,clustsize,jred,maxtau,advsub
   !
-  !  Also the parameters im, jm, lm, ntracet, pi, twopi (= 2 * pi), and 
+  !  Also the parameters im, jm, lm, ntracet, pi, twopi (= 2 * pi), and
   !  eps are assumed to be declared in the module global_data.
   !
   !  --------------------------
   !  Example of a reduced grid
   !  --------------------------
-  ! 
+  !
   !  NP=North Pole
   !  SP=South Pole
   !  EQ=Equator
@@ -323,7 +323,7 @@ contains
 !          clust_size = clustsize(jreg,region)   !clustersize....
 !          do i=1,imredj(jreg,region)
 !             afl(i,j,l) = afl(i*clust_size,j,l)   !compress afl
-!             is = (i-1)*clust_size + 1  
+!             is = (i-1)*clust_size + 1
 !             ie = i*clust_size
 !             cfl(i,j,l) = sum(cfl(is:ie,j,l))            !put the total flux
 !             !        bfl(i,j+1,l) = sum(bfl(is:ie,j+1,l))/(ie-is+1)
@@ -334,12 +334,12 @@ contains
 !             cfl(i,j,l) = -one
 !          end do
 !          do i=imredj(jreg,region),1,-1
-!             is = (i-1)*clust_size + 1  
+!             is = (i-1)*clust_size + 1
 !             ie = i*clust_size
 !             !        bfl(is:ie,j+1,l)=bfl(i,j+1,l)
 !             !  put the same value everywhere on northern edge..
 !          end do
-!          ! the next statement is only meaningful for region cyclic regions; 
+!          ! the next statement is only meaningful for region cyclic regions;
 !          ! this subroutine should be applied only in this region
 !          ! set eastern boundary condition...
 !          afl(0,j,l)=afl(imredj(jreg,region),j,l)
@@ -353,7 +353,7 @@ contains
   subroutine uni2red_mf(region)
 
     ! Converts mass fluxes mfl from
-    ! uniform grid to reduced grid 
+    ! uniform grid to reduced grid
     !
     ! Written by Edwin Spee, CWI, Amsterdam, The Netherlands
     !
@@ -399,7 +399,7 @@ contains
           do i=imredj(jreg,region)+1,im(region)
              mfl(i,j,l) = -1.0
           end do
-          ! the next statement is only meaningful for region cyclic regions; 
+          ! the next statement is only meaningful for region cyclic regions;
           ! this subroutine should be applied only in this region
           ! set eastern boundary condition...
           mfl(0,j,l)=mfl(imredj(jreg,region),j,l)
@@ -418,7 +418,7 @@ contains
 
   subroutine initredgrid( region, imr, jmr, status )
 
-    ! The subroutine initredgrid fills the arrays clustsize, jred, and 
+    ! The subroutine initredgrid fills the arrays clustsize, jred, and
     ! imredj with appropriate values for the use of a reduced grid.
     !
     ! Written by Edwin Spee, CWI, Amsterdam, The Netherlands
@@ -450,11 +450,11 @@ contains
     ! --- const ------------------------------
 
     character(len=*), parameter ::  rname = mname//'/initredgrid'
-    
+
     ! --- local ------------------------------
-    
+
     integer   :: j, lrg
-    
+
     ! --- begin -----------------------------
 
     call read_redgrid( region, status )
@@ -479,8 +479,8 @@ contains
 
 
   ! *
-  
-  
+
+
   subroutine read_redgrid( region, status )
 
     use GO         , only : ReadRc
@@ -490,16 +490,16 @@ contains
     use dims   , only : ybeg, yend, dy, yref
 
     ! --- in/out ----------------------------------
-    
+
     integer, intent(in)           ::  region
     integer, intent(out)          ::  status
 
     ! --- const ------------------------------
 
     character(len=*), parameter ::  rname = mname//'/read_redgrid'
-    
+
     ! --- local ----------------------------------------
-    
+
     integer               ::  jmr
     integer               ::  i,j
     integer               ::  xam, nim
@@ -510,25 +510,25 @@ contains
     integer, allocatable  ::  ncombs_nh(:)
     integer               ::  nred_sh
     integer, allocatable  ::  ncombs_sh(:)
-    
+
     ! --- begin ----------------------------------------
-    
+
     ! number of lats
     jmr = jm(region)
-    
+
     ! number of reduced lat bands:
     call ReadRc( rcF, 'region.'//trim(region_name(region))//'.redgrid.nh.n', nred_nh, status )
     IF_NOTOK_RETURN(status=1)
     ! number of reduced lat bands:
     call ReadRc( rcF, 'region.'//trim(region_name(region))//'.redgrid.sh.n', nred_sh, status )
     IF_NOTOK_RETURN(status=1)
-    
+
     ! total number of reduced bands:
     nred(region) = nred_nh + nred_sh
-    
+
     ! reduced grid ?
     if ( nred(region) > 0 ) then
-    
+
       if ( okdebug ) then
         write (gol,'("read_redgrid:  Reading parameters from file rcfile.")'); call goPr
         write (gol,'("read_redgrid:  Region ",a)') trim(region_name(region)); call goPr
@@ -541,7 +541,7 @@ contains
       ! storage for combined cells for each lat; 1 by default
       allocate( ncombs(jmr) )
       ncombs = 1
-      
+
       ! counter of reduced lat bands from south-pole to north-pole:
       i = 0
 
@@ -564,7 +564,7 @@ contains
           clustsize(i,region) = ncomb
           ! idem for testing
           ncombs(jmr+1-jband) = ncomb
-          ! now check if the latitude circle overlaps with 
+          ! now check if the latitude circle overlaps with
           ! southernmost latitude of gridcel parent ...
           latps = ybeg(region) + (jred(i,region)-1)*nint(dy)/yref(region)
           ! northermost latitude ...
@@ -582,7 +582,7 @@ contains
         ! clear:
         deallocate( ncombs_sh )
       end if  ! sh
-      
+
       ! northern hemisphere ?
       if ( nred_nh > 0 ) then
         ! temporary storage:
@@ -602,7 +602,7 @@ contains
           clustsize(i,region) = ncomb
           ! idem for testing
           ncombs(jband) = ncomb
-          ! now check if the latitude circle overlaps with 
+          ! now check if the latitude circle overlaps with
           ! southermost latitude of gridcel parent ...
           latps = ybeg(region) + (jred(i,region)-1)*nint(dy)/yref(region)
           ! northermost latitude ...
@@ -620,7 +620,7 @@ contains
         ! clear:
         deallocate( ncombs_nh )
       end if  ! nh
-      
+
       ! testing ...
       do j = 1, jmr
         ! check if number of combined cells matches with grid:
@@ -659,12 +659,12 @@ contains
       deallocate( ncombs )
 
     else
-    
+
       write (gol,'("WARNING - No reduced grid for region :",a)') trim(region_name(region)); call goPr
       nred(region) = 0   !default no reduced grid...
-    
+
     end if
-    
+
     ! ok
     status = 0
 
@@ -782,20 +782,20 @@ contains
     do lrg=1,nred(region)
        redfact=clustsize(lrg,region)
        j = jred(lrg,region)
-       do l=1,lmr 
+       do l=1,lmr
           do i =  1,imredj(lrg,region)
              ! the is:ie  array section will be reduced to i
-             is = (i-1)*redfact + 1  
+             is = (i-1)*redfact + 1
              ie = i*redfact
              summ = sum(m(is:ie,j,l))
              m(i,j,l) = summ
-             !cmkm_uni(is:ie,j,l) = m_uni(is:ie,j,l)/summ   
+             !cmkm_uni(is:ie,j,l) = m_uni(is:ie,j,l)/summ
              !   use as distribution function
              ! when transferring back from reduced--->uniform grid...
-             ! these summations mean that mixing ratio and the 
+             ! these summations mean that mixing ratio and the
              ! the slopes are averaged out within the is:ie section
              ! with m(is:ie,...) taken as the weights
-#ifdef MPI               
+#ifdef MPI
              do n=1,ntracetloc
 #else
              do n=1,ntracet
@@ -813,7 +813,7 @@ contains
           ! JFM: set remaining masses to zero
           !      for consistency with adjoint
           do i = imredj(lrg,region)+1, im(region)
-#ifdef MPI               
+#ifdef MPI
              do n=1,ntracetloc
 #else
              do n=1,ntracet
@@ -870,32 +870,32 @@ contains
     rxm => mass_dat(region)%rxm_t
     rym => mass_dat(region)%rym_t
     rzm => mass_dat(region)%rzm_t
-	 rxxm => mass_dat(region)%rxxm_t
-	 rxym => mass_dat(region)%rxym_t
-	 rxzm => mass_dat(region)%rxzm_t
-	 ryym => mass_dat(region)%ryym_t
-	 ryzm => mass_dat(region)%ryzm_t
-	 rzzm => mass_dat(region)%rzzm_t
+     rxxm => mass_dat(region)%rxxm_t
+     rxym => mass_dat(region)%rxym_t
+     rxzm => mass_dat(region)%rxzm_t
+     ryym => mass_dat(region)%ryym_t
+     ryzm => mass_dat(region)%ryzm_t
+     rzzm => mass_dat(region)%rzzm_t
 
     lmr=lm(region)
 
     do lrg=1,nred(region)
        redfact=clustsize(lrg,region)
        j = jred(lrg,region)
-       do l=1,lmr 
+       do l=1,lmr
           do i =  1,imredj(lrg,region)
              ! the is:ie  array section will be reduced to i
-             is = (i-1)*redfact + 1  
+             is = (i-1)*redfact + 1
              ie = i*redfact
              summ = sum(m(is:ie,j,l))
              m(i,j,l) = summ
-             !cmkm_uni(is:ie,j,l) = m_uni(is:ie,j,l)/summ   
+             !cmkm_uni(is:ie,j,l) = m_uni(is:ie,j,l)/summ
              !   use as distribution function
              ! when transferring back from reduced--->uniform grid...
-             ! these summations mean that mixing ratio and the 
+             ! these summations mean that mixing ratio and the
              ! the slopes are averaged out within the is:ie section
              ! with m(is:ie,...) taken as the weights
-#ifdef MPI               
+#ifdef MPI
              do n=1,ntracetloc
 #else
              do n=1,ntracet
@@ -980,15 +980,15 @@ contains
     rym => mass_dat(region)%rym_t
     rzm => mass_dat(region)%rzm_t
 
-    distr_mode = 'unfrm' ! 'slope' or 'unfrm' 
+    distr_mode = 'unfrm' ! 'slope' or 'unfrm'
 
     do lrg=1,nred(region)
        redfact=clustsize(lrg,region)
        j = jred(lrg,region)
-       do l=1,lmr 
+       do l=1,lmr
           do i =  imredj(lrg,region),1,-1
              ! the i cell will be distributed within the is:ie array section
-             is = (i-1)*redfact + 1  
+             is = (i-1)*redfact + 1
              ie = i*redfact
 
              !m_uni is the mass-distribution in the non-reduced grid/divided by
@@ -996,28 +996,28 @@ contains
              mass=m(i,j,l); m(is:ie,j,l)= m_uni(is:ie,j,l)
 
              if (distr_mode=='unfrm') then
-                ! mixing ratio and x-slope will be UNiFoRMly distributed 
+                ! mixing ratio and x-slope will be UNiFoRMly distributed
                 ! within is:ie
-#ifdef MPI                  
+#ifdef MPI
                 do n=1,ntracetloc
 #else
                 do n=1,ntracet
 #endif
-                   rmm = rm(i,j,l,n) 
+                   rmm = rm(i,j,l,n)
                    rm(is:ie,j,l,n)= m_uni(is:ie,j,l)/mass* rmm
-                   rmm = rxm(i,j,l,n) 
+                   rmm = rxm(i,j,l,n)
                    rxm(is:ie,j,l,n)= m_uni(is:ie,j,l)/mass * rmm
                    ! rym and rzm are always distributed uniformly:
-                   rmm = rym(i,j,l,n) 
+                   rmm = rym(i,j,l,n)
                    rym(is:ie,j,l,n)= m_uni(is:ie,j,l)/mass * rmm
-                   rmm = rzm(i,j,l,n) 
+                   rmm = rzm(i,j,l,n)
                    rzm(is:ie,j,l,n)= m_uni(is:ie,j,l)/mass * rmm
                 end do
              end if
              !cmkelseif(distr_mode=='slope') then
           end do
           ! update cell(0,...) according to the periodic bc's:
-#ifdef MPI            
+#ifdef MPI
           rm(0,j,l,1:ntracetloc) = rm(im(region),j,l,1:ntracetloc)
 #else
           rm(0,j,l,1:ntracet) = rm(im(region),j,l,1:ntracet)
@@ -1076,15 +1076,15 @@ contains
     rym => mass_dat(region)%rym_t
     rzm => mass_dat(region)%rzm_t
 
-    distr_mode = 'unfrm' ! 'slope' or 'unfrm' 
+    distr_mode = 'unfrm' ! 'slope' or 'unfrm'
 
     do lrg=1,nred(region)
        redfact=clustsize(lrg,region)
        j = jred(lrg,region)
-       do l=1,lmr 
+       do l=1,lmr
           do i =  imredj(lrg,region),1,-1
              ! the i cell will be distributed within the is:ie array section
-             is = (i-1)*redfact + 1  
+             is = (i-1)*redfact + 1
              ie = i*redfact
 
              !m_uni is the mass-distribution in the non-reduced grid/divided by
@@ -1092,28 +1092,28 @@ contains
              mass=m(i,j,l); m(is:ie,j,l)= mass/(ie-is+1)
 
              if (distr_mode=='unfrm') then
-                ! mixing ratio and x-slope will be UNiFoRMly distributed 
+                ! mixing ratio and x-slope will be UNiFoRMly distributed
                 ! within is:ie
-#ifdef MPI                  
+#ifdef MPI
                 do n=1,ntracetloc
 #else
                 do n=1,ntracet
 #endif
-                   rmm = rm(i,j,l,n) 
+                   rmm = rm(i,j,l,n)
                    rm(is:ie,j,l,n)= m(is:ie,j,l)/mass* rmm
-                   rmm = rxm(i,j,l,n) 
+                   rmm = rxm(i,j,l,n)
                    rxm(is:ie,j,l,n)= m(is:ie,j,l)/mass * rmm
                    ! rym and rzm are always distributed uniformly:
-                   rmm = rym(i,j,l,n) 
+                   rmm = rym(i,j,l,n)
                    rym(is:ie,j,l,n)= m(is:ie,j,l)/mass * rmm
-                   rmm = rzm(i,j,l,n) 
+                   rmm = rzm(i,j,l,n)
                    rzm(is:ie,j,l,n)= m(is:ie,j,l)/mass * rmm
                 end do
              end if
              !cmkelseif(distr_mode=='slope') then
           end do
           ! update cell(0,...) according to the periodic bc's:
-#ifdef MPI            
+#ifdef MPI
           rm(0,j,l,1:ntracetloc) = rm(im(region),j,l,1:ntracetloc)
 #else
           rm(0,j,l,1:ntracet) = rm(im(region),j,l,1:ntracet)
@@ -1169,22 +1169,22 @@ contains
     rxm => mass_dat(region)%rxm_t
     rym => mass_dat(region)%rym_t
     rzm => mass_dat(region)%rzm_t
-	 rxxm => mass_dat(region)%rxxm_t
-	 rxym => mass_dat(region)%rxym_t
-	 rxzm => mass_dat(region)%rxzm_t
-	 ryym => mass_dat(region)%ryym_t
-	 ryzm => mass_dat(region)%ryzm_t
-	 rzzm => mass_dat(region)%rzzm_t
+     rxxm => mass_dat(region)%rxxm_t
+     rxym => mass_dat(region)%rxym_t
+     rxzm => mass_dat(region)%rxzm_t
+     ryym => mass_dat(region)%ryym_t
+     ryzm => mass_dat(region)%ryzm_t
+     rzzm => mass_dat(region)%rzzm_t
 
-    distr_mode = 'unfrm' ! 'slope' or 'unfrm' 
+    distr_mode = 'unfrm' ! 'slope' or 'unfrm'
 
     do lrg=1,nred(region)
        redfact=clustsize(lrg,region)
        j = jred(lrg,region)
-       do l=1,lmr 
+       do l=1,lmr
           do i =  imredj(lrg,region),1,-1
              ! the i cell will be distributed within the is:ie array section
-             is = (i-1)*redfact + 1  
+             is = (i-1)*redfact + 1
              ie = i*redfact
 
              !m_uni is the mass-distribution in the non-reduced grid/divided by
@@ -1192,21 +1192,21 @@ contains
              mass=m(i,j,l); m(is:ie,j,l)= mass/(ie-is+1)
 
              if (distr_mode=='unfrm') then
-                ! mixing ratio and x-slope will be UNiFoRMly distributed 
+                ! mixing ratio and x-slope will be UNiFoRMly distributed
                 ! within is:ie
-#ifdef MPI                  
+#ifdef MPI
                 do n=1,ntracetloc
 #else
                 do n=1,ntracet
 #endif
-                   rmm = rm(i,j,l,n) 
+                   rmm = rm(i,j,l,n)
                    rm(is:ie,j,l,n)= m(is:ie,j,l)/mass* rmm
-                   rmm = rxm(i,j,l,n) 
+                   rmm = rxm(i,j,l,n)
                    rxm(is:ie,j,l,n)= m(is:ie,j,l)/mass * rmm
                    ! rym and rzm are always distributed uniformly:
-                   rmm = rym(i,j,l,n) 
+                   rmm = rym(i,j,l,n)
                    rym(is:ie,j,l,n)= m(is:ie,j,l)/mass * rmm
-                   rmm = rzm(i,j,l,n) 
+                   rmm = rzm(i,j,l,n)
                    rzm(is:ie,j,l,n)= m(is:ie,j,l)/mass * rmm
                    rmm = rxxm(i,j,l,n)
                    rxxm(is:ie,j,l,n)= m(is:ie,j,l)/mass * rmm
@@ -1225,7 +1225,7 @@ contains
              !cmkelseif(distr_mode=='slope') then
           end do
           ! update cell(0,...) according to the periodic bc's:
-#ifdef MPI            
+#ifdef MPI
           rm(0,j,l,1:ntracetloc) = rm(im(region),j,l,1:ntracetloc)
 #else
           rm(0,j,l,1:ntracet) = rm(im(region),j,l,1:ntracet)
@@ -1243,12 +1243,12 @@ contains
     nullify(rxm)
     nullify(rym)
     nullify(rzm)
-	 nullify(rxxm)
-	 nullify(rxym)
-	 nullify(rxzm)
-	 nullify(ryym)
-	 nullify(ryzm)
-	 nullify(rzzm)
+     nullify(rxxm)
+     nullify(rxym)
+     nullify(rxzm)
+     nullify(ryym)
+     nullify(ryzm)
+     nullify(rzzm)
 
   end subroutine red2uni_em_2nd
 #endif

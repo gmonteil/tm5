@@ -732,7 +732,6 @@ contains
     ! --- begin -------------------------------------
 
     ! time interpolation :
-    print*, rcs
     call ReadRc( rcF, 'meteo.tinterp', rcs, tinterp, status )
     IF_NOTOK_RETURN(status=1)
 
