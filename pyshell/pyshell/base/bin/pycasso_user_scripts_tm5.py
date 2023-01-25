@@ -968,5 +968,4 @@ def Build_Make( rcf ) :
     command = maker.split() + ['-f', 'Makefile', exe]
     logging.info(str(command))
     go.subprocess.watch_call(command)
-    import pdb; pdb.set_trace()
-    
+

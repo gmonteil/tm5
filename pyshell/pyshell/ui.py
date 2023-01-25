@@ -32,22 +32,31 @@ def setup_emissions(rc, rcf):
                 # (needed for the daily_cycle files). So fill-in dummy values for the rest
                 catinfo = rc.emissions[tracer][region][cat]
                 if isinstance(catinfo, str):
-                    rcf.setkey('emission.%s.%s.category%i'%(tracer, region, icat + 1), "%s; 0.0; 0.0-e; 0.0-e-%s; 0; %s"%(cat, catinfo, cat))
+                    rcf.setkey('emission.%s.%s.category%i'%(tracer, region, icat + 1), "%s ; 0.0 ; 0000.0-e ; 0.0-e-%s ; 0 ; def-def-0"%(cat, catinfo))
 
                 # Else, the correlation lengths should also be specified:
                 else :
-                    rcf.setkey('emission.%s.%s.category%i'%(tracer, region, icat + 1), "%s; %.1f; %s; %s; %i; %s"%(
+                    rcf.setkey('emission.%s.%s.category%i'%(tracer, region, icat + 1), "%s ; %.1f ; %8s ; %s ; %i ; %s"%(
                         cat,
                         catinfo.uncertainty,
                         catinfo.spatial_correlation,
                         catinfo.temporal_correlation,
                         catinfo.optimize,
-                        cat
+                        catinfo.type
                     ))
         if rc.emissions[tracer].get('dailycycle'):
             rcf.setkey("%s.dailycycle.type"%tracer, rc.emissions[tracer].dailycycle.type)
             rcf.setkey("%s.emission.dailycycle"%tracer, 'T')
             rcf.setkey('%s.dailycycle.prefix'%tracer, rc.emissions[tracer].dailycycle.prefix)
+
+        for cat in rc.emissions[tracer].categories :
+            catinfo = rc.emissions[tracer].categories[cat]
+            if isinstance(catinfo, str):
+                rcf.setkey('%s.%s.routine'%(tracer, cat), catinfo)
+            else :
+                rcf.setkey('%s.%s.routine'%(tracer, cat), rc.emissions[tracer].categories[cat].routine)
+                if 'dailycycle' in catinfo:
+                    rcf.setkey('%s.%s.dailycycle'%(tracer, cat), 'T')
 
     if 'filename' in rc['emissions']:
         # Copy the emission file to the run directory:
@@ -83,7 +92,6 @@ def load_rcf(rc):
         rcf.setkey(k, v)
 
     rcf = setup_emissions(rc, rcf)
-
 
     return rcf
 
@@ -242,7 +250,6 @@ def optim(rc):
     run = setup_tm5(rc)
     run.SetupObservations(obs)
     run.Compile()
-    
     opt = congrad(run)
     opt.SetupOptimizer(restart=False, optimized_prior_state=False, emclasses=emclasses)
     opt.Var4D()

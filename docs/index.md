@@ -35,3 +35,10 @@ output :
         lat_range : [30, 74]
         lon_range : [-18, 36]
 ```
+
+### Inversions
+
+```
+tm5 --dev pyshell optim --rc optim.yaml
+```
+* the key `optim.emissions` must be set to 1

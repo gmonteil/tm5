@@ -25,6 +25,7 @@ class Precon(object):
 
     def __init__(self, tm5Obj, resume=False, cleanup=True):
         super(Precon, self).__init__()
+
         self.output_dir = tm5Obj.output_dir
         self.tm5 = tm5Obj
 
@@ -145,7 +146,7 @@ class Precon(object):
                    elif res_key.find('daily') != -1:
                       dt = time_interval['dt'].days/30.0   # assumes 30 day in a month
                    else:
-                      print "invalid time resolution:", res_key
+                      print("invalid time resolution:", res_key)
                       sys.exit()
                    # note: routine calc_temp_corr assumes time-steps of one month
                    # now we allow for longer/shorter steps also. Expressed in months units it is now
@@ -169,6 +170,7 @@ class Precon(object):
             P_bias, D_bias = self.matrix_square_root(corr_matrix)
             self.Bias_L = dot(P_bias,D_bias)
             self.Bias_Lt= transpose(self.Bias_L)
+
 
     def GetZoomRegions(self):
         """
