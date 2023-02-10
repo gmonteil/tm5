@@ -2,6 +2,11 @@
 # encoding: utf-8
 # rc.py
 
+import sys
+import re
+import os
+import logging
+
 
 # ------------------------------------------------
 # help
@@ -248,14 +253,10 @@ class RcFile( object ) :
         self.outfile = []
         self.values = {}
         self.sources = {}
-	if filename != None :
-	    self.readfile(filename, marks=marks)
+        if filename != None :
+            self.readfile(filename, marks=marks)
 
     def readfile(self, filename, marks=('${','}'), silent=False):
-        import sys
-        import re
-        import os
-        import logging
 
         logging.debug( 'reading rcfile %s ...' % filename )
         if not os.path.exists(filename) :
@@ -263,10 +264,9 @@ class RcFile( object ) :
             raise IOError, msg
         self.filename = filename
         self.rootdir = os.path.split(filename)[0]
-        f = open(filename,'r')
-        inpfile = f.readlines()
-	inpfile.extend(self.outfile)
-        f.close()
+        with open(filename,'r') as f:
+            inpfile = f.readlines()
+            inpfile.extend(self.outfile)
 
         # create traceback info:
         inptrace = []
@@ -874,30 +874,11 @@ class RcFile( object ) :
             # renew traceback:
             inptrace = self.trace
 
-        #endwhile   # something to be done
-
-    #enddef  # __init__
-
-    # ***
-
     def has_key( self, key ) :
-
-        # from dictionairy:
         return self.values.has_key(key)
 
-    #enddef
-
-    # ***
-
     def keys( self ) :
-
-        # from dictionairy:
         return self.values.keys()
-
-    #enddef
-
-    # ***
-
 
     def get( self, key, totype='', default=None, verbose=False ) :
 
@@ -950,15 +931,8 @@ class RcFile( object ) :
                 # something wrong ...
                 logging.error( "key '%s' not found in '%s' and no default specified" % (key,self.filename) )
                 raise Exception
-            #endif
-        #endif
 
-        # ok
         return value
-
-    #enddef
-
-    # ***
 
     def replace( self, key, val ) :
 
@@ -994,12 +968,7 @@ class RcFile( object ) :
         if not found :
             logging.error( 'could not replace key : %s' % key )
             raise Exception
-        #endif
 
-        # ok
-        return
-
-    #enddef
     def replace_add(self, key, val):
         """
         Replace a key by a new value.
@@ -1009,9 +978,6 @@ class RcFile( object ) :
             self.replace(key, val)
         else:
             self.add(key, val)
-
-    #enddef
-    # ***
 
     def add( self, key, val, comment='' ) :
 
@@ -1024,15 +990,8 @@ class RcFile( object ) :
 
         # add to dictionairy:
         self.values[key.strip()] = val
-	self.sources[key] = 'External'
+        self.sources[key] = 'External'
         
-        # ok
-        return
-
-    #enddef
-
-    # ***
-
     def substitute( self, line, marks=('${','}') ) :
 
         """
@@ -1067,91 +1026,32 @@ class RcFile( object ) :
                 val = self.values[key]
                 # substitute value:
                 line = line.replace(pat,val)
-            #endif
-        #endfor  # matched patterns
-
-        # ok
         return line
-
-    #enddef
-
-
-    # ***
 
 
     def WriteFile( self, filename ) :
-
         """ write the dictionary to file"""
-
-        # open file for writing:
-        f = open(filename,'w')
-
-        ## loop over key/value pairs:
-        #for k,v in self.iteritems():
-        #    # add line; at least the specified number of characters
-        #    # is used for the key:
-        #    f.write( '%-20s:%s\n' % (k,v) )
-        ##endfor
-
-        # write processed input:
-        f.writelines( self.outfile )
-        # close file:
-        f.close()
-
-    #endif
-
-
-#endclass    # RcFile
-
-
-# ***
+        with open(filename,'w') as f:
+            f.writelines( self.outfile )
 
 
 def read( rcfilename, silent=False ) :
-
     """
     This method reads an rc-file by making an instance of the RcFile class,
     and then returns the dictionary of values only.
     This makes it backwards compatible with older implementations of the rc.py module
     """
-
-    rcdict = RcFile( rcfilename, silent=silent )
-
-    return rcdict.values
-
-#enddef
-
-
-# ***
+    return RcFile(rcfilename, silent=silent).values
 
 
 def write( filename, rcdict ) :
-
     """
     This method writes an rc-file dictionary.
     This makes it backwards compatible with older implementations of the rc.py module
     """
-
-    # open file for writing:
-    f = open(filename,'w')
-
-    # loop over key/value pairs:
-    for k,v in rcdict.items():
-        # add line; at least the specified number of characters
-        # is used for the key:
-        f.write( '%-20s:%s\n' % (k,v) )
-    #endfor
-
-    # close file:
-    f.close()
-
-#enddef
-
-
-
-# ------------------------------------------------
-# script
-# ------------------------------------------------
+    with open(filename,'w') as f:
+        for k,v in rcdict.items():
+            f.write( '%-20s:%s\n' % (k,v) )
 
 
 if __name__ == '__main__':
@@ -1194,7 +1094,7 @@ if __name__ == '__main__':
 
     # print documentation ?
     if opts.doc :
-        print __doc__
+        print(__doc__)
         sys.exit(0)
     #endif
 
@@ -1215,7 +1115,7 @@ if __name__ == '__main__':
 
     # print pre-processed file ?
     if opts.write :
-        for line in rcf.outfile : print line.strip()
+        for line in rcf.outfile : print(line.strip())
         sys.exit(0)
     #endif
 
@@ -1235,15 +1135,15 @@ if __name__ == '__main__':
             flag = rcf.get(rckey,'bool')
             # print result:
             if flag :
-                print 'True'
+                print('True')
             else :
-                print 'False'
+                print('False')
             #endif
         else :
             # extract value:
             value = rcf.get(rckey)
             # display:
-            print value
+            print(value)
         #endif
 
     else :
@@ -1251,9 +1151,9 @@ if __name__ == '__main__':
         # default value provided ?
         if opts.default != None :
             # display:
-            print opts.default
+            print(opts.default)
         else :
-            print 'ERROR - key "%s" not found in rcfile "%s" and no default specified' % (rckey,rcfile)
+            print('ERROR - key "%s" not found in rcfile "%s" and no default specified' % (rckey,rcfile))
             sys.exit(1)
         #endif
 

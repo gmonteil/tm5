@@ -1,6 +1,7 @@
 import logging
 import os
 import go
+import pycasso_tools
 
 
 def DefineOptions(parser) :
@@ -47,18 +48,21 @@ def Build_FlagGroups( rcf, basic=False ) :
     flaggroups = ['default','real8']
     
     # add mpi ?
-    if rcf.get('par.mpi','bool') : flaggroups.append('mpi')
+    if rcf.get('par.mpi','bool') :
+        flaggroups.append('mpi')
     
     # include not standard flags ?
     if not basic :
 
         # add openmp ?
-        if rcf.get('par.openmp','bool') : flaggroups.append('openmp')
+        if rcf.get('par.openmp','bool') :
+            flaggroups.append('openmp')
 
         # read other:
         line = rcf.get('build.configure.flags')
         # add if necessary:
-        if len(line) > 0 : flaggroups = flaggroups + line.split()
+        if len(line) > 0 :
+            flaggroups = flaggroups + line.split()
 
     #endif
     
@@ -280,319 +284,146 @@ def Build_Configure_Grid__regions( rcf ) :
     Write 'dims_grid.F90' from rcfile settings.
     """
     
-    # external:
-    import logging
-    import pycasso_tools
-
-    # info ...
-    logging.info( '      user script Build_Configure_Grid__regions ...' )
-    
-    # which file to create ?    
+    # which file to create ?
     srcfile = 'dims_grid.F90'
     
     # different versions could be made, depending on the release (former cycle);
     # get the target release, use ininite number ('latest' release) as default:
     build_release = rcf.get( 'build.configure.release', 'float', default=999.9 )
 
-    # info ...
-    logging.info( '    create %s ...' % srcfile )
-    
     # model regions:
     regions = rcf.get('regions').split()
 
-    # old or new style ...
-    if build_release < 3.0 :
+    # actual number:
+    nregions = len(regions)
 
-        # actual number:
-        nregions = len(regions)
-    
-        # maximum length of grid names:
-        len_region_name = max(map(len,regions))
+    # maximum length of grid names:
+    len_region_name = max(map(len,regions))
 
-        # other ...
-        maxref = rcf.get('region.maxref')
-        dx = rcf.get('region.dx')
-        dy = rcf.get('region.dy')
-        dz = rcf.get('region.dz')
+    # other ...
+    maxref = rcf.get('region.maxref')
+    dx = rcf.get('region.dx')
+    dy = rcf.get('region.dy')
+    dz = rcf.get('region.dz')
 
-        # start with empty file:
-        lines = []
-        lines.append( '!#################################################################\n' )
-        lines.append( '!\n' )
-        lines.append( '! Grids.\n' )
-        lines.append( '!\n' )
-        lines.append( '!### macro\'s #####################################################\n' )
-        lines.append( '!\n' )
-        lines.append( 'module dims_grid\n' )
-        lines.append( '\n' )
-        lines.append( '  implicit none\n' )
-        lines.append( '  \n' )
-        lines.append( '  ! --- in/out ------------------------------\n' )
-        lines.append( '  \n' )
-        lines.append( '  public\n' )
-        lines.append( '  \n' )
-        lines.append( '  \n' )
-        lines.append( '  ! --- const -------------------------------\n' )
-        lines.append( '  \n' )
-        lines.append( '  \n' )
-        lines.append( '  ! Basic model definition: resolution etc. including some routines\n' )
-        lines.append( '  ! to fill the data structure.\n' )
-        lines.append( '\n' )
-        lines.append( '  ! basic (coarsest) resolution in degrees for x and y (dz default 1.0)\n' )
-        lines.append( '\n' )
-        lines.append( '  real, parameter     ::  dx = %s\n' % dx )
-        lines.append( '  real, parameter     ::  dy = %s\n' % dy )
-        lines.append( '  real, parameter     ::  dz = %s\n' % dz )
-        lines.append( '\n' )
-        lines.append( '\n' )
-        lines.append( '  ! Maximum number of zoom regions, \n' )
-        lines.append( '  ! including the basic (coarsest grid) region;\n' )
-        lines.append( '  ! arrays are allocated for each of these regions:\n' )
-        lines.append( '  integer, parameter  ::  nregions_max = %i\n' % nregions )
-        lines.append( '  \n' )
-        lines.append( '  ! Actual number of zoom regions,\n' )
-        lines.append( '  ! during testing this could be set to 1 to quickly run the model.\n' )
-        lines.append( '  integer, parameter :: nregions = %s\n' % nregions )
-        lines.append( '\n' )
-        lines.append( '  ! region_name is used to recognise the METEO files\n' )
-        lines.append( '  ! region_name is also used in the HDF output file name\n' )
-        lines.append( '  ! region 1 should always be the global domain\n' )
-        lines.append( '\n' )
-        lines.append( '  integer, parameter  ::  len_region_name = %i\n' % len_region_name )
-        lines.append( '  character(len=len_region_name), parameter  ::  region_name(1:nregions) = &\n' )
-        line = '       (/ '
-        for i in range(len(regions)) :
-            if i > 0 : line = line + ', '
-            fmt = "'%%-%is'" % len_region_name
-            line = line + ( fmt % regions[i] )
+    # start with empty file:
+    lines = []
+    lines.append( '!#################################################################\n' )
+    lines.append( '!\n' )
+    lines.append( '! Grids.\n' )
+    lines.append( '!\n' )
+    lines.append( '!### macro\'s #####################################################\n' )
+    lines.append( '!\n' )
+    lines.append( 'module dims_grid\n' )
+    lines.append( '\n' )
+    lines.append( '  implicit none\n' )
+    lines.append( '  \n' )
+    lines.append( '  ! --- in/out ------------------------------\n' )
+    lines.append( '  \n' )
+    lines.append( '  public\n' )
+    lines.append( '  \n' )
+    lines.append( '  \n' )
+    lines.append( '  ! --- const -------------------------------\n' )
+    lines.append( '  \n' )
+    lines.append( '  \n' )
+    lines.append( '  ! Basic model definition: resolution etc. including some routines\n' )
+    lines.append( '  ! to fill the data structure.\n' )
+    lines.append( '\n' )
+    lines.append( '  ! basic (coarsest) resolution in degrees for x and y (dz default 1.0)\n' )
+    lines.append( '\n' )
+    lines.append( '  real, parameter     ::  dx = %s\n' % dx )
+    lines.append( '  real, parameter     ::  dy = %s\n' % dy )
+    lines.append( '  real, parameter     ::  dz = %s\n' % dz )
+    lines.append( '\n' )
+    lines.append( '\n' )
+    lines.append( '  ! Maximum number of zoom regions, \n' )
+    lines.append( '  ! including the basic (coarsest grid) region;\n' )
+    lines.append( '  ! arrays are allocated for each of these regions:\n' )
+    lines.append( '  integer, parameter  ::  nregions_max = %i\n' % nregions )
+    lines.append( '  \n' )
+    lines.append( '  ! Actual number of zoom regions,\n' )
+    lines.append( '  ! during testing this could be set to 1 to quickly run the model.\n' )
+    lines.append( '  integer, parameter :: nregions = %s\n' % nregions )
+    lines.append( '\n' )
+    lines.append( '  ! region_name is used to recognise the METEO files\n' )
+    lines.append( '  ! region_name is also used in the HDF output file name\n' )
+    lines.append( '  ! region 1 should always be the global domain\n' )
+    lines.append( '\n' )
+    lines.append( '  integer, parameter  ::  len_region_name = %i\n' % len_region_name )
+    lines.append( '  character(len=len_region_name), parameter  ::  region_name(1:nregions) = &\n' )
+    line = '       (/ '
+    for i in range(len(regions)) :
+        if i > 0 : line = line + ', '
+        fmt = "'%%-%is'" % len_region_name
+        line = line + ( fmt % regions[i] )
+    #endfor
+    lines.append( line+'/)\n' )
+    lines.append( '\n' )
+    lines.append( '  ! coordinates (in degrees) for each region:\n' )
+    lines.append( '  ! xcyc = 1 if the region has cyclic x-boundary conditions\n' )
+    lines.append( '  ! touch_np = 1 if region touches the north pole\n' )
+    lines.append( '  ! touch_sp = 1 if region touches the south pole\n' )
+    lines.append( '  ! xbeg : the westmost border of the region\n' )
+    lines.append( '  ! xend : the eastmost border of the region\n' )
+    lines.append( '  ! ybeg : the southmost border of the region\n' )
+    lines.append( '  ! yend : the northmost border of the region\n' )
+    lines.append( '\n' )
+    fields = ['xcyc','touch_np','touch_sp','xbeg','xend','ybeg','yend','im','jm']
+    for ifield in range(len(fields)) :
+        field = fields[ifield]
+        line = '  integer, parameter  ::  %-8s(nregions) = (/ ' % field
+        for iregion in range(len(regions)) :
+            region = regions[iregion]
+            if iregion > 0 : line = line + ', '
+            val = rcf.get( 'region.%s.%s' % (region,field) )
+            line = line + ( '%4i' % int(val) )
         #endfor
-        lines.append( line+'/)\n' )
-        lines.append( '\n' )
-        lines.append( '  ! coordinates (in degrees) for each region:\n' )
-        lines.append( '  ! xcyc = 1 if the region has cyclic x-boundary conditions\n' )
-        lines.append( '  ! touch_np = 1 if region touches the north pole\n' )
-        lines.append( '  ! touch_sp = 1 if region touches the south pole\n' )
-        lines.append( '  ! xbeg : the westmost border of the region\n' )
-        lines.append( '  ! xend : the eastmost border of the region\n' )
-        lines.append( '  ! ybeg : the southmost border of the region\n' )
-        lines.append( '  ! yend : the northmost border of the region\n' )
-        lines.append( '\n' )
-        fields = ['xcyc','touch_np','touch_sp','xbeg','xend','ybeg','yend','im','jm']
-        for ifield in range(len(fields)) :
-            field = fields[ifield]
-            line = '  integer, parameter  ::  %-8s(nregions) = (/ ' % field
-            for iregion in range(len(regions)) :
-                region = regions[iregion]
-                if iregion > 0 : line = line + ', '
-                val = rcf.get( 'region.%s.%s' % (region,field) )
-                line = line + ( '%4i' % int(val) )
-            #endfor
-            lines.append( line+' /)\n' )
-        #endfor
-        lines.append( '\n' )
-        lines.append( '\n' )
-        lines.append( '  ! maximum refinement factor (can be arbitrary in principle):\n' )
-        lines.append( '\n' )
-        lines.append( '  integer, parameter :: maxref = %s\n' % maxref )
-        lines.append( '\n' )
-        lines.append( '  ! refinement factors for each region (<= maxref)\n' )
-        lines.append( '  ! tref may differ from xref/yref. In the current \n' )
-        lines.append( '  ! implementation it should be 1,2,4,6,...\n' )
-        lines.append( '\n' )
-        fields = ['xref','yref','zref','tref']
-        for ifield in range(len(fields)) :
-            field = fields[ifield]
-            line = '  integer, parameter  :: %s(0:nregions) = (/ 1' % field
-            for i in range(nregions) :
-                #if i > 0 : line = line + ', '
-                line = line + ', '
-                val = rcf.get( 'region.%s.%s' % (regions[i],field) )
-                line = line + ( '%4i' % int(val) )
-            #endfor
-            lines.append( line+' /)\n' )
-        #endfor
-        lines.append( '\n' )
-        lines.append( '  ! Define the parent of each region. \n' )
-        lines.append( '  ! Global region 1 should have parent 0 (globe single cell);\n' )
-        lines.append( '  ! global surface region should have parent 1 (global region).\n' )
-        line = '  integer, parameter  ::  parent(nregions) = (/ '
+        lines.append( line+' /)\n' )
+    #endfor
+    lines.append( '\n' )
+    lines.append( '\n' )
+    lines.append( '  ! maximum refinement factor (can be arbitrary in principle):\n' )
+    lines.append( '\n' )
+    lines.append( '  integer, parameter :: maxref = %s\n' % maxref )
+    lines.append( '\n' )
+    lines.append( '  ! refinement factors for each region (<= maxref)\n' )
+    lines.append( '  ! tref may differ from xref/yref. In the current \n' )
+    lines.append( '  ! implementation it should be 1,2,4,6,...\n' )
+    lines.append( '\n' )
+    fields = ['xref','yref','zref','tref']
+    for ifield in range(len(fields)) :
+        field = fields[ifield]
+        line = '  integer, parameter  :: %s(0:nregions) = (/ 1' % field
         for i in range(nregions) :
-            if i > 0 : line = line + ', '
-            val = rcf.get( 'region.%s.parent' % regions[i] )
-            if val == 'globe' :
-                ireg = 0
-            else :
-                ireg = regions.index(val) + 1
-            #endif
-            line = line + ( '%i' % ireg )
+            #if i > 0 : line = line + ', '
+            line = line + ', '
+            val = rcf.get( 'region.%s.%s' % (regions[i],field) )
+            line = line + ( '%4i' % int(val) )
         #endfor
         lines.append( line+' /)\n' )
-        lines.append( '\n' )
-        lines.append( 'end module dims_grid\n' )
-
-    else :   # release 3.0 and higher
-
-        # maximum number of 'zooming' model regions:
-        nregions_max = len(regions)
-
-        # add global surface grid if necessary:
-        region_glbsfc = rcf.get('region.glbsfc')
-        if len(region_glbsfc) > 0 : regions = regions + [region_glbsfc]
-        # all regions:
-        nregions_all = len(regions)
-
-        # start with global grid:
-        regions = [rcf.get('region.globe')] + regions
-
-        # actual number is the maximum ...
-        nregions = 'nregions_max'
-        
-        # maximum length of grid names:
-        len_region_name = max(map(len,regions))
-
-        # other ...
-        maxref = rcf.get('region.maxref')
-        dx = rcf.get('region.dx')
-        dy = rcf.get('region.dy')
-        dz = rcf.get('region.dz')
-
-        # fill lines:
-        lines = []
-        lines.append( '!#################################################################\n' )
-        lines.append( '!\n' )
-        lines.append( '! Grids.\n' )
-        lines.append( '!\n' )
-        lines.append( '!### macro\'s #####################################################\n' )
-        lines.append( '!\n' )
-        lines.append( '#include "tm5.inc"\n' )
-        lines.append( '!\n' )
-        lines.append( '!#################################################################\n' )
-        lines.append( '\n' )
-        lines.append( 'module dims_grid\n' )
-        lines.append( '\n' )
-        lines.append( '  implicit none\n' )
-        lines.append( '  \n' )
-        lines.append( '  ! --- in/out ------------------------------\n' )
-        lines.append( '  \n' )
-        lines.append( '  public\n' )
-        lines.append( '  \n' )
-        lines.append( '  \n' )
-        lines.append( '  ! --- const -------------------------------\n' )
-        lines.append( '  \n' )
-        lines.append( '  \n' )
-        lines.append( '  ! Basic model definition: resolution etc. including some routines\n' )
-        lines.append( '  ! to fill the data structure.\n' )
-        lines.append( '\n' )
-        lines.append( '  ! basic (coarsest) resolution in degrees for x and y (dz default 1.0)\n' )
-        lines.append( '\n' )
-        lines.append( '  real, parameter     ::  dx = %s\n' % dx )
-        lines.append( '  real, parameter     ::  dy = %s\n' % dy )
-        lines.append( '  real, parameter     ::  dz = %s\n' % dz )
-        lines.append( '\n' )
-        lines.append( '\n' )
-        lines.append( '  ! Maximum number of zoom regions, \n' )
-        lines.append( '  ! including the basic (coarsest grid) region;\n' )
-        lines.append( '  ! arrays are allocated for each of these regions:\n' )
-        lines.append( '  integer, parameter  ::  nregions_max = %i\n' % nregions_max )
-        lines.append( '  \n' )
-        if len(region_glbsfc) > 0 :
-            lines.append( '  ! extra grid:\n' )
-            lines.append( '  integer, parameter  ::  nregions_all = nregions_max + 1\n' )
-            lines.append( '  integer, parameter  ::  iglbsfc = nregions_max + 1\n' )
+    #endfor
+    lines.append( '\n' )
+    lines.append( '  ! Define the parent of each region. \n' )
+    lines.append( '  ! Global region 1 should have parent 0 (globe single cell);\n' )
+    lines.append( '  ! global surface region should have parent 1 (global region).\n' )
+    line = '  integer, parameter  ::  parent(nregions) = (/ '
+    for i in range(nregions) :
+        if i > 0 : line = line + ', '
+        val = rcf.get( 'region.%s.parent' % regions[i] )
+        if val == 'globe' :
+            ireg = 0
         else :
-            lines.append( '  ! no extra surface grid, use the global model grid for this:\n' )
-            lines.append( '  integer, parameter  ::  nregions_all = nregions_max\n' )
-            lines.append( '  integer, parameter  ::  iglbsfc = 1\n' )
+            ireg = regions.index(val) + 1
         #endif
-        lines.append( '\n' )
-        lines.append( '  ! Actual number of zoom regions,\n' )
-        lines.append( '  ! during testing this could be set to 1 to quickly run the model.\n' )
-        lines.append( '  integer, parameter :: nregions = %s\n' % nregions )
-        lines.append( '\n' )
-        lines.append( '  ! region_name is used to recognise the METEO files\n' )
-        lines.append( '  ! region_name is also used in the HDF output file name\n' )
-        lines.append( '  ! region 1 should always be the global domain\n' )
-        lines.append( '\n' )
-        lines.append( '  integer, parameter  ::  len_region_name = %i\n' % len_region_name )
-        lines.append( '  character(len=len_region_name), parameter  ::  region_name(0:nregions_all) = &\n' )
-        line = '       (/ '
-        for i in range(len(regions)) :
-            if i > 0 : line = line + ', '
-            fmt = "'%%-%is'" % len_region_name
-            line = line + ( fmt % regions[i] )
-        #endfor
-        lines.append( line+'/)\n' )
-        lines.append( '\n' )
-        lines.append( '  ! coordinates (in degrees) for each region:\n' )
-        lines.append( '  ! xcyc = 1 if the region has cyclic x-boundary conditions\n' )
-        lines.append( '  ! touch_np = 1 if region touches the north pole\n' )
-        lines.append( '  ! touch_sp = 1 if region touches the south pole\n' )
-        lines.append( '  ! xbeg : the westmost border of the region\n' )
-        lines.append( '  ! xend : the eastmost border of the region\n' )
-        lines.append( '  ! ybeg : the southmost border of the region\n' )
-        lines.append( '  ! yend : the northmost border of the region\n' )
-        lines.append( '\n' )
-        fields = ['xcyc','touch_np','touch_sp','xbeg','xend','ybeg','yend','im','jm']
-        for ifield in range(len(fields)) :
-            field = fields[ifield]
-            line = '  integer, parameter  ::  %-8s(0:nregions_all) = (/ ' % field
-            for iregion in range(len(regions)) :
-                region = regions[iregion]
-                if iregion > 0 : line = line + ', '
-                val = rcf.get( 'region.%s.%s' % (region,field) )
-                line = line + ( '%4i' % int(val) )
-            #endfor
-            lines.append( line+' /)\n' )
-        #endfor
-        lines.append( '\n' )
-        lines.append( '\n' )
-        lines.append( '  ! maximum refinement factor (can be arbitrary in principle):\n' )
-        lines.append( '\n' )
-        lines.append( '  integer, parameter :: maxref = %s\n' % maxref )
-        lines.append( '\n' )
-        lines.append( '  ! refinement factors for each region (<= maxref)\n' )
-        lines.append( '  ! tref may differ from xref/yref. In the current \n' )
-        lines.append( '  ! implementation it should be 1,2,4,6,...\n' )
-        lines.append( '\n' )
-        fields = ['xref','yref','zref','tref']
-        for ifield in range(len(fields)) :
-            field = fields[ifield]
-            line = '  integer, parameter  :: %s(0:nregions_max) = (/ ' % field
-            for i in range(0,nregions_max+1) :
-                if i > 0 : line = line + ', '
-                val = rcf.get( 'region.%s.%s' % (regions[i],field) )
-                line = line + ( '%4i' % int(val) )
-            #endfor
-            lines.append( line+' /)\n' )
-        #endfor
-        lines.append( '\n' )
-        lines.append( '  ! Define the parent of each region. \n' )
-        lines.append( '  ! Global region 1 should have parent 0 (globe single cell);\n' )
-        lines.append( '  ! global surface region should have parent 1 (global region).\n' )
-        line = '  integer, parameter  ::  parent(1:nregions_all) = (/ '
-        for i in range(1,nregions_all+1) :
-            if i > 1 : line = line + ', '
-            val = rcf.get( 'region.%s.parent' % regions[i] )
-            ireg = regions.index(val)
-            line = line + ( '%i' % ireg )
-        #endfor
-        lines.append( line+' /)\n' )
-        lines.append( '\n' )
-        lines.append( 'end module dims_grid\n' )
+        line = line + ( '%i' % ireg )
+    #endfor
+    lines.append( line+' /)\n' )
+    lines.append( '\n' )
+    lines.append( 'end module dims_grid\n' )
 
-    #endif
-    
     # update file if necessary ...
     pycasso_tools.update_text_file( srcfile, lines )
     
-    # ok
-    return
-    
-#enddef
-
-
-# *
-
 
 def Build_Configure_TracerOrder( rcf ) :
 

@@ -1,4 +1,7 @@
+#!/usr/bin/env python
 
+import os
+import logging
 
 """
 PYCASSO tools
@@ -41,30 +44,9 @@ def write_text_file( fname, text ) :
 
 
 def diff_text_files( fname1, fname2 ) :
-
-    """
-    Return True if the files are different, False if they are the same.
-    """
-    
-    # external:
-    import os
-    import logging
-    
-    # read files:
-    f = open( fname1, 'r' )
-    lines1 = f.readlines()
-    f.close()
-    f = open( fname2, 'r' )
-    lines2 = f.readlines()
-    f.close()
-    
-    # compare:
-    return lines1 != lines2
-    
-#enddef
-
-
-# ***
+    with open(fname1, 'r') as f1:
+        with open(fname2, 'r') as f2:
+            return f1.readlines() == f2.readlines()
 
 
 def update_text_file( fname, newtext ) :

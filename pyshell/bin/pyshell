@@ -8,17 +8,18 @@ from omegaconf import OmegaConf
 
 if __name__ == '__main__':
     p = ArgumentParser()
-    p.add_argument('action', choices=['forward', 'optim', 'compile'])
+    p.add_argument('action', choices=['forward', 'optim', 'compile', 'setup', 'background'])
     p.add_argument('--rc')
     p.add_argument('--verbosity', '-v', default='INFO')
     p.add_argument('--legacy', action='store_true')
+    p.add_argument('--fast', help='do not re-run the obs and emis pre-processing')
     args = p.parse_args(sys.argv[1:])
     
     logging.basicConfig(format='[%(levelname)s] %(message)s', level=args.verbosity)
     
     # Parse config file (yaml format!)
 
-    rc = OmegaConf.load(args.rc)
+    rc = OmegaConf.load(args.rc).pyshell
 
     if args.action == 'forward':
         if args.legacy:
@@ -31,3 +32,9 @@ if __name__ == '__main__':
 
     elif args.action == 'compile':
         tm5 = ui.compile(rc)
+
+    elif args.action == 'setup':
+        tm5 = ui.setup_pyshell(rc)
+
+    elif args.action == 'background':
+        fwd = ui.forward(rc)

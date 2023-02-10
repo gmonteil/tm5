@@ -293,14 +293,15 @@ def Build_Copy( rcf, pycus ) :
         prefix_ext = prefix
         flags = pycus.Build_FlagGroups(rcf)
         if len(flags) > 0 :
-            for flag in flags : prefix_ext = prefix_ext+'_'+flag
+            for flag in flags :
+                prefix_ext = prefix_ext+'_'+flag
         else :
             prefix_ext = prefix_ext+'_'
         logging.info('  build prefix extended : %s ' % prefix_ext)
         pycasso_tools.CreateDirs(prefix_ext, forceclean=remove_existing_build)
-        if os.path.lexists(prefix) :
-            os.remove(prefix)
-        os.symlink(os.path.basename(prefix_ext), prefix)
+        #if os.path.lexists(prefix) :
+        #    os.remove(prefix)
+        #os.symlink(os.path.basename(prefix_ext), prefix)
     else :
         pycasso_tools.CreateDirs(prefix, forceclean=remove_existing_build)
     

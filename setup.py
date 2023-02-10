@@ -17,5 +17,5 @@ setuptools.setup(
     ],
     python_requires='>=3.9',
     install_requires=['numpy', 'ipython', 'pandas', 'xarray', 'h5py', 'netcdf4', 'loguru', 'omegaconf', 'mkdocs'],
-    scripts=['bin/tm5'],
+    scripts=['bin/tm5', 'bin/tmpy.py'],
 )

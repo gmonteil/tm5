@@ -2,6 +2,8 @@
 
 from pyshell.tmflex.rc import RcFile
 import os, re
+from argparse import ArgumentParser, HelpFormatter
+
 
 def parse_args():
     parser = ArgumentParser(usage='Usage: %(prog)s <options> action rc-file', formatter_class=lambda prog: HelpFormatter(prog,max_help_position=30,width=120))
@@ -9,6 +11,7 @@ def parse_args():
     parser.add_argument('action', choices=['initiate', 'setup', 'forward', 'adjoint', 'finish', 'restart'], metavar='action')
     args = parser.parse_args()
     return args
+
 
 class rcdat(RcFile):
     def __init__(self, filename=None, silent=False, marks=('${','}')):
@@ -58,46 +61,47 @@ class rcdat(RcFile):
         file_name = path
         with open(file_name, 'wb') as fid:
             pickle.dump(self, fid, pickle.HIGHEST_PROTOCOL)
-
     def setup_meteo_coarsening(self, coarsen_meteo):
         if coarsen_meteo:
             self.setkey('my.meteo.resol', 'glb100x100')
-            self.setkey('my.tmm.output', True)
+            self.setkey('my.tmm.output', 'T')
         else :
             self.setkey('my.meteo.resol', 'coarsened')
-            self.setkey('my.tmm.output', False)
+            self.setkey('my.tmm.output', 'F')
+
 
 class archive:
     def __init__(self, host, path, protocol='rsync', options=''):
-	self.host = host    # remote host
-	self.rpath = path   # remote path
-	self.protocol = protocol # protocol: ssh/scp or rsync
-	self.paths = []     # paths to archive
-	self.names = []     # optional renaming of the paths
-	self.options = options
+        self.host = host    # remote host
+        self.rpath = path   # remote path
+        self.protocol = protocol # protocol: ssh/scp or rsync
+        self.paths = []     # paths to archive
+        self.names = []     # optional renaming of the paths
+        self.options = options
 
     def add(self, path, name=None):
-	self.paths.append(path)
-	if name == None : name = os.path.split(path)[1]
-	self.names.append(name)
+        self.paths.append(path)
+        if name == None : 
+            name = os.path.split(path)[1]
+        self.names.append(name)
 
     def save(self):
-	for path, name in zip(self.paths, self.names):
-	    if self.protocol == 'rsync' :
-		os.system('rsync %s -avh %s %s:%s/%s'%(self.options, path, self.host, self.rpath, name))
-	    elif self.protocol in ['scp', 'ssh'] :
-		os.system('scp %s -r %s %s:%s/%s'%(self.options, path, self.host, self.rpath, name))
+        for path, name in zip(self.paths, self.names):
+            if self.protocol == 'rsync' :
+                os.system('rsync %s -avh %s %s:%s/%s'%(self.options, path, self.host, self.rpath, name))
+            elif self.protocol in ['scp', 'ssh'] :
+                os.system('scp %s -r %s %s:%s/%s'%(self.options, path, self.host, self.rpath, name))
 
     def cleanup(self):
         self.paths = []
         self.names = []
 
+
 def putDateString(StartTime, EndTime, input_string):
     output_string = input_string
     for atom in ['Y', 'y', 'm', 'M', 'd', 'H', 'b', 'B', 'j', 'p', 'S']:
-	for i, t in zip([1,2], [StartTime, EndTime]):
-	    rep_string = '<%1s%1i>'%(atom, i)
-	    form_string = '%%%1s'%atom
-	    output_string = output_string.replace(rep_string, t.strftime(form_string))
+        for i, t in zip([1,2], [StartTime, EndTime]):
+            rep_string = '<%1s%1i>'%(atom, i)
+            form_string = '%%%1s'%atom
+            output_string = output_string.replace(rep_string, t.strftime(form_string))
     return output_string
-
