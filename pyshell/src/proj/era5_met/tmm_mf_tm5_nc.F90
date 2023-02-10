@@ -1168,6 +1168,8 @@ contains
     integer               ::  dimid_time, varid_time
     integer               ::  ntime, itime
 
+    real, allocatable     :: dummy(:, :, :)
+
     ! --- begin ---------------------------------
 
     ! start timing:
@@ -1499,7 +1501,10 @@ contains
           !                      start=(/1,1,1,irec/), count=(/shp(1),shp(2),shp(3),1/) )
           !IF_NOTOK_RETURN(status=1)
           ! copy record:
-          ll = mf%cache_field(varid)%field(:,:,:,irec)
+          allocate(dummy(shp(1), shp(2), shp(3)))
+          dummy = mf%cache_field(varid)%field(:,:,:,irec)
+          ll = dummy ! mf%cache_field(varid)%field(:,:,:,irec)
+          deallocate(dummy)
           !! info ...
           !write (gol,'("  copied `",a,"` 3D record from cache record ",i0," ...")') trim(paramkey), irec; call goPr
           ! storage:
