@@ -61,13 +61,6 @@ class rcdat(RcFile):
         file_name = path
         with open(file_name, 'wb') as fid:
             pickle.dump(self, fid, pickle.HIGHEST_PROTOCOL)
-    def setup_meteo_coarsening(self, coarsen_meteo):
-        if coarsen_meteo:
-            self.setkey('my.meteo.resol', 'glb100x100')
-            self.setkey('my.tmm.output', 'T')
-        else :
-            self.setkey('my.meteo.resol', 'coarsened')
-            self.setkey('my.tmm.output', 'F')
 
 
 class archive:

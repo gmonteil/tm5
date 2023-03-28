@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import os
-
 from omegaconf import DictConfig
 from pathlib import Path
 import filecmp
@@ -9,6 +8,7 @@ from typing import Dict, List
 import tempfile
 import subprocess
 from omegaconf import OmegaConf
+from tm5.run import run_tm5
 
 
 def build_tm5(conf: DictConfig) -> Path:
@@ -27,15 +27,6 @@ def build_tm5(conf: DictConfig) -> Path:
 
     # Build TM5
     return make_tm5(makefile)
-
-
-def run_tm5(cmd: List[str], output : str = None):
-    options = []
-    if output is not None :
-        options = ['--output', output]
-    cmd = ['tm5', '--dev'] + options + cmd
-    print(cmd)
-    return subprocess.run(cmd)
 
 
 def copy_files(params : DictConfig) -> Dict[str, Path]:
@@ -116,6 +107,8 @@ def cleanup(build_dir: Path, files: List[str]):
     """
     for f in build_dir.iterdir():
         if f.name not in files and f.suffix not in ['.o', '.mod', '.x']:
+            f.unlink()
+        if f.name in ['dims_grid.o', 'dims_grid.mod']:
             f.unlink()
 
 

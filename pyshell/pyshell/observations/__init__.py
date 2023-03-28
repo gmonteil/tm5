@@ -3,13 +3,14 @@
 import h5py
 from numpy import array, append, zeros, unique
 from datetime import datetime
+import xarray as xr
 
 
 class observations:
     def __init__(self):
         self.n = 0
         self.tracers = []
-        self.data = dict.fromkeys(['latitudes', 'longitudes', 'altitudes', 'mixing_ratio', 'mixing_ratio_err', 'sampling_strategy', 'dates', 'sitecode', 'tracer', 'dates'], array(()))
+        # self.data = dict.fromkeys(['latitudes', 'longitudes', 'altitudes', 'mixing_ratio', 'mixing_ratio_err', 'sampling_strategy', 'dates', 'sitecode', 'tracer', 'dates'], array(()))
 
     def add(self, tracer, pattern, obsclass):
         import glob
@@ -52,6 +53,13 @@ class observations:
         outdict['n'] = sum(selection)
         return outdict
 
+    @classmethod
+    def from_xr_nc(cls, filename_or_pattern):
+        obs = cls()
+        data = xr.open_mfdataset(filename_or_pattern)
+        obs.data2 = data
+        return obs
+
 
 class HDF5DB:
     def __init__(self, filename):
@@ -67,7 +75,8 @@ class HDF5DB:
                 'dates': array([datetime(*x) for x in df['time']]),
                 'sitecode': df['site'][:],
                 'tracer': df['tracer'][:],
-                'sampling_strategy': df['sampling_strategy'][:]
+                'sampling_strategy': df['sampling_strategy'][:],
+				'time_window_length': df['time_window_length'][:]
                 }
         if 'obspack_id' in df :
             self.data['obspack_id'] = df['obspack_id'][:]

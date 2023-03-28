@@ -1,21 +1,31 @@
 #!/usr/bin/env python2.7
 
-from pyshell.observations import observations, HDF5DB
+from pyshell.observations import observations
 from pyshell.tmflex.RunTM5 import RunTM5
 from pyshell.tmflex.runtools import rcdat
-from pyshell.tmflex.emissions.fluxes_verify import CO2_Emissions
+from pyshell.tmflex.emissions.fluxes_verify import PreprocessedEmissions 
 from pyshell.base.main.optimizer import conGrad as congrad
 from pyshell.tmflex.emissions.emissions import tm5Emis, tmflexEmis
 
 from pandas import Timestamp
 import os
 import shutil
+import xarray as xr
 
 
 def load_observations(rc):
     # Load observations
+    obs = observations.from_xr_nc(rc['observations']['filename'])
+    obs.data2.load()
+    errmin = float(rc['observations'].get('err_min', 0.5))
+    err = obs.data2.err_obs.values
+    err[err < errmin] = errmin
+    err *= rc['observations'].get('error_factor', 1.)
+    obs.data2.err_obs.values[:] = err
+    return obs.data2
+    
     backgroundObs = observations()
-    backgroundObs.append(HDF5DB(rc['observations']['file']))
+    backgroundObs.append(xr.open_mfdataset(rc['observations']['filename'])) # HDF5DB(rc['observations']['filename']))
     errmin = float(rc['observations'].get('err_min', 0.5))
     err = backgroundObs.data['mixing_ratio_err'] * rc['observations'].get('error_factor', .5)
     err[err < errmin] = errmin
@@ -79,7 +89,7 @@ def load_rcf(rc):
     rcf = rcdat()
 
     rcf.setkey('my.project', rc['run']['project'])
-    rcf.setup_meteo_coarsening(rc.meteo.coarsen)
+#    rcf.setup_meteo_coarsening(rc.meteo.coarsen)
     rcf.readfile(rc['run']['rcfile'])
     rcf.ti = Timestamp(rc['run']['start'])
     rcf.tf = Timestamp(rc['run']['end'])
@@ -91,14 +101,15 @@ def load_rcf(rc):
     setup_environment(rcf)
     setup_output(rc, rcf)
     
-
     # Keys under the "tm5" group are needed by TM5 itself (not just pyshell!)
     if 'tm5' in rc:
         for k, v in rc.tm5.items():
             rcf.setkey(k, v)
 
+    if not os.path.exists(rcf.get('output.dir')):
+        os.makedirs(rcf.get('output.dir'))
     rcf = setup_emissions(rc, rcf)
-
+    
     return rcf
 
 
@@ -106,7 +117,7 @@ def load_rcf_legacy(rc):
     rcf = rcdat()
 
     rcf.setkey('my.project', rc['run']['project'])
-    rcf.setup_meteo_coarsening(rc.meteo.coarsen)
+#    rcf.setup_meteo_coarsening(rc.meteo.coarsen)
     rcf.readfile(rc['run']['rcfile'])
     rcf.ti = Timestamp(rc['run']['start'])
     rcf.tf = Timestamp(rc['run']['end'])
@@ -130,6 +141,8 @@ def setup_output(rc, rcf):
     """
     write the output.* keys:
     """
+    if not rc.get('output'):
+        return
     output_mix = rc['output'].get('mix')
     if output_mix:
         rcf.setkey('output.mix', True)
@@ -137,9 +150,9 @@ def setup_output(rc, rcf):
         rcf.setkey('output.mix.filename.prefix', output_mix['filename_prefix'])
 
 
-def setup_tm5(rc):
-    rcf = load_rcf(rc)
-    return RunTM5(rcf)
+def setup_tm5(dconf):
+    rcf = load_rcf(dconf)
+    return RunTM5(rcf, dconf)
 
 
 def setup_tm5_legacy(rc):
@@ -193,45 +206,48 @@ def setup_tmflex(rc, rcf):
     - setting the "tmflex" rc-keys
     """
 
-    if 'background' in rc.output:
+    if not rc.get('output'):
+        return rcf
+    if not rc.output.get('background', None):
+        return rcf
 
-        # Adjust the list of source directories:
-        # We need to adjust it everywhere, because that **** rc module resolves keys at load time
-        #for key in ['my.projects.basic', 'my.source.dirs', 'build.copy.dirs']:
-        #    value =  rcf.get(key)
-        #    value += ' ' + '%s/tmflex'%rcf.get('my.proj.root')
-        #    rcf.setkey(key, value)
+    # Adjust the list of source directories:
+    # We need to adjust it everywhere, because that **** rc module resolves keys at load time
+    #for key in ['my.projects.basic', 'my.source.dirs', 'build.copy.dirs']:
+    #    value =  rcf.get(key)
+    #    value += ' ' + '%s/tmflex'%rcf.get('my.proj.root')
+    #    rcf.setkey(key, value)
 
-        # Create the new tracer:
-        assert len(rc.output.background.tracers) == 1, "Rodenbeck scheme available only for one tracer (might work with more, but untested)"
+    # Create the new tracer:
+    assert len(rc.output.background.tracers) == 1, "Rodenbeck scheme available only for one tracer (might work with more, but untested)"
 
-        # Copy keys from the main tracer to the background one:
-        for tracer in rc.output.background.tracers:
-            for region in rc.run.regions :
-                rc.emissions[tracer + 'fg'] = {region : rc.emissions[tracer][region]}
+    # Copy keys from the main tracer to the background one:
+    for tracer in rc.output.background.tracers:
+        for region in rc.run.regions :
+            rc.emissions[tracer + 'fg'] = {region : rc.emissions[tracer][region]}
 
-            # For dailycycle, we need to replace the tracer name:
-            if rc.emissions[tracer].get('dailycycle'):
-                rc.emissions[tracer + 'fg']['dailycycle'] = {
-                    'type': rc.emissions[tracer].dailycycle.type,
-                    'prefix': rc.emissions[tracer].dailycycle.prefix.replace(tracer, tracer + 'fg')
-                }
-                rc.emissions[tracer + 'fg']['categories'] = rc.emissions[tracer].categories
+        # For dailycycle, we need to replace the tracer name:
+        if rc.emissions[tracer].get('dailycycle'):
+            rc.emissions[tracer + 'fg']['dailycycle'] = {
+                'type': rc.emissions[tracer].dailycycle.type,
+                'prefix': rc.emissions[tracer].dailycycle.prefix.replace(tracer, tracer + 'fg')
+            }
+            rc.emissions[tracer + 'fg']['categories'] = rc.emissions[tracer].categories
 
-            # Fix one key in the obs that needs adjusting ...
-            rcf.setkey('output.point.%s.minerror'%(tracer + 'fg'), rcf.get('output.point.%s.minerror'%tracer))
+        # Fix one key in the obs that needs adjusting ...
+        rcf.setkey('output.point.%s.minerror'%(tracer + 'fg'), rcf.get('output.point.%s.minerror'%tracer))
 
-        # Add the tracer(s) to the rc-file
-        rc.run.tracers.extend([tr+'fg' for tr in rc.output.background.tracers])
-        rcf.setkey('my.tracer', ', '.join([_ for _ in rc.run.tracers]))
-        rcf.setkey('my.tracer.name', ', '.join([_ for _ in rc.run.tracers]))
-        rcf.setkey('tracers', len(rc.run.tracers))
+    # Add the tracer(s) to the rc-file
+    rc.run.tracers.extend([tr+'fg' for tr in rc.output.background.tracers])
+    rcf.setkey('my.tracer', ', '.join([_ for _ in rc.run.tracers]))
+    rcf.setkey('my.tracer.name', ', '.join([_ for _ in rc.run.tracers]))
+    rcf.setkey('tracers', len(rc.run.tracers))
 
-        rcf.setkey('tmflex.compute.backgrounds', True)
-        rcf.setkey('tmflex.lon0', rc.output.background.lon_range[0])
-        rcf.setkey('tmflex.lon1', rc.output.background.lon_range[1])
-        rcf.setkey('tmflex.lat0', rc.output.background.lat_range[0])
-        rcf.setkey('tmflex.lat1', rc.output.background.lat_range[1])
+    rcf.setkey('tmflex.compute.backgrounds', True)
+    rcf.setkey('tmflex.lon0', rc.output.background.lon_range[0])
+    rcf.setkey('tmflex.lon1', rc.output.background.lon_range[1])
+    rcf.setkey('tmflex.lat0', rc.output.background.lat_range[0])
+    rcf.setkey('tmflex.lat1', rc.output.background.lat_range[1])
 
     return rcf
 
@@ -243,7 +259,7 @@ def forward_legacy(rc, step=None):
     More advanced/stable settings are stored in the TM5 rc-file, accessed under the run.rcfile key
     """
 
-    emclasses = {'CO2': CO2_Emissions}
+    emclasses = {'CO2': PreprocessedEmissions}
     run = setup_tm5_legacy(rc)
     run.SetupEmissions(emclasses, step=step)
     obs = load_observations(rc)
@@ -254,7 +270,7 @@ def forward_legacy(rc, step=None):
 
 
 def setup_pyshell(rc, step=None):
-    emclasses = {'CO2': CO2_Emissions}
+    emclasses = {'CO2': PreprocessedEmissions}
     run = setup_tm5_legacy(rc)
     run.SetupEmissions(emclasses, step=step)
     run.rcf = setup_tmflex(rc, run.rcf)
@@ -265,18 +281,25 @@ def setup_pyshell(rc, step=None):
     return run
 
     
-def optim(rc):
+def compile(rc):
+    run = setup_tm5(rc)
+    run.Compile()
+    return run
+
+
+# Main entry points:
+
+def optim(dconf):
     """
     Do an inversion with TM5
-    :param rc: omegaconf.DictConfig or dictionary containing basic settings
+    :param dconf: omegaconf.DictConfig or dictionary containing basic settings
     More advanced/stable settings are stored in the TM5 rc-file, accessed under the run.rcfile key
     """
 
-    obs = load_observations(rc)
-    emclasses = {'CO2': CO2_Emissions}
-    run = setup_tm5(rc)
+    obs = load_observations(dconf)
+    emclasses = {'CO2': PreprocessedEmissions}
+    run = setup_tm5(dconf)
     run.SetupObservations(obs)
-    run.Compile()
     opt = congrad(run)
     opt.SetupOptimizer(restart=False, optimized_prior_state=False, emclasses=emclasses)
     opt.Var4D()
@@ -284,7 +307,27 @@ def optim(rc):
     return opt 
 
 
-def compile(rc):
-    run = setup_tm5(rc)
+def forward(dconf):
+    """
+    Run a forward TM5 simulation
+    :param rc: omegaconf.DictConfig or dictionary containing basic settings
+    More advanced/stable settings are stored in the TM5 rc-file, accessed under the run.rcfile key
+    """
+
+    obs = load_observations(dconf)
+    emclasses = {'CO2': PreprocessedEmissions}
+    run = setup_tm5(dconf)
+    run.SetupObservations(obs)
+    
+    # if rc.output.get('background'):
+    #     run.SetupEmissions(emclasses={'CO2': tm5Emis, 'CO2fg': tmflexEmis})
+    # run.rcf.setkey('my.runmode', 1)
+    # run.rcf.WriteFile(os.path.join(dconf.paths.output, dconf.run.project, 'tm5.rc'))
+    
+    run.SetupEmissions(emclasses)
+    run.RunForward()
+    return run
+
     run.Compile()
+    run.RunForward()
     return run

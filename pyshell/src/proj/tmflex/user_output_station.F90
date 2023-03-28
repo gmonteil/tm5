@@ -171,7 +171,6 @@ subroutine user_output_station_init(status)
 
         stations(i)%station_name = trim(dummy_str)
 !        read(sunit, '(a6,3f8.2,1x,a2,1x,a60)') stations(i)%station_id, stations(i)%lat, stations(i)%lon, stations(i)%alt, stations(i)%station_type, stations(i)%station_name
-!        print*, stations(i)%station_id
     end do ! i
     close(sunit)
 

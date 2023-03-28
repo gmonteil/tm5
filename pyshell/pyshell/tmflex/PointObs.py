@@ -37,7 +37,7 @@ class PointObs(PointObs_base):
         # PointObs_base.__init__(self, tm5Obj)
 
     def applyPointObs(self, tracer, month_tuple=None):
-        print tracer
+        print(tracer)
         mdm_obs_only = self.rcf.get('point.%s.only.obs.error' % tracer, 'bool', default=False)
         track_file = self.getTrackFileName(month_tuple)
         if not os.path.exists(track_file):

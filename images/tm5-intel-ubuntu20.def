@@ -22,7 +22,7 @@ From: images/tm5env-intel-ubuntu20.simg
     # Activate conda and pre-install packages:
     . /opt/intel/oneapi/intelpython/latest/etc/profile.d/conda.sh
     conda activate tm5
-    conda install netcdf4 numpy h5py scipy python-dateutil netcdf4 readline
+    conda install netcdf4 numpy h5py scipy python-dateutil netcdf4 readline xarray dask
     conda install -c conda-forge omegaconf
     pip install --upgrade pip --ignore-installed
     /opt/intel/oneapi/intelpython/latest/envs/tm5/bin/python -m pip install readline

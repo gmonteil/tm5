@@ -12,8 +12,9 @@ import sys
 
 
 class RunTM5(runtm5):
-    def __init__(self, rcf):
+    def __init__(self, rcf, dconf):
         self.rcf = rcf
+        self.dconf = dconf
         # The key 'my.tracer' is a comma-separated list of tracer, whereas the key 'my.tracer.name' is a name for the
         # combination. For example, my.tracer could be 'CO,CO2' and my.tracer.name could be 'COCO2'.
         self.species = [s.strip() for s in self.rcf.get('my.tracer').split(',')]
@@ -73,7 +74,7 @@ class RunTM5(runtm5):
         em.create_emission_structure()
 
         for tracer in em.species:
-            emfill = emclasses[tracer](self.rcf, step=step)
+            emfill = emclasses[tracer](self.rcf, self.dconf.emissions[tracer], step=step, tracer=tracer)
             emfill.Emission = em.Emission
             emfill.LoopThroughPeriods()
 

@@ -795,7 +795,7 @@ class Emissions(object):
                     cgroup.time_resolution =  self.Emission[region][tracer][cat]['time_resolution']
                     cgroup.optimize =  np.int32(self.Emission[region][tracer][cat]['optimize'])
                     # This is Maarten's modification for CO biomass burning, applicable to other tracers as well
-                    if self.Emission[tracer]['tf_bb_diurnal'] != None:
+                    if self.Emission[tracer].get('tf_bb_diurnal'):
                         cgroup.createDimension('hourly',24)
                         var = cgroup.createVariable('tf_diurnal', np.float64, ('hourly',))
                         var[:] = self.Emission[tracer]['tf_bb_diurnal']

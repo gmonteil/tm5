@@ -60,7 +60,7 @@ class Optimizer(object):
             self.IniFile = 'NotDoneYet.txt' if tm5Obj.Optim_dict['iniconc'] else None
             self.max_iter = self.rcf.get('optimize.maximum.iterations', 'int', default=300)
             self.iter = 0
-            self.grad_norm_reduc_factor = self.rcf.get('optimize.gradient.norm.reduction', 'float', default=1.0E12)
+            self.grad_norm_reduc_factor = self.tm5.dconf.optim.get('gradient_reduc', 1.e12)
             self.initial_grad_norm_preco = None
             self.converged_eigvals = None
             self.converged_eigvecs = None
@@ -520,11 +520,11 @@ class Optimizer(object):
         self.J_tot = self.tm5.CalculateCosts()
         self.J_bg = self.tm5.J_bg
         self.J_obs = self.tm5.J_obs
-	line = "Iteration %i: J_tot=%.10f; J_obs=%.10f; J_bg=%.10f\n"%(self.iter, self.J_tot, self.J_obs, self.J_bg)
-	fid = open(os.path.join(self.output_dir, 'costFunction.out'), 'a')
-	fid.write(line)
-	fid.close()
-	print line
+        line = "Iteration %i: J_tot=%.10f; J_obs=%.10f; J_bg=%.10f\n"%(self.iter, self.J_tot, self.J_obs, self.J_bg)
+        with open(os.path.join(self.output_dir, 'costFunction.out'), 'a') as fid :
+            fid.write(line)
+            fid.close()
+        print(line)
 
     def save(self):
         t1 = datetime.now()
@@ -555,7 +555,7 @@ class Optimizer(object):
                     pickle.dump((k, v), fid, pickle.HIGHEST_PROTOCOL)
 
         t2 = datetime.now()
-        print "Optimizer state saved in %s"%str(t2-t1)
+        print("Optimizer state saved in %s"%str(t2-t1))
 
     def load(self, cleanup=True):
         t1 = datetime.now()
@@ -627,7 +627,7 @@ class conGrad(Optimizer):
             Optimizer.__init__(self, tm5Obj)
             self.optim_type = 'conGrad'
             self.true_iter = 0
-            self.fixed_iterations = self.rcf.get('optimize.fixed.iterations', 'int', default=1000)
+            self.fixed_iterations = self.tm5.dconf.optim.get('n_iter', 1000)# rcf.get('optimize.fixed.iterations', 'int', default=1000)
 
     def Var4Dsetup_fwd(self):
         # first forward run during Var4Dsetup
