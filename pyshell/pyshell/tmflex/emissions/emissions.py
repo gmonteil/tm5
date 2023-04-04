@@ -34,10 +34,11 @@ class tm5Emis(Emissions):
     """Use emissions produced by a previous TM5 run
        This is merely a tracer-specific copy of the readOptimFromFile method in the base Emissions class"""
 
-    def __init__(self, rcf, tracer='CO2', *args, **kwargs):
+    def __init__(self, rcf, dconf, tracer='CO2', *args, **kwargs):
         self.emFile = rcf.get('emissions.filename')
         self.tracer = tracer
         Emissions.__init__(self, rcf, *args, **kwargs)
+        self.dconf = dconf
         if os.path.basename(self.emFile) == 'optimized_state.nc4':
             self.emfield = 'poste_emission'
             self.errorfield = 'poste_emission_std'
@@ -72,8 +73,9 @@ class tm5Emis(Emissions):
 
 
 class tmflexEmis(Emissions):
-    def __init__(self, rcf, *args, **kwargs):
+    def __init__(self, rcf, dconf, *args, **kwargs):
         Emissions.__init__(self, rcf, *args, **kwargs)
+        self.dconf = dconf
         self.tracer = rcf.get('tmflex.tracer')
         self.parent = rcf.get('tmflex.%s.parent'%self.tracer)
         self.lon0 = rcf.get('tmflex.lon0')
@@ -113,10 +115,10 @@ class tmflexEmis(Emissions):
         import shutil
         tt = self.rcf.ti
         while tt < self.rcf.tf :
-            prefix1 = os.path.join(self.rcf.get('dailycycle.folder'), tt.strftime('%Y/%m'), self.rcf.get('%s.dailycycle.prefix'%self.parent))
-            prefix2 = os.path.join(self.rcf.get('dailycycle.folder'), tt.strftime('%Y/%m'), self.rcf.get('%s.dailycycle.prefix'%self.tracer))
-            fname1 = '%s%s.nc4'%(prefix1, tt.strftime('%Y%m%d'))
-            fname2 = '%s%s.nc4'%(prefix2, tt.strftime('%Y%m%d'))
+            prefix1 = os.path.join(self.rcf.get('dailycycle.folder'), tt.strftime('%Y/%m'), self.rcf.get('%s.dailycycle.prefix' % self.parent))
+            prefix2 = os.path.join(self.rcf.get('dailycycle.folder'), tt.strftime('%Y/%m'), self.rcf.get('%s.dailycycle.prefix' % self.tracer))
+            fname1 = '%s%s.nc4' % (prefix1, tt.strftime('%Y%m%d'))
+            fname2 = '%s%s.nc4' % (prefix2, tt.strftime('%Y%m%d'))
             shutil.copy2(fname1, fname2)
             with Dataset(fname2, 'a') as ds:
                 for region in self.Emission['regions'] :

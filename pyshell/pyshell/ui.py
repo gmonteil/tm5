@@ -80,7 +80,7 @@ def setup_emissions(rc, rcf):
     return rcf
 
 
-def load_rcf(rc):
+def load_rcf(dconf):
     """
     Load the TM5 rc-file
     :param rc: omegaconf.DictConfig or dictionary
@@ -88,50 +88,52 @@ def load_rcf(rc):
     """
     rcf = rcdat()
 
-    rcf.setkey('my.project', rc['run']['project'])
+    rcf.setkey('my.project', dconf['run']['project'])
 #    rcf.setup_meteo_coarsening(rc.meteo.coarsen)
-    rcf.readfile(rc['run']['rcfile'])
-    rcf.ti = Timestamp(rc['run']['start'])
-    rcf.tf = Timestamp(rc['run']['end'])
+    rcf.readfile(dconf['run']['rcfile'])
+    rcf.ti = Timestamp(dconf['run']['start'])
+    rcf.tf = Timestamp(dconf['run']['end'])
+    rcf.filename = dconf.run.rcfile
     rcf.substituteTimes()
 
-    rcf = setup_tmflex(rc, rcf)
+    rcf = setup_tmflex(dconf, rcf)
     rcf.setkey('jobstep.timerange.start', rcf.ti)
     rcf.setkey('jobstep.timerange.end', rcf.tf)
-    setup_environment(rcf)
-    setup_output(rc, rcf)
+    rcf.setkey('my.run.dir', os.path.abspath(dconf.run.paths.output))
+    setup_environment(dconf)
+    setup_output(dconf, rcf)
     
     # Keys under the "tm5" group are needed by TM5 itself (not just pyshell!)
-    if 'tm5' in rc:
-        for k, v in rc.tm5.items():
+    if 'tm5' in dconf:
+        for k, v in dconf.tm5.items():
             rcf.setkey(k, v)
 
-    if not os.path.exists(rcf.get('output.dir')):
-        os.makedirs(rcf.get('output.dir'))
-    rcf = setup_emissions(rc, rcf)
+    if not os.path.exists(dconf.run.paths.output):
+        os.makedirs(dconf.run.paths.output)
+    rcf = setup_emissions(dconf, rcf)
     
     return rcf
 
 
-def load_rcf_legacy(rc):
+def load_rcf_legacy(dconf):
     rcf = rcdat()
 
-    rcf.setkey('my.project', rc['run']['project'])
+    rcf.setkey('my.project', dconf['run']['project'])
 #    rcf.setup_meteo_coarsening(rc.meteo.coarsen)
-    rcf.readfile(rc['run']['rcfile'])
-    rcf.ti = Timestamp(rc['run']['start'])
-    rcf.tf = Timestamp(rc['run']['end'])
+    rcf.readfile(dconf['run']['rcfile'])
+    rcf.ti = Timestamp(dconf['run']['start'])
+    rcf.tf = Timestamp(dconf['run']['end'])
     rcf.substituteTimes()
 
     rcf.setkey('jobstep.timerange.start', rcf.ti)
     rcf.setkey('jobstep.timerange.end', rcf.tf)
-    setup_environment(rcf)
-    setup_output(rc, rcf)
+    setup_environment(dconf)
+    setup_output(dconf, rcf)
 
 
     # Keys under the "tm5" group are needed by TM5 itself (not just pyshell!)
-    if 'tm5' in rc:
-        for k, v in rc.tm5.items():
+    if 'tm5' in dconf:
+        for k, v in dconf.tm5.items():
             rcf.setkey(k, v)
 
     return rcf
@@ -166,37 +168,37 @@ def compile(rc):
     return run
 
 
-def setup_environment(rcf):
-    os.environ['pyshell.rc'] = rcf.filename
-    if rcf.get('par.openmp'):
-        nthreads = rcf.get('par.maxthreads')
+def setup_environment(dconf):
+    os.environ['pyshell.rc'] = dconf.run.rcfile
+    if dconf['environment'].get('openmp'):
+        nthreads = dconf.environment.openmp.nthreads
         os.environ['omp_num_threads'] = '%s'%nthreads
         os.environ['omp_num_threads'.upper()] = '%s'%nthreads
     os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
     
 
-def forward(rc):
+def forward(dconf):
     """
     Run a forward TM5 simulation
     :param rc: omegaconf.DictConfig or dictionary containing basic settings
     More advanced/stable settings are stored in the TM5 rc-file, accessed under the run.rcfile key
     """
 
-    obs = load_observations(rc)
-    run = setup_tm5(rc)
+    obs = load_observations(dconf)
+    run = setup_tm5(dconf)
     run.SetupObservations(obs)
-    if rc.output.get('background'):
+    if dconf.output.get('background'):
         run.SetupEmissions(emclasses={'CO2': tm5Emis, 'CO2fg': tmflexEmis})
     run.rcf.setkey('my.runmode', 1)
-    run.rcf.WriteFile(os.path.join(rc.paths.output, rc.run.project, 'tm5.rc'))
+    run.rcf.WriteFile(os.path.join(dconf.paths.output, dconf.run.project, 'tm5.rc'))
     return run
 
-    run.Compile()
-    run.RunForward()
-    return run
+    # run.Compile()
+    # run.RunForward()
+    # return run
 
 
-def setup_tmflex(rc, rcf):
+def setup_tmflex(dconf, rcf):
     """
     Perform a forward run with extraction of the background concentration by TM5
     This requires the following adjustments, compared to a normal forward run:
@@ -206,9 +208,9 @@ def setup_tmflex(rc, rcf):
     - setting the "tmflex" rc-keys
     """
 
-    if not rc.get('output'):
+    if not dconf.get('output'):
         return rcf
-    if not rc.output.get('background', None):
+    if not dconf.output.get('background', None):
         return rcf
 
     # Adjust the list of source directories:
@@ -219,40 +221,40 @@ def setup_tmflex(rc, rcf):
     #    rcf.setkey(key, value)
 
     # Create the new tracer:
-    assert len(rc.output.background.tracers) == 1, "Rodenbeck scheme available only for one tracer (might work with more, but untested)"
+    assert len(dconf.output.background.tracers) == 1, "Rodenbeck scheme available only for one tracer (might work with more, but untested)"
 
     # Copy keys from the main tracer to the background one:
-    for tracer in rc.output.background.tracers:
-        for region in rc.run.regions :
-            rc.emissions[tracer + 'fg'] = {region : rc.emissions[tracer][region]}
+    for tracer in dconf.output.background.tracers:
+        for region in dconf.run.regions :
+            dconf.emissions[tracer + 'fg'] = {region : dconf.emissions[tracer][region]}
 
         # For dailycycle, we need to replace the tracer name:
-        if rc.emissions[tracer].get('dailycycle'):
-            rc.emissions[tracer + 'fg']['dailycycle'] = {
-                'type': rc.emissions[tracer].dailycycle.type,
-                'prefix': rc.emissions[tracer].dailycycle.prefix.replace(tracer, tracer + 'fg')
+        if dconf.emissions[tracer].get('dailycycle'):
+            dconf.emissions[tracer + 'fg']['dailycycle'] = {
+                'type': dconf.emissions[tracer].dailycycle.type,
+                'prefix': dconf.emissions[tracer].dailycycle.prefix.replace(tracer, tracer + 'fg')
             }
-            rc.emissions[tracer + 'fg']['categories'] = rc.emissions[tracer].categories
+            dconf.emissions[tracer + 'fg']['categories'] = dconf.emissions[tracer].categories
 
         # Fix one key in the obs that needs adjusting ...
-        rcf.setkey('output.point.%s.minerror'%(tracer + 'fg'), rcf.get('output.point.%s.minerror'%tracer))
+        rcf.setkey('output.point.%s.minerror' % (tracer + 'fg'), rcf.get('output.point.%s.minerror' % tracer))
 
     # Add the tracer(s) to the rc-file
-    rc.run.tracers.extend([tr+'fg' for tr in rc.output.background.tracers])
-    rcf.setkey('my.tracer', ', '.join([_ for _ in rc.run.tracers]))
-    rcf.setkey('my.tracer.name', ', '.join([_ for _ in rc.run.tracers]))
-    rcf.setkey('tracers', len(rc.run.tracers))
+    dconf.run.tracers.extend([tr + 'fg' for tr in dconf.output.background.tracers])
+    rcf.setkey('my.tracer', ', '.join([_ for _ in dconf.run.tracers]))
+    rcf.setkey('my.tracer.name', ', '.join([_ for _ in dconf.run.tracers]))
+    rcf.setkey('tracers', len(dconf.run.tracers))
 
     rcf.setkey('tmflex.compute.backgrounds', True)
-    rcf.setkey('tmflex.lon0', rc.output.background.lon_range[0])
-    rcf.setkey('tmflex.lon1', rc.output.background.lon_range[1])
-    rcf.setkey('tmflex.lat0', rc.output.background.lat_range[0])
-    rcf.setkey('tmflex.lat1', rc.output.background.lat_range[1])
+    rcf.setkey('tmflex.lon0', dconf.output.background.lon_range[0])
+    rcf.setkey('tmflex.lon1', dconf.output.background.lon_range[1])
+    rcf.setkey('tmflex.lat0', dconf.output.background.lat_range[0])
+    rcf.setkey('tmflex.lat1', dconf.output.background.lat_range[1])
 
     return rcf
 
 
-def forward_legacy(rc, step=None):
+def forward_legacy(rc, step = None):
     """
     Run a forward TM5 simulation
     :param rc: omegaconf.DictConfig or dictionary containing basic settings
@@ -304,7 +306,7 @@ def optim(dconf):
     opt.SetupOptimizer(restart=False, optimized_prior_state=False, emclasses=emclasses)
     opt.Var4D()
 
-    return opt 
+    return opt
 
 
 def forward(dconf):
@@ -323,11 +325,16 @@ def forward(dconf):
     #     run.SetupEmissions(emclasses={'CO2': tm5Emis, 'CO2fg': tmflexEmis})
     # run.rcf.setkey('my.runmode', 1)
     # run.rcf.WriteFile(os.path.join(dconf.paths.output, dconf.run.project, 'tm5.rc'))
-    
+
+#    from pyshell.tmflex.emissions.emissions import tm5Emis, tmflexEmis
+#    emclasses = {'CO2': tm5Emis, 'CO2fg': tmflexEmis}
+#    run.rcf.setkey('emissions.filename', 'output/coco2_wp4_ct3/output/2018120100-2020010100/emission.nc4')
+#    run.rcf.setkey('dailycycle.folder', os.path.abspath('output/coco2_wp4_ct3bg/dailycycle'))
+#    run.rcf.setkey('CO2fg.dailycycle.prefix', 'CO2fg_dailycycle.')
     run.SetupEmissions(emclasses)
     run.RunForward()
     return run
 
-    run.Compile()
-    run.RunForward()
-    return run
+    # run.Compile()
+    # run.RunForward()
+    # return run

@@ -53,7 +53,6 @@ class RunTM5(runtm5):
         self.GetZoomRegions()
 
     def SetupEmissions(self, emclasses, randomize=False, zero=False, step=None):
-        #TODO ==> This should not be here, at all!!!
         from pyshell.tmflex.emissions.emissions import Emissions
         """
         This will either assemble the emissions (default), or read them from a file, depending on
@@ -63,20 +62,29 @@ class RunTM5(runtm5):
         t1 = datetime.now()
 
         emisFile = self.emission_file_name
-        if os.path.exists(emisFile):
-            os.remove(emisFile)
-        checkDir(emisFile)
 
         # First, process the emissions and write the emissions file
-        StartTuple = self.StartTime.timetuple()[:5]
-        EndTuple = self.EndTime.timetuple()[:5]
+        # StartTuple = self.StartTime.timetuple()[:5]
+        # EndTuple = self.EndTime.timetuple()[:5]
         em = Emissions(self.rcf)
         em.create_emission_structure()
 
-        for tracer in em.species:
-            emfill = emclasses[tracer](self.rcf, self.dconf.emissions[tracer], step=step, tracer=tracer)
-            emfill.Emission = em.Emission
-            emfill.LoopThroughPeriods()
+        read_optim_emis = self.rcf.get('emission.read.optimized', 'bool', default=False)
+        if read_optim_emis :
+            optim_emis_file = self.rcf.get('emission.read.optimized.filename')
+            if os.path.basename(optim_emis_file) == optim_emis_file :
+                optim_emis_file = os.path.join(self.rcf.get('output.dir'), optim_emis_file)
+            em.readOptimFromFile(optim_emis_file, False)
+        else :
+            for tracer in em.species:
+                emfill = emclasses[tracer](self.rcf, self.dconf.emissions[tracer], step=step, tracer=tracer)
+                emfill.Emission = em.Emission
+                emfill.LoopThroughPeriods()
+
+        # Remove emission file that may exist AFTER it has been read
+        if os.path.exists(emisFile):
+            os.remove(emisFile)
+        checkDir(emisFile)
 
         self.Emission = em(randomize, zero)  # Write emissions and keep them in memory
 

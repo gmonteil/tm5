@@ -26,7 +26,7 @@ def build_tm5(conf: DictConfig) -> Path:
     makefile = gen_makefile(conf.build)
 
     # Build TM5
-    return make_tm5(makefile)
+    return make_tm5(makefile, conf.build)
 
 
 def copy_files(params : DictConfig) -> Dict[str, Path]:
@@ -127,16 +127,17 @@ def gen_makefile(config: DictConfig) -> Path:
     # Temporarily move to the build directory for that
     curdir = os.getcwd()
     os.chdir(buildpath)
-    command = ['makedepf90', '-o', 'tm5.x'] + list(Path().glob('*.[Ff]*'))
+    command = ['makedepf90', '-o', 'tm5.x'] + list(Path().glob('*.[Ff]*')) + ['>>', 'Makefile']
     with open(makefile_dest.name, 'a') as fid:
-        subprocess.run(command, stdout=fid)
+        run_tm5(command, settings=config.host)
+        # subprocess.run(command, stdout=fid)
     os.chdir(curdir)
 
     return makefile_dest
 
 
-def make_tm5(makefile : Path) -> Path:
-    run_tm5(f'make -C {makefile.parent} {makefile.name} tm5.x'.split())
+def make_tm5(makefile : Path, settings : Dict) -> Path:
+    run_tm5(f'make -C {makefile.parent} {makefile.name} tm5.x'.split(), settings=settings.host)
     return makefile.parent / 'tm5.x'
 
 

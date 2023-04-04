@@ -40,8 +40,8 @@ class Observations:
             unassim_mdm = self.rcf.get('%s.point.unassimilate.mdm' % tracer, 'float')
         # obs = obsobj.get(tracer, self.ti, self.tf)
 
-        ds = ds.sel(time = (ds.time > np.datetime64(self.ti)) & (ds.time <= np.datetime64(self.tf)) & (ds.tracer == tracer.lower()))
-        
+        ds = ds.sel(index = (ds.time > np.datetime64(self.ti)) & (ds.time <= np.datetime64(self.tf)) & (ds.tracer == tracer.lower()))
+
         #self.PointObservation[tracer]['dimensions'] = {'id': obs['n']}
         self.PointObservation[tracer]['dimensions'] = {'id': len(ds.obs)}
         self.PointObservation[tracer]['variable_shapes'] = OrderedDict()
@@ -74,8 +74,10 @@ class Observations:
 
         # Also write the obs file to the output folder, for reference:
         dir_name = self.rcf.get('output.point.input.dir')
-        if not os.path.exists(dir_name): os.makedirs(dir_name)
-        ds.to_netcdf(os.path.join(dir_name, 'observations.nc'))
+        if not os.path.exists(dir_name): 
+            os.makedirs(dir_name)
+        if len(ds.obs) > 0 :
+            ds.to_netcdf(os.path.join(dir_name, 'observations.%s.nc' % tracer))
 
     def writePointFile(self):
         from netCDF4 import Dataset

@@ -7,6 +7,7 @@ sys.dont_write_bytecode = True
 
 import logging
 logging.basicConfig(datefmt='%d %b %Y %H:%M:%S', format='%(asctime)s [%(levelname)s] %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 import re, os, shutil, tempfile, hashlib, glob, subprocess
@@ -459,10 +460,12 @@ class RunTM5(object):
             os.remove(ok_file)
         print('Nthreads = ', os.getenv('OMP_NUM_THREADS'))
         # command to setup and submit a run:
-        command = ['submit_tm5', self.rcf.get('job.step.run.exe'), rcfile]
+        # command = ['submit_tm5', self.rcf.get('job.step.run.exe'), rcfile]
+        command = [os.path.join(self.rcf.get('pyshell2.build_directory'), 'tm5.x'), rcfile]
         # run, check status:
         with ExecEnvironment(curdir, exec_dir):
-            subprocess.check_call( command )
+            logger.info(command)
+            subprocess.check_call(command)
         t2 = datetime.now()
         # Check if run completed successfully
         if not os.path.exists(ok_file):
@@ -504,11 +507,13 @@ class RunTM5(object):
         if os.path.exists(ok_file):
             os.remove(ok_file)
         # command to setup and submit a run:
-        command = [os.path.join(os.curdir,'submit_tm5'), self.rcf.get('job.step.run.exe'), rcfile]
+        #command = [os.path.join(os.curdir,'submit_tm5'), self.rcf.get('job.step.run.exe'), rcfile]
+        command = [os.path.join(self.rcf.get('pyshell2.build_directory'), 'tm5.x'), rcfile]
         # run, check status:
-        print 'Nthreads = ', os.getenv('OMP_NUM_THREADS')
+        print('Nthreads = ', os.getenv('OMP_NUM_THREADS'))
         with ExecEnvironment(curdir, exec_dir):
-            subprocess.check_call( command )
+            logger.info(command)
+            subprocess.check_call(command)
         t2 = datetime.now()
         # Check if run completed successfully
         if not os.path.exists(ok_file):
@@ -540,11 +545,13 @@ class RunTM5(object):
         if os.path.exists(ok_file):
             os.remove(ok_file)
         # command to setup and submit a run:
-        command = ['submit_tm5', self.rcf.get('job.step.run.exe'), rcfile]
+        # command = ['submit_tm5', self.rcf.get('job.step.run.exe'), rcfile]
+        command = [os.path.join(self.rcf.get('pyshell2.build_directory'), 'tm5.x'), rcfile]
         # run, check status:
         with ExecEnvironment(curdir, exec_dir):
-            print 'Nthreads = ', os.getenv('OMP_NUM_THREADS')
-            subprocess.check_call( command )
+            print('Nthreads = ', os.getenv('OMP_NUM_THREADS'))
+            logger.info(command)
+            subprocess.check_call(command)
         t2 = datetime.now()
         # Check if run completed successfully
         if not os.path.exists(ok_file):
