@@ -1,8 +1,8 @@
 #!/usr/bin/env python2.7
 
-from pyshell.observations import InputObservations
+from pyshell.observations import observations
 # from pyshell.tmflex.RunTM5 import RunTM5
-from pyshell.runtools import rcdat
+from pyshell.tmflex.runtools import rcdat
 # from pyshell.tmflex.emissions.fluxes_verify import PreprocessedEmissions
 from pyshell.emissions import PreprocessedEmissions
 # from pyshell.base.main.optimizer import conGrad as congrad
@@ -84,7 +84,7 @@ def optim(dconf):
 
 def load_observations(dconf):
     # Load observations
-    obs = InputObservations.from_xr_nc(dconf['observations']['filename'])
+    obs = observations.from_xr_nc(dconf['observations']['filename'])
     obs.data2.load()
     errmin = float(dconf['observations'].get('err_min', 0.5))
     err = obs.data2.err_obs.values

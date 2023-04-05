@@ -1,6 +1,6 @@
 #!/bin/env python
 
-from pyshell.tmflex.emissions.emissions import Emissions
+# from pyshell.tmflex.emissions.emissions import Emissions
 import os
 from pyshell.base.helper.Utilities import checkDir
 from datetime import timedelta
@@ -9,6 +9,7 @@ from pyshell.gridtools import TM5Grids
 from pandas import DatetimeIndex, Timedelta
 from pandas.tseries.frequencies import to_offset
 import logging
+from pyshell.emissions import Emissions
 
 
 logger = logging.getLogger(__name__)
@@ -36,11 +37,11 @@ def crop_and_coarsen(glo1x1, latb, lonb):
 
 class PreprocessedEmissions(Emissions):
     def __init__(self, rcf, dconf, tracer='CO2', *args, **kwargs):
-        Emissions.__init__(self, rcf, *args, **kwargs)
+        Emissions.__init__(self, rcf) #, *args, **kwargs)
         self.dconf = dconf
         self.tracer = tracer
         self.writeCycle = self.rcf.get('CO2.emission.dailycycle', 'bool')
-        self.MolarMass = {'CO2':44.00995e-3}[tracer]
+        self.MolarMass = {'CO2': 44.00995e-3}[tracer]
         self.granularity = timedelta(hours=3)
         self.output_dir = os.path.dirname(self.emission_file_name)
         
@@ -80,7 +81,7 @@ class PreprocessedEmissions(Emissions):
         return xr.Dataset(
             data_vars = {
                 'emis': (('time', 'latitude', 'longitude'), emis_coarsened),
-                'timestep': (('time'), [t.total_seconds() for t in timestep])
+                'timestep': (('time', ), [t.total_seconds() for t in timestep])
             },
             coords={
                 'time': DatetimeIndex(emis_glo1x1.time.values),
@@ -114,7 +115,7 @@ class PreprocessedEmissions(Emissions):
                     emission_fine = self.read_preprocessed_emis(cat, region, slice(time_start, time_end))
                     emission_coarse = (emission_fine.emis * emission_fine.timestep).sum('time').values
                     
-                    #for emis in emission_fine:
+                    # for emis in emission_fine:
                     logger.info("%20s %s-%s %10s : %20.6f Tg" % (cat, time_start.strftime("%Y/%m/%d"), time_end.strftime("%Y/%m/%d"), region, emission_coarse.sum()*1.0e-9))
                     emission_coarse = emission_coarse / sec_period  # bring back to per second
                     self.Emission[region][self.tracer][cat]['emission_data'][time_index, :, :] = emission_coarse

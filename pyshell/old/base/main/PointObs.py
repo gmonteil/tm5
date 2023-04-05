@@ -16,7 +16,7 @@ class PointObs(object):
     def __init__(self, tm5Obj):
         self.StartTime = tm5Obj.StartTime
         self.EndTime   = tm5Obj.EndTime
-        self.rcf = rc.RcFile(os.environ['pyshell.rc'])
+        self.rcf = tm5Obj.rcf # rc.RcFile(os.environ['pyshell.rc'])
         self.runid = self.rcf.get('runid')
         self.Optim_dict = tm5Obj.Optim_dict
         self.output_dir = tm5Obj.output_dir
@@ -53,8 +53,8 @@ class PointObs(object):
 
     def get_class_from_name( self, class_name):
         _temp = __import__('PointObs', fromlist=[class_name])
-	class_from_name = _temp.__dict__[class_name]
-	return class_from_name
+        class_from_name = _temp.__dict__[class_name]
+        return class_from_name
         #try:
         #    class_from_name = _temp.__dict__[class_name]
         #    return class_from_name

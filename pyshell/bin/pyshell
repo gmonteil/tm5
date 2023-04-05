@@ -21,20 +21,20 @@ if __name__ == '__main__':
 
     rc = OmegaConf.load(args.rc).pyshell
 
-    if args.action == 'forward':
-        if args.legacy:
-            fwd = ui.forward_legacy(rc)
-        else :
-            fwd = ui.forward(rc)
+    if args.action in ['forward', 'background']:
+        # if args.legacy:
+        #     fwd = ui.forward_legacy(rc)
+        # else :
+        fwd = ui.forward(rc)
         
     elif args.action == 'optim':
         opt = ui.optim(rc)
 
-    elif args.action == 'compile':
-        tm5 = ui.compile(rc)
+#    elif args.action == 'compile':
+#        tm5 = ui.compile(rc)
 
-    elif args.action == 'setup':
-        tm5 = ui.setup_pyshell(rc)
+    # elif args.action == 'setup':
+    #     tm5 = ui.setup_pyshell(rc)
 
-    elif args.action == 'background':
-        fwd = ui.forward(rc)
+    # elif args.action == 'background':
+    #    fwd = ui.forward(rc)

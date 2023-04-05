@@ -10,7 +10,7 @@ logging.basicConfig(datefmt='%d %b %Y %H:%M:%S', format='%(asctime)s [%(levelnam
 logger = logging.getLogger(__name__)
 
 
-import re, os, shutil, tempfile, hashlib, glob, subprocess
+import re, subprocess
 from dateutil.relativedelta import relativedelta
 from dateutil import rrule
 from numpy import *

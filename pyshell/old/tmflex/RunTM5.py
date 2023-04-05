@@ -49,7 +49,7 @@ class RunTM5(runtm5):
             try:
                 os.remove(fileName)
             except:
-                print 'File ', fileName, ' has been already deleted!'
+                print('File ', fileName, ' has been already deleted!')
         self.GetZoomRegions()
 
     def SetupEmissions(self, emclasses, randomize=False, zero=False, step=None):
