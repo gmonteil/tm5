@@ -1,34 +1,14 @@
 #!/usr/bin/env python2.7
 
-from pyshell.observations import InputObservations
-# from pyshell.tmflex.RunTM5 import RunTM5
 from pyshell.runtools import rcdat
-# from pyshell.tmflex.emissions.fluxes_verify import PreprocessedEmissions
 from pyshell.emissions import PreprocessedEmissions
-# from pyshell.base.main.optimizer import conGrad as congrad
 from pyshell.optimizer import Congrad
 from pyshell.model import RunTM5
 
 from pandas import Timestamp
 import os
 import shutil
-
-
-# def forward_legacy(dconf, step = None):
-#     """
-#     Run a forward TM5 simulation
-#     :param rc: omegaconf.DictConfig or dictionary containing basic settings
-#     More advanced/stable settings are stored in the TM5 rc-file, accessed under the run.rcfile key
-#     """
-#
-#     emclasses = {'CO2': PreprocessedEmissions}
-#     obs = load_observations(dconf)
-#     run = setup_tm5_legacy(dconf)
-#     run.SetupEmissions(emclasses, step=step)
-#     run.SetupObservations(obs)
-#     run.Compile()
-#     run.RunForward()
-#     return run
+import xarray as xr
 
 
 def forward(dconf):
@@ -65,12 +45,6 @@ def optim(dconf):
     return opt
 
 
-# def compile(rc):
-#     run = setup_tm5(rc)
-#     run.Compile()
-#     return run
-
-
 # def setup_pyshell(dconf, step=None):
 #     emclasses = {'CO2': PreprocessedEmissions}
 #     obs = load_observations(dconf)
@@ -84,14 +58,14 @@ def optim(dconf):
 
 def load_observations(dconf):
     # Load observations
-    obs = InputObservations.from_xr_nc(dconf['observations']['filename'])
-    obs.data2.load()
+    obs = xr.open_mfdataset(dconf['observations']['filename'])
+    obs.load()
     errmin = float(dconf['observations'].get('err_min', 0.5))
-    err = obs.data2.err_obs.values
+    err = obs.err_obs.values
     err[err < errmin] = errmin
     err *= dconf['observations'].get('error_factor', 1.)
-    obs.data2.err_obs.values[:] = err
-    return obs.data2
+    obs.err_obs.values[:] = err
+    return obs
 
 
 def setup_tm5(dconf):

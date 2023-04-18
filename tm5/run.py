@@ -13,4 +13,8 @@ def run_tm5(cmd: Union[str, List[str], List[Path]], output : str = None, setting
     command += f' {settings["container"]} '
     cmd = command.split() + cmd
     logger.info(' '.join([str(_) for _ in cmd]))
-    return subprocess.run(cmd)
+    try :
+        return subprocess.run(cmd)
+    except Exception as e:
+        logger.exception(e)
+        raise

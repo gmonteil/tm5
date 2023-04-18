@@ -7,9 +7,7 @@ from numpy import zeros, int32, float64, sqrt, arange, ones, datetime64, array, 
 from pandas import DatetimeIndex
 from collections import OrderedDict
 import os
-# from pyshell.base.helper.Utilities import checkDir
 from pyshell.utilities import checkDir
-import xarray as xr
 import logging
 
 
@@ -75,21 +73,18 @@ class Observations:
 
     def writePointFile(self):
         dir_name = self.rcf.get('output.point.input.dir')
-        if not os.path.exists(dir_name): os.makedirs(dir_name)
-        if self.point_split_period == 'a':
-            file_name = 'point_input.nc4'
-        elif self.point_split_period == 'm':
-            file_name = self.StartDate.strftime("point_input_%Y%m.nc4")
-        elif self.point_split_period == 'd':
-            file_name = self.StartDate.strftime("point_input_%Y%m%d.nc4")
-        point_file = os.path.join(dir_name, file_name)
-        if os.path.exists(point_file): os.remove(point_file)
+        if not os.path.exists(dir_name):
+            os.makedirs(dir_name)
+        point_file = os.path.join(dir_name, 'point_input.nc4')
+        if os.path.exists(point_file):
+            os.remove(point_file)
 
         # only create a file if there are observations to write
         total_obs = 0
         for tracer in self.species:
             total_obs += self.PointObservation[tracer]['dimensions']['id']
-        if total_obs == 0: return
+        if total_obs == 0 :
+            return
 
         file_id = Dataset(point_file, 'w')
         file_id.createDimension('idate', 6)
@@ -113,19 +108,6 @@ class Observations:
                 setattr(fid, attr_name, attr_value)
         file_id.close()
         logger.info("Wrote %s" % point_file)
-
-
-class InputObservations:
-    def __init__(self):
-        self.n = 0
-        self.tracers = []
-
-    @classmethod
-    def from_xr_nc(cls, filename_or_pattern):
-        obs = cls()
-        data = xr.open_mfdataset(filename_or_pattern)
-        obs.data2 = data
-        return obs
 
 
 class PointObs:

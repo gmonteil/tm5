@@ -6,16 +6,8 @@ import glob
 from numpy import array, dot, float64, zeros_like, loadtxt, int16, where, exp, int32, savetxt, linalg, zeros
 from datetime import datetime
 import sys
-# from pyshell.base.helper.Utilities import checkDir
 import logging
 import subprocess
-# from pyshell.base.main.Precon import Precon
-# from pyshell.base.main.Emissions import my_Dataset
-# from pyshell.base.main.Satellite import ApplySatelliteObs
-# from pyshell.tmflex.observations import Observations
-# from pyshell.tmflex.PointObs import PointObs
-# from pyshell.base.main.Emissions import TM5_emission
-# from pyshell.tmflex.emissions.emissions import Emissions
 from pyshell.emissions import Emissions
 from pyshell.observations import PointObs, Observations
 from pyshell.utilities import checkDir, my_Dataset
@@ -189,8 +181,6 @@ class RunTM5:
         ok_file = os.path.join(self.output_dir, 'tm5.ok')
         if os.path.exists(ok_file):
             os.remove(ok_file)
-        # command to setup and submit a run:
-        # command = ['submit_tm5', self.rcf.get('job.step.run.exe'), rcfile]
         command = [os.path.join(self.rcf.get('pyshell2.build_directory'), 'tm5.x'), rcfile]
         # run, check status:
         with ExecEnvironment(curdir, exec_dir):
@@ -206,7 +196,7 @@ class RunTM5:
 
     def CalculateGradient(self, add_bg=True):
         adjoint_emission_model, adjoint_iniconc_model, adjoint_parameter_model = self.ReadAdjointState()
-        sys.stderr.write('Adjoint state read\n')
+        logger.info('Adjoint state read\n')
         self.adjoint_state_model = self.preco.struct2state(adjoint_emission_model,adjoint_iniconc_model,adjoint_parameter_model)
         sys.stderr.write('Adjoint state calculated in model space\n')
         self.adj_state_norm = linalg.norm(self.adjoint_state_model) # Just the observations
@@ -676,41 +666,3 @@ class RunTM5:
         else:
             logger.error('Zoomed file is created in forward run, do this first\n')
             sys.exit(2)
-
-    # def load(self, cleanup=True):
-    #     state_dir = os.path.join(self.output_dir, 'state')
-    #
-    #     file_name = os.path.join(state_dir, 'RunTM5.state')
-    #     if not os.path.exists(file_name):
-    #         logging.error('%s not found'%file_name)
-    #         sys.exit()
-    #
-    #     # Load the simple, pickled things first
-    #     with open(file_name, 'rb') as fid:
-    #         try:
-    #             while True:
-    #                 k,v = pickle.load(fid)
-    #                 setattr(self, k, v)
-    #         except EOFError:
-    #             pass
-    #     # Delete the state file
-    #     if cleanup:
-    #         os.remove(file_name)
-    #
-    #     # Load the npy files
-    #     npy_files = glob.glob(os.path.join(state_dir, 'runtm5_*.npy'))
-    #     for file_name in npy_files:
-    #         base_name = os.path.basename(file_name)
-    #         obj_name = os.path.splitext(base_name)[0].split('_', 1)[1]
-    #         setattr(self, obj_name, load(file_name))
-    #         # Delete the npy file
-    #         if cleanup:
-    #             os.remove(file_name)
-    #
-    #     # Load self.Emission
-    #     self.Emission = TM5_emission()
-    #     state_file = os.path.join(state_dir, 'emission_state.h5')
-    #     self.Emission.load(state_file, cleanup=cleanup)
-    #
-    #     # Load the Precon object
-    #     self.preco = Precon(self, resume=True, cleanup=cleanup)
