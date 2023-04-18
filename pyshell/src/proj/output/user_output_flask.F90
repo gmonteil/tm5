@@ -189,8 +189,6 @@ contains
 
     call ReadRc( rcF, 'output.point.interpolation', flask_interpolation, status, default=POINT_INTERPOLATION_SLOPES)
     IF_ERROR_RETURN(status=1)
-    call ReadRc( rcF, 'output.point.timewindow', assim_window, status)
-    IF_NOTOK_RETURN(status=1)
     call ReadRc( rcF, 'output.point.sample.parent', sample_in_parent, status, default=.true.)
     IF_ERROR_RETURN(status=1)
     call ReadRc( rcF, 'output.point.split.period', split_period, status)
@@ -531,11 +529,13 @@ contains
 
                 case (1) ! N-hour window
 
-                    itau_start(iflask) = itau_center(iflask)-assim_window*3600
-                    itau_end(iflask) = itau_center(iflask)+assim_window*3600
+                    call ReadRc( rcF, 'output.point.timewindow', assim_window, status)
+
+                    itau_start(iflask) = itau_center(iflask) - assim_window * 3600
+                    itau_end(iflask) = itau_center(iflask) + assim_window * 3600
 
                     if (flask_verbose) then
-                        if ((itau_center(iflask) .ge. itaui) .and. (itau_center(iflask) .lt. itaue)) then
+                        if ((itau_center(iflask) >= itaui) .and. (itau_center(iflask) < itaue)) then
                             call tau2date(itau_center(iflask), idate_temp)
                             windowMid = NewDate(time6=idate_temp)
                             call tau2date(itau_start(iflask), idate_temp)
@@ -558,7 +558,7 @@ contains
                     itau_end(iflask)   = itau_start(iflask)  + ndyn_max/tref(region_list(iflask)) + 1 ! 1 second leeway on either side
 
                     if (flask_verbose) then
-                        if ((itau_center(iflask) .ge. itaui) .and. (itau_center(iflask) .lt. itaue)) then
+                        if ((itau_center(iflask) >= itaui) .and. (itau_center(iflask) < itaue)) then
                             call tau2date(itau_center(iflask), idate_temp)
                             windowMid = NewDate(time6=idate_temp)
                             call tau2date(itau_start(iflask), idate_temp)
@@ -575,7 +575,7 @@ contains
                     itau_start(iflask) = itau_center(iflask) - time_window_length(iflask)
                     itau_end(iflask)   = itau_center(iflask) + time_window_length(iflask)
 
-                    if (time_window_length(iflask) .le. 0) write(*,'(a, " :: WARNING: flask sample ", i6, " for tracer ", a, &
+                    if (time_window_length(iflask) <= 0) write(*,'(a, " :: WARNING: flask sample ", i6, " for tracer ", a, &
                         " has a non-positive window length")') rname, iflask, names(itrac)
 
                 case default
