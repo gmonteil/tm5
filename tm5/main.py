@@ -183,12 +183,14 @@ class TM5:
             self.setup_output_stations(self.dconf.output.stations)
 
     def setup_output_stations(self, dconf):
-        raise NotImplementedError
+        self.settings['output.station.timeseries'] = 'T'
+        self.settings['output.station.timeseries.filename'] = Path(dconf.filename).absolute()
 
     def setup_output_point(self, dconf):
         self.settings['output.point'] = 'T'
         self.settings['output.point.input.dir'] = dconf.input_dir
         self.settings['output.point.split.period'] = 'a'  # no splitting ...
+        self.settings['output.point.sample.parent'] = dconf.get('sample_parent', 'F')
 
     def setup_run(self, mode='forward'):
         """
