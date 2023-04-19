@@ -1,17 +1,15 @@
 #!/usr/bin/env python
 
-
 from omegaconf import OmegaConf
-
 import tm5.emissions
 import tm5.observations
 from tm5.build import build_tm5
 from tm5.setup import setup_tm5
 from tm5.run import run_tm5
+from tm5.units import units_registry as ureg
 from tm5.settings import TM5Settings
-import xarray as xr
 from pathlib import Path
-from pandas import DatetimeIndex, Timestamp
+from pandas import Timestamp
 from loguru import logger
 import shutil
 
@@ -103,6 +101,7 @@ class TM5:
         self.setup_regions()
         self.setup_iniconc()
         self.setup_optim()
+        self.setup_tracers()
         rcf = self.settings.write(Path(self.dconf.run.paths.output) / 'forward.rc')
         run_tm5(f'{str(self.tm5exec.absolute())} {str(rcf)}', settings=self.dconf.machine.host)
 
@@ -274,3 +273,31 @@ class TM5:
                     self.settings[f'emissions.{tracer}.{region}.{cat}'] = {'MS': 'monthly', 'D': 'daily'}[catfreq]
                     # Since these are probably not needed, I just hardcode them ...
                     # self.settings[f'emission.{tracer}.{region}.category{icat+1:.0f}'] = f'{cat}; 100.0 ; 200.0-g ; 0.0-e-monthly ; 0 ; dummy'
+
+    def setup_tracers(self) -> None:
+        """
+        Setup rc keys required by chem_params.F90:
+        - tracers.number
+        - tracers.name
+        - tracers.{tr}.molar_mass
+        - tracers.{tr}.mixrat_unit_value
+        - tracers.{tr}.mixrat_unit_name
+        - tracers.{tr}.emis_unit_value
+        - tracers.{tr}.emis_unit_name
+
+        The "mixrat_unit_value" and "emis_unit_value" keys are computed based on their "name" counterparts, using
+        information from the "tm5.units" module ==> new chemical species need to be implemented there first!
+        """
+
+        tracers = self.dconf.run.tracers
+        self.settings['tracers.number'] = len(tracers)
+        self.settings['tracers.names'] = ','.join([_ for _ in tracers])
+        for tr in tracers :
+            species = self.dconf.tracers[tr].species
+            emis_unit = self.dconf.tracers[tr].flux_unit
+            mix_unit = self.dconf.tracers[tr].mix_unit
+            self.settings[f'tracers.{tr}.molar_mass'] = 1 / ureg.Quantity(f'g{species}').to('mol').m
+            self.settings[f'tracers.{tr}.mixrat_unit_value'] = ureg.Quantity('mol / mol').to(mix_unit).m
+            self.settings[f'tracers.{tr}.mixrat_unit_name'] = mix_unit
+            self.settings[f'tracers.{tr}.emis_unit_value'] = ureg.Quantity(f'kg{species}').to(emis_unit).m
+            self.settings[f'tracers.{tr}.emis_unit_name'] = emis_unit

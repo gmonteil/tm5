@@ -10,6 +10,7 @@ from netCDF4 import Dataset
 from loguru import logger
 from numpy import int16
 from pathlib import Path
+from tm5.units import units_registry as ureg
 
 
 def crop_and_coarsen(glo1x1: xr.DataArray, dest: TM5Grids) -> xr.DataArray:
@@ -57,7 +58,7 @@ def load_preprocessed_emis(categ: DictConfig, tracer: DictConfig, destreg: TM5Gr
         area = TM5Grids.global1x1().area
     else :
         area = data[area].values
-    emis_glo1x1 *= area * tracer.molar_mass * 1.e-3
+    emis_glo1x1 *= area * ureg.Quantity('mol').to(f'kg{tracer.species}').m
 
     # Regrid:
     emcoarse = crop_and_coarsen(emis_glo1x1, dest=destreg)
