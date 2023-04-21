@@ -11,9 +11,13 @@ from omegaconf import OmegaConf
 from tm5.run import run_tm5
 
 
-def build_tm5(conf: DictConfig) -> Path:
+def build_tm5(conf: DictConfig, clean : bool = False) -> Path:
     # Make build directory (and parents, if needed)
     Path(conf.build.directory).mkdir(exist_ok=True, parents=True)
+
+    if clean :
+        [_.unlink() for _ in Path(conf.build.directory).glob('*.o')]
+        [_.unlink() for _ in Path(conf.build.directory).glob('*.mod')]
 
     # Copy/Generate source files
     files = copy_files(conf.build)
