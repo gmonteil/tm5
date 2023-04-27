@@ -8,6 +8,7 @@ from tm5.setup import setup_tm5
 from tm5.run import run_tm5
 from tm5.units import units_registry as ureg
 from tm5.settings import TM5Settings
+from tm5 import species as chem
 from pathlib import Path
 from pandas import Timestamp
 from loguru import logger
@@ -23,11 +24,11 @@ class TM5:
         self.start = Timestamp(self.dconf.run.start)
         self.end = Timestamp(self.dconf.run.end)
 
-    def build(self):
+    def build(self, clean : bool = False):
         """
         Build TM5
         """
-        tm5exec = build_tm5(self.dconf)
+        tm5exec = build_tm5(self.dconf, clean = clean)
         shutil.copyfile(tm5exec, self.tm5exec)
 
     def optim(self):
@@ -237,25 +238,39 @@ class TM5:
             self.settings[f'output.point.{tracer}.minerror'] = self.dconf.observations.point[tracer].minerror
         return tm5.observations.prepare_point_obs(self.dconf.output.point)
 
-    def setup_emissions(self):
+    def setup_emissions(self, skip_file_creation: bool = False):
         """
         This will create the emission file and dailycycle files as well as setup the following rc-keys:
+        - PyShell.em.filename
+        - dailycycle.folder
         - {tracer}.{cat}.dailycycle
         - {tracer}.dailycycle.type
-        - PyShell.em.filename
+        - {tracer}.dailycycle.prefix
+
+        Arguments:
+            skip_file_creation [bool] : set to True to avoid recomputing the emission files if it is already there
         """
 
         filename = Path(self.dconf.run.paths.output) / 'emissions.nc'
         self.settings['PyShell.em.filename'] = str(filename)
-        for tracer in self.dconf.emissions.tracers :
-            pfx = Path(self.dconf.emissions.tracers[tracer].dailycycle_filename_format)
-            self.settings[f'{tracer}.dailycycle.type'] = self.dconf.emissions.tracers[tracer].dailycycle_type
-            self.settings[f'{tracer}.dailycycle.prefix'] = pfx.with_suffix('').with_suffix('').name + '.'
-            self.settings['dailycycle.folder'] = pfx.parent.parent.parent
-            for cat in self.dconf.emissions.tracers[tracer].categories:
-                self.settings[f'{tracer}.{cat}.dailycycle'] = 'T'
+        for trname in self.dconf.emissions.tracers :
+            # catgroup = self.dconf.emissions[tracer].emission_categories
+            # catlist = self.dconf.emissions[tracer].get('categories', [tracer])
+            # for cat in catlist :
+            tracer = self.dconf.emissions[trname]
+            for catname, cat in tracer.get('emission_categories', {}).items() :
+                apply_dailycycle = tracer.get('dailycycle', False)
+                self.settings[f'{trname}.{catname}.dailycycle'] = {True: 'T', False: 'F'}[apply_dailycycle]
+                # The following settings are not category-specific, but the may not be defined if none of the tracers
+                # categories applies dailycycle. Therefore only looking if really needed.
+                if apply_dailycycle :
+                    pfx = Path(tracer.dailycycle_filename_format)
+                    self.settings[f'{tracer}.dailycycle.type'] = tracer.dailycycle_type
+                    self.settings[f'{tracer}.dailycycle.prefix'] = pfx.with_suffix('').with_suffix('').name + '.'
+                    self.settings['dailycycle.folder'] = pfx.parent.parent.parent
 
-        tm5.emissions.prepare_emissions(self.dconf.emissions, filename = filename)
+        if not skip_file_creation:
+            tm5.emissions.prepare_emissions(self.dconf.emissions, filename = filename)
 
     def setup_optim(self):
         """
@@ -265,11 +280,13 @@ class TM5:
         """
         for tracer in self.dconf.emissions.tracers :
             for region in self.dconf.emissions.regions :
-                cats = self.dconf.emissions[region][tracer].keys()
+                # cats = self.dconf.emissions[tracer].get('categories', [tracer])
+                cats = [_ for _ in self.dconf.emissions[tracer].get('emission_categories', {}).keys()]
                 self.settings[f'emissions.{tracer}.{region}.categories'] = ', '.join([c for c in cats])
                 self.settings[f'emissions.{tracer}.{region}.ncats'] = len(cats)
                 for icat, cat in enumerate(cats):
-                    catfreq = self.dconf.emissions[region][tracer][cat].optim_freq
+                    catdconf = self.dconf.emissions[tracer].get(cat, self.dconf.emissions[tracer])
+                    catfreq = catdconf.get('optim_freq', 'D')
                     self.settings[f'emissions.{tracer}.{region}.{cat}'] = {'MS': 'monthly', 'D': 'daily'}[catfreq]
                     # Since these are probably not needed, I just hardcode them ...
                     # self.settings[f'emission.{tracer}.{region}.category{icat+1:.0f}'] = f'{cat}; 100.0 ; 200.0-g ; 0.0-e-monthly ; 0 ; dummy'
@@ -293,11 +310,11 @@ class TM5:
         self.settings['tracers.number'] = len(tracers)
         self.settings['tracers.names'] = ','.join([_ for _ in tracers])
         for tr in tracers :
-            species = self.dconf.tracers[tr].species
-            emis_unit = self.dconf.tracers[tr].flux_unit
-            mix_unit = self.dconf.tracers[tr].mix_unit
-            self.settings[f'tracers.{tr}.molar_mass'] = 1 / ureg.Quantity(f'g{species}').to('mol').m
+            spec = self.dconf.tracers[tr].species
+            emis_unit = self.dconf.tracers[tr].get('flux_unit', chem.species[spec].unit_emis)
+            mix_unit = self.dconf.tracers[tr].get('mix_unit', chem.species[spec].unit_mix)
+            self.settings[f'tracers.{tr}.molar_mass'] = 1 / ureg.Quantity(f'g{spec}').to('mol').m
             self.settings[f'tracers.{tr}.mixrat_unit_value'] = ureg.Quantity('mol / mol').to(mix_unit).m
-            self.settings[f'tracers.{tr}.mixrat_unit_name'] = mix_unit
-            self.settings[f'tracers.{tr}.emis_unit_value'] = ureg.Quantity(f'kg{species}').to(emis_unit).m
-            self.settings[f'tracers.{tr}.emis_unit_name'] = emis_unit
+            self.settings[f'tracers.{tr}.mixrat_unit_name'] = str(mix_unit)
+            self.settings[f'tracers.{tr}.emis_unit_value'] = ureg.Quantity(f'kg{spec}').to(emis_unit).m
+            self.settings[f'tracers.{tr}.emis_unit_name'] = str(emis_unit)

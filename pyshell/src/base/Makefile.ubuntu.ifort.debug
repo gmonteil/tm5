@@ -3,6 +3,8 @@ F77 = ifort
 LINKER = ifort
 
 # compile flags:
+# FFLAGS = -cpp -fPIC -fp-model strict -m64 -warn align -r8 -qopenmp -O0 -I/opt/include -I/opt/intel/oneapi/mkl/2022.0.2/include -I/opt/intel/oneapi/mkl/2022.0.2/include/intel64/lp64
+# FFLAGS = -cpp -fPIC -fp-model strict -fomit-frame-pointer -m64 -warn align -r8 -qopenmp -O3 -align -ipo -xSSE4.2 -parallel -I/opt/include -I/opt/intel/oneapi/mkl/2022.0.2/include -I/opt/intel/oneapi/mkl/2022.0.2/include/intel64/lp64
 FFLAGS = -cpp -fPIC -fp-model strict -fomit-frame-pointer -m64 -warn align -r8 -qopenmp -O2 -g -traceback -fpe0 -ftrapuv -I/opt/include -I/opt/intel/oneapi/mkl/2022.0.2/include -I/opt/intel/oneapi/mkl/2022.0.2/include/intel64/lp64
 
 # compile flags without optim:

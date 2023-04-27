@@ -23,10 +23,9 @@ module global_data
     use dims,       only : region_data
     use dims,       only : wind_data
     use dims,       only : mass_data
-    use global_types, only : conv_data
+    use global_types, only : conv_data, emis_data
     use dims,       only : nregions, im, jm, lm, nlon360, nlat180
     use dims,       only : okdebug, lmax_conv
-  use chem_param, only : ntracet, emis_data
 #ifdef MPI
   use mpi_const,  only : ntracetloc,lmloc,allocate_mass
 #endif
@@ -44,9 +43,10 @@ module global_data
 
     ! NOTE: ifort compiler requires that both type and variable are public ..
 
-  public  ::  rcfile, rcF
-  public  ::  inputdir
-  public  ::  outdir
+    public  :: rcfile, rcF
+    public  :: inputdir
+    public  :: outdir
+    public  :: ntracet
 
     public  :: region_data, region_dat
     public  :: wind_data, wind_dat
@@ -64,7 +64,6 @@ module global_data
 
     ! module name
     character(len=*), parameter  ::  mname = 'global_data'
-
 
     ! --- var ---------------------------------------------
 
@@ -88,8 +87,9 @@ module global_data
     type(wind_data)  ,dimension(nregions),target   :: wind_dat
     type(mass_data)  ,dimension(nregions),target   :: mass_dat
     type(conv_data)  ,dimension(nregions),target   :: conv_dat
-
     type(emis_data)  ,dimension(nregions),target   :: albedo
+
+    integer :: ntracet
 
 
 contains

@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 from pathlib import Path
+from loguru import logger
 
 """
 Default TM5 settings (rc keys)
@@ -110,3 +111,7 @@ class TM5Settings(dict):
             for k, v in self.items():
                 fid.write(f'{k} : {str(v)}\n')
         return filename
+
+    def __setitem__(self, key, value):
+        logger.info(f'{key:>30s} : {value}')
+        super().__setitem__(key, value)

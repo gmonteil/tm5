@@ -31,7 +31,7 @@ module Emission_Data
 
     public  ::  optim_emis_type
     public  ::  tracers_em_info
-    public  ::  T_Tracers_info, ntracet
+    public  ::  T_Tracers_info, ntracet, t_tracer_info
     public  ::  ref_emissions, ref_emissions_apri, adj_emissions
     public  ::  Emission_Data_Init, Emission_Data_Done, update_parent_emissions
 

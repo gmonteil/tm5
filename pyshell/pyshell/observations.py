@@ -32,7 +32,7 @@ class Observations:
             unassim_mdm = self.rcf.get('%s.point.unassimilate.mdm' % tracer, 'float')
         # obs = obsobj.get(tracer, self.ti, self.tf)
 
-        ds = ds.sel(index = (ds.time > datetime64(self.ti)) & (ds.time <= datetime64(self.tf)) & (ds.tracer == tracer.lower()))
+        ds = ds.sel(time = (ds.time > datetime64(self.ti)) & (ds.time <= datetime64(self.tf)) & (ds.tracer == tracer.lower()))
 
         #self.PointObservation[tracer]['dimensions'] = {'id': obs['n']}
         self.PointObservation[tracer]['dimensions'] = {'id': len(ds.obs)}

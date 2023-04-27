@@ -49,7 +49,7 @@ module chem_param
     integer :: ntrace       ! number of tracers for chemistry
     integer :: ntrace_chem  ! number of non-transported tracers
     integer :: maxtrace     ! total number of tracers
-    integer, parameter :: tracer_name_len = 8
+    integer, parameter :: tracer_name_len = 20
 
     ! components numbers
     integer, parameter :: ico2 = 1
@@ -61,7 +61,7 @@ module chem_param
     integer, dimension(nstd), parameter :: istd    = (/ico2/)
     !
     ! species name
-    character*8, dimension(:), allocatable :: names
+    character(len=tracer_name_len), dimension(:), allocatable :: names
     !
     ! some stuff for the budgets....
     integer, parameter           :: njnum = 1
@@ -112,13 +112,13 @@ module chem_param
             call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.molar_mass', ra(itrac), status)
 
             ! mixrat_unit_value should be 1.e6 for ppm, 1.e9 for ppb, etc.
-            call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.mixrat_unit_value', mixrat_unit(1), status)
-            call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.mixrat_unit_name', mixrat_unit_name(1), status)
+            call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.mixrat_unit_value', mixrat_unit(itrac), status)
+            call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.mixrat_unit_name', mixrat_unit_name(itrac), status)
             ! emis_unit_value should enable conversion from kg(tracer) to unit(tracer), e.g. if we want PgC for a CO2
             ! tracer, then it should be ~(12/44)*1.e-12.
             ! The unit names can be arbitrary (no check on that ...)
-            call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.emis_unit_value', emis_unit(1), status)
-            call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.emis_unit_name', emis_unit_name(1), status)
+            call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.emis_unit_value', emis_unit(itrac), status)
+            call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.emis_unit_name', emis_unit_name(itrac), status)
         end do
 
         !   fscale(ntrace): scaling factor for conversion of mixing ratios

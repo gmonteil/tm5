@@ -141,6 +141,8 @@ def gen_makefile(config: DictConfig) -> Path:
 
 
 def make_tm5(makefile : Path, settings : Dict) -> Path:
+    # Remove the existing executable, to ensure that the script stops if the complilation fails
+    (makefile.parent / 'tm5.x').unlink(missing_ok=True)
     run_tm5(f'make -C {makefile.parent} {makefile.name} tm5.x'.split(), settings=settings.host)
     return makefile.parent / 'tm5.x'
 

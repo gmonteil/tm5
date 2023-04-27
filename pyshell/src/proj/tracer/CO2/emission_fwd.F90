@@ -40,7 +40,7 @@ contains
         character(len=*), parameter :: rname = mname//'/Emission_Fwd_Init'
 
         ! define timers:
-        call GO_Timer_Def( itim_emission, 'emission', status )
+        call GO_Timer_Def(itim_emission, 'emission', status )
         IF_NOTOK_RETURN(status=1)
 
         call Init_CO2_emis(status)

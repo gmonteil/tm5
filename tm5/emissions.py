@@ -5,12 +5,12 @@ from pandas import Timestamp, date_range, DatetimeIndex
 from pandas.tseries.frequencies import to_offset
 from omegaconf import DictConfig
 from tm5.gridtools import TM5Grids
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Union
 from netCDF4 import Dataset
 from loguru import logger
-from numpy import int16
 from pathlib import Path
 from tm5.units import units_registry as ureg
+from dateutil.relativedelta import relativedelta
 
 
 def crop_and_coarsen(glo1x1: xr.DataArray, dest: TM5Grids) -> xr.DataArray:
@@ -40,31 +40,80 @@ def crop_and_coarsen(glo1x1: xr.DataArray, dest: TM5Grids) -> xr.DataArray:
         })
 
 
-def load_preprocessed_emis(categ: DictConfig, tracer: DictConfig, destreg: TM5Grids, period) -> Tuple[xr.DataArray, Dict]:
+def load_preprocessed_emis(
+        categ: Union[Dict, DictConfig],
+        species: str,
+        destreg: TM5Grids,
+        period: slice,
+) -> xr.DataArray:
     """
     This reads pre-processed emissions (global, 1x1˚, mol/m2/s) and convert them to emissions in kg[tracer]/s limited to the requested TM5 region.
+
+    The emissions should be stored in (a) xarray-compatible netcdf file(s), covering the requested period.
+    Alternatively, the files can be treated as a climatology. In this case, the data will be monthly (even
+    if the data used to construct the climatology has a higher temporal resolution.
+
+    Arguments :
+        - categ : dictionary with one mandatory and three [optional] fields:
+            * pattern: glob pattern of the files from which emissions are read
+            * [field]: name of the netcdf variable containing the emissions (default: "emis")
+            * [area_field]: name of the netcdf variable containing the grid cell area (if not provided, it
+                            will be computed
+            * [climatology]: whether to tread the data as a climatology or as regular emissions (default: False)
+        - species: name of the species to be read (should be one that is implemented in tm5.units module)
+        - destreg: grid specification of the TM5 region at which the data should be cropped/coarsened (should be an instance of tm5.gridtools.TM5Grids)
+        - period: slice containing start and end dates
     """
 
-    file_pattern = categ.pattern
+    file_pattern = categ['pattern']
     field = categ.get('field', 'emis')
     area = categ.get('area_field', None)
     data = xr.open_mfdataset(file_pattern)
 
-    # Ensure we have an area array in memory (should be for global1x1)
-    emis_glo1x1 = data[field].sel(time=(data.time >= period.start) & (data.time < period.stop))
+    if categ.get('climatology', False):
+        logger.warning(f"Treating files {file_pattern} as a climatological field")
+
+        # 1st, calculate monthly averages:
+        data = data[field].groupby(data.time.dt.month).mean()
+
+        # Create the actual dataframe:
+        emis_glo1x1 = xr.DataArray(
+            dims = ('time', 'latitude', 'longitude'),
+            coords = {
+                'time' : date_range(
+                    period.start.strftime('%Y-%m-01'),
+                    (period.stop + relativedelta(months=1)).strftime('%Y-%m-01'),
+                    freq='MS', inclusive='left'),
+                'latitude': data.latitude.values,
+                'longitude': data.longitude.values
+            }
+        )
+
+        data = data.values # Load the values in memory, at this point
+        for tstep in range(emis_glo1x1.values.shape[0]):
+            emis_glo1x1.values[tstep, :, :] = data[emis_glo1x1.time.dt.month.values[tstep] - 1, :, :]
+        emis_glo1x1 = emis_glo1x1.sel(time=(emis_glo1x1.time >= period.start) & (emis_glo1x1.time < period.stop))
+    else:
+
+        # Time normally refers to the start of the period, but in some files it refers to the middle.
+        # In this case, pass a "time_shift" key to the category config node, corresponding to the time correction to
+        # be applied (e.g. "-1.5H" for 3-hourly CarbonTracker files).
+        time_shift = to_offset(categ.get('time_shift', '0H'))
+        time = DatetimeIndex(data.time) + time_shift
+        data = data.assign_coords(time=time)
+
+        # Ensure we have an area array in memory (should be for global1x1)
+        emis_glo1x1 = data[field].sel(time=(data.time >= period.start) & (data.time < period.stop))
 
     # Convert from mol/m2/s to kg[tracer]/s:
     if area is None :
         area = TM5Grids.global1x1().area
     else :
         area = data[area].values
-    emis_glo1x1 *= area * ureg.Quantity('mol').to(f'kg{tracer.species}').m
+    emis_glo1x1 *= area * ureg.Quantity('mol').to(f'kg{species}').m
 
     # Regrid:
-    emcoarse = crop_and_coarsen(emis_glo1x1, dest=destreg)
-
-    # Split between baselines and anomalies (daily cycle files):
-    return split_baseline_anomalies(emcoarse, period.start, period.stop, categ.optim_freq)
+    return crop_and_coarsen(emis_glo1x1, dest=destreg)
 
 
 def split_baseline_anomalies(emreg: xr.DataArray, start: Timestamp, end: Timestamp, freq: str) -> Tuple[xr.DataArray, Dict]:
@@ -88,7 +137,10 @@ def split_baseline_anomalies(emreg: xr.DataArray, start: Timestamp, end: Timesta
     return baseline, anom
 
 
-def prepare_emissions(dconf : DictConfig, filename : Path) -> Path:
+def prepare_emissions(dconf : DictConfig, filename : Union[str, Path]) -> Path:
+
+    start = Timestamp(dconf.start)
+    end = Timestamp(dconf.end)
 
     with Dataset(str(filename), 'w') as ds :
         ds.createDimension('itime', 6)
@@ -118,39 +170,39 @@ def prepare_emissions(dconf : DictConfig, filename : Path) -> Path:
             gid['area'][:] = reg.area
 
             # Create tracer subgroup(s):
-            for trname, tracer in dconf.tracers.items():
-
-                # Ensure that the folder for dailycycle files exists:
-                Path(tracer.dailycycle_filename_format).parent.mkdir(parents=True, exist_ok=True)
+            for trname, tracer in {k: dconf[k] for k in dconf.tracers}.items():
 
                 # Create the tracer group
                 gtr = gid.createGroup(trname)
 
-                # Create the categories subgroups
-                firstcat = True
-                for catname, cat in dconf[regname][trname].items():
+                dailycycle_writemode = 'w'
 
+                for catname, cat in tracer.get('emission_categories', {}).items():
                     logger.info(f'{regname}; {trname}; {catname}')
-
                     grp = gtr.createGroup(catname)
 
+                    # Ensure that the optim_freq field is set for the category
+                    cat.optim_freq = cat.get('optim_freq', 'D')
+                    if cat.get('climatology', False):
+                        # Enforce monthly for climatology
+                        cat.optim_freq = 'MS'
+
                     # Load the emissions
-                    emcat, anomcat = load_preprocessed_emis(
-                        cat, tracer, reg, slice(Timestamp(dconf.start), Timestamp(dconf.end))
-                    )
+                    emcat = load_preprocessed_emis(cat, tracer.species, reg, slice(start, end))
 
-                    # Write the anomalies for the category
-                    for day, anom in anomcat.items():
-                        fname = day.strftime(tracer.dailycycle_filename_format)
-                        Path(fname).parent.mkdir(parents=True, exist_ok=True)
-                        anom.to_netcdf(
-                            fname,
-                            group=f'{regname}/{catname}',
-                            mode = 'w' if firstcat else 'a'
-                        )
+                    # Split baseline and anomalies in all cases, to ensure that the emissions are at the requested frequency
+                    emcat, anoms = split_baseline_anomalies(emcat, start, end, cat.optim_freq)
 
-                    # Ensure that the next cats don't overwrite the dailycycle files
-                    firstcat = False
+                    # Calculate and write dailycycle if needed
+                    if cat.get('dailycycle', False):
+                        # Write the anomalies for the category
+                        for day, anom in anoms.items():
+                            fname = day.strftime(tracer.dailycycle_filename_format)
+                            Path(fname).parent.mkdir(parents=True, exist_ok=True)
+                            anom.to_netcdf(fname, group=f'{regname}/{catname}', mode = dailycycle_writemode)
+
+                        # Next category will should not overwrite the data:
+                        dailycycle_writemode = 'a'
 
                     # Store the emission themselves:
                     grp.createDimension('nt', emcat.shape[0])
