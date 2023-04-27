@@ -35,7 +35,7 @@ def setup_meteo(dconf: DictConfig) -> DictConfig:
         
 def setup_paths(dconf: DictConfig) -> DictConfig:
     dconf.pyshell2['my.run.dir'] = Path(dconf.run.paths.output).absolute()
-    dconf.pyshell2['my.scratch_dir'] = Path(dconf.machine.paths.scratch).absolute()
+    dconf.pyshell2['path.diffusion'] = Path(dconf.machine.paths.diffusion).absolute()
     dconf.pyshell2['my.input.dir'] = Path(dconf.machine.paths.input).absolute()
     dconf.pyshell2['pyshell2.build_directory'] = Path(dconf.build.directory).absolute()
     return dconf

@@ -123,7 +123,7 @@ def gen_makefile(config: DictConfig) -> Path:
 
     # Choose the correct Makefile
     buildpath = Path(config.directory)
-    makefile_source = buildpath / f'Makefile.{config.make.machine}.{config.make.compiler}.{config.make.options}'
+    makefile_source = buildpath / f'Makefile.{config.make.platform}.{config.make.compiler}.{config.make.options}'
     makefile_dest = buildpath / 'Makefile'
     shutil.copy(makefile_source, makefile_dest)
 

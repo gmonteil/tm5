@@ -134,7 +134,7 @@ class Precon:
 
     def ReadRegionDefinitions(self):
         # This routine will read Zoomed.nc4 (in output folder) only after a forward run...
-        zoomfile = os.path.join(self.rcf.get('my.zoom.dir'), 'Zoomed_%s.nc4'%self.rcf.get('my.zoom'))
+        zoomfile = os.path.join(self.rcf.get('my.zoom.dir'), 'Zoomed_%s.nc4' % self.rcf.get('my.zoom'))
         if os.path.isfile(zoomfile):
             f = Dataset(zoomfile,'r')
             self.xbeg = f.variables['xbeg'][:]

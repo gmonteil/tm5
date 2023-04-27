@@ -13,13 +13,16 @@ if __name__ == '__main__':
     p.add_argument('--verbosity', '-v', default='INFO')
     p.add_argument('--legacy', action='store_true')
     p.add_argument('--fast', help='do not re-run the obs and emis pre-processing')
+    p.add_argument('--machine', help='name of the section of the yaml file to use as "machine" section', default='machine')
     args = p.parse_args(sys.argv[1:])
     
     logging.basicConfig(format='[%(levelname)s] %(message)s', level=args.verbosity)
     
     # Parse config file (yaml format!)
 
-    rc = OmegaConf.load(args.rc).pyshell
+    yml = OmegaConf.load(args.rc)
+    yml['machine'] = yml[args.machine]
+    rc = yml.pyshell
 
     if args.action in ['forward', 'background']:
         # if args.legacy:

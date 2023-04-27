@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import os
 
 from omegaconf import OmegaConf
 import tm5.emissions
@@ -16,13 +17,20 @@ import shutil
 
 
 class TM5:
-    def __init__(self, dconf: str):
+    def __init__(self, dconf: str, machine : str = 'machine'):
         self.dconf = OmegaConf.load(dconf)
+        # Copy the section of the yaml file given by the "machine" keyword arguments to the actual "machine" section.
+        # If the "machine" keyword argument is not provided, this does nothing (i.e. it copies "machine" section to "machine" section)
+        self.dconf['machine'] = self.dconf[machine]
+
         self.configfile = dconf
         self.settings = TM5Settings()
         self.tm5exec = Path(self.dconf.run.paths.output) / 'tm5.x'
         self.start = Timestamp(self.dconf.run.start)
         self.end = Timestamp(self.dconf.run.end)
+
+        # pyshell-related
+        self.machine = machine
 
     def build(self, clean : bool = False):
         """
@@ -36,13 +44,13 @@ class TM5:
         Do an inversion ==> this is still based on pyshell
         """
         self.setup()
-        run_tm5(f'pyshell optim --rc {self.configfile}', settings=self.dconf.machine.host)
+        run_tm5(f'pyshell optim --rc {self.configfile} --machine={self.machine}', settings=self.dconf.machine.host)
 
     def forward_pyshell(self):
         """
         Do a forward run, using pyshell
         """
-        run_tm5(f'pyshell forward --rc {self.configfile}', settings=self.dconf.machine.host)
+        run_tm5(f'pyshell forward --rc {self.configfile} --machine={self.machine}', settings=self.dconf.machine.host)
 
     def setup(self):
         self.dconf = setup_tm5(self.dconf)

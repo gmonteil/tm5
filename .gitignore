@@ -5,3 +5,4 @@ output/*
 *.mod
 *.pyc
 *.egg-info*
+/.stignore
