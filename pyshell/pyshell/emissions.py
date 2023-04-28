@@ -11,6 +11,7 @@ from pyshell.utilities import checkDir, my_Dataset
 from pyshell.gridtools import TM5Grids
 from pandas import DatetimeIndex, Timedelta
 from pandas.tseries.frequencies import to_offset
+from pandas import Timestamp
 import xarray as xr
 
 
@@ -379,20 +380,31 @@ class PreprocessedEmissions(Emissions):
         else :
             area = data[area].values
 
+        # Calculate granularity:
+        # Granularity (time step) is read, by order of priority 1) in the netcdf file attributes, 2) in the yaml file
+        granularity = data.attrs.get('granularity', self.dconf[category].get('granularity'))
+
         # Load the emissions. They should be on a global 1x1, 3-hourly grid and in mol/m2/s
         # The following will convert them in kg[tracer]/s
         idx = DatetimeIndex(data.time.values)
         emis_glo1x1 = data[field].sel(time=(idx >= period.start) & (idx < period.stop)) * area * self.MolarMass
 
+        # Check that the simulation period is fully covered by the preprocessed emissions:
+        tmin = Timestamp(data.time.values.min())
+        tmax = Timestamp(data.time.values.max())
+        assert (tmin <= period.start) & (tmax + to_offset(granularity) >= period.stop), logger.error(
+             "Pre-processed emission files for category %s (%s) don't cover the full simulation period. " % (category, file_pattern) +
+             "Emissions in the files range from %s to %s" % (tmin.strftime("%-d %B %Y"), tmax.strftime("%-d %B %Y")))
+
         # destination region
         destreg = TM5Grids.from_corners(latb = self.lat_grid[region], lonb = self.lon_grid[region])
 
         # regrid:
-        emis_coarsened = crop_and_coarsen(emis_glo1x1, latb=destreg.latb, lonb=destreg.lonb)
+        try :
+            emis_coarsened = crop_and_coarsen(emis_glo1x1, latb=destreg.latb, lonb=destreg.lonb)
+        except ValueError:
+            import pdb; pdb.set_trace()
 
-        # Calculate granularity:
-        # Granularity (time step) is read, by order of priority 1) in the netcdf file attributes, 2) in the yaml file
-        granularity = data.attrs.get('granularity', self.dconf[category].get('granularity'))
         timestep = DatetimeIndex(emis_glo1x1.time.values) + to_offset(granularity) - DatetimeIndex(emis_glo1x1.time.values)
 
         # Return a DataArray:

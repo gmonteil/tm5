@@ -3,6 +3,7 @@
 from omegaconf import DictConfig
 from pathlib import Path
 from pandas import Timestamp
+from tm5.meteo import Meteo
 
 
 def setup_initial_condition(dconf: DictConfig) -> DictConfig:
@@ -23,13 +24,15 @@ def setup_initial_condition(dconf: DictConfig) -> DictConfig:
     
     
 def setup_meteo(dconf: DictConfig) -> DictConfig:
-    dconf.tm5['my.meteo.resol'] = dconf.meteo.resolution
+    dconf.tm5['my.meteo.resol'] = 'coarsened' if dconf.meteo.coarsened else 'glb100x100'
     dconf.tm5['my.meteo.source.dir'] = Path(dconf.run.paths.meteo).absolute()
     if dconf.meteo.output :
         dconf.tm5['my.meteo.resol'] = 'glb100x100'
         dconf.tm5['my.tmm.output'] = 'T'
     else :
         dconf.tm5['my.tmm.output'] = 'F'
+
+    Meteo(**dconf.meteo).setup_files(start=dconf.run.start, end=dconf.run.end)
     return dconf
 
         

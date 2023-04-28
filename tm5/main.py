@@ -5,6 +5,7 @@ from omegaconf import OmegaConf
 import tm5.emissions
 import tm5.observations
 from tm5.build import build_tm5
+from tm5.meteo import Meteo
 from tm5.setup import setup_tm5
 from tm5.run import run_tm5
 from tm5.units import units_registry as ureg
@@ -29,6 +30,8 @@ class TM5:
         self.start = Timestamp(self.dconf.run.start)
         self.end = Timestamp(self.dconf.run.end)
 
+        self.meteo = Meteo(**self.dconf.meteo)
+
         # pyshell-related
         self.machine = machine
 
@@ -44,13 +47,13 @@ class TM5:
         Do an inversion ==> this is still based on pyshell
         """
         self.setup()
-        run_tm5(f'pyshell optim --rc {self.configfile} --machine={self.machine}', settings=self.dconf.machine.host)
+        return run_tm5(f'pyshell optim --rc {self.configfile} --machine={self.machine}', settings=self.dconf.machine.host)
 
     def forward_pyshell(self):
         """
         Do a forward run, using pyshell
         """
-        run_tm5(f'pyshell forward --rc {self.configfile} --machine={self.machine}', settings=self.dconf.machine.host)
+        return run_tm5(f'pyshell forward --rc {self.configfile} --machine={self.machine}', settings=self.dconf.machine.host)
 
     def setup(self):
         self.dconf = setup_tm5(self.dconf)
@@ -146,6 +149,8 @@ class TM5:
 
         # Constant 1x1 fields (oro and lsm):
         self.settings['tmm.sourcekey.*.sfc.const'] = 'tm5-nc:mdir=ec/ea/an0tr1/sfc/glb100x100;tres=_00p01;namesep=/'
+
+        self.meteo.setup_files(start=self.dconf.run.start, end=self.dconf.run.end)
 
     def setup_regions(self):
         """

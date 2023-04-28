@@ -94,6 +94,10 @@ def load_preprocessed_emis(
             emis_glo1x1.values[tstep, :, :] = data[emis_glo1x1.time.dt.month.values[tstep] - 1, :, :]
         emis_glo1x1 = emis_glo1x1.sel(time=(emis_glo1x1.time >= period.start) & (emis_glo1x1.time < period.stop))
     else:
+        #
+        # assert (data.time.min() <= period.start) & (data.time.max() >= period.stop), logger.error(
+        #     f"Emissions for category {categ['name']} ({categ['pattern']}) do not cover the full simulation period: \n" +
+        #     f"The emission in files range from {data.time.min(): %d %b %Y} to {data.time.max(): %d %b %Y}")
 
         # Time normally refers to the start of the period, but in some files it refers to the middle.
         # In this case, pass a "time_shift" key to the category config node, corresponding to the time correction to
