@@ -19,7 +19,6 @@ def setup_initial_condition(dconf: DictConfig) -> DictConfig:
             dconf.tm5['start.3.filename'] = Path(fname).absolute()
         case 'zero':
             dconf.tm5['istart'] = '1'
-
     return dconf
     
     
@@ -44,29 +43,29 @@ def setup_paths(dconf: DictConfig) -> DictConfig:
     return dconf
     
     
-def setup_tm5(dconf: DictConfig) -> DictConfig:
-    """
-    Generate a simplified rcfile for TM5
-    the file should be integrated to the main rc-file via an "#include" statement
-    """
-    
-    if dconf.get('tm5') is None :
-        dconf.tm5 = {}
-    if not dconf.get('pyshell2'):
-        dconf.pyshell2 = {}
-    dconf = setup_initial_condition(dconf)
-    dconf = setup_meteo(dconf)
-    dconf = setup_paths(dconf)
-    
-    with open(dconf.run.rcfile, 'w') as fid:
-        # Keys needed by TM5 itself
-        fid.write('!---------- tm5 --------- \n')
-        for k, v in sorted(dconf.tm5.items()):
-            fid.write(f'{k:<30s} : {v}\n')
-            
-        # Keys needed by pyshell (but not TM5 ==> should be deprecated, eventually)
-        fid.write('\n\n!---------- pyshell --------- \n')
-        for k, v in sorted(dconf.pyshell2.items()):
-            fid.write(f'{k:<30s} : {v}\n')
-
-    return dconf
+# def setup_tm5(dconf: DictConfig) -> DictConfig:
+#     """
+#     Generate a simplified rcfile for TM5
+#     the file should be integrated to the main rc-file via an "#include" statement
+#     """
+#
+#     if dconf.get('tm5') is None :
+#         dconf.tm5 = {}
+#     if not dconf.get('pyshell2'):
+#         dconf.pyshell2 = {}
+#     dconf = setup_initial_condition(dconf)
+#     dconf = setup_meteo(dconf)
+#     dconf = setup_paths(dconf)
+#
+#     with open(dconf.run.rcfile, 'w') as fid:
+#         # Keys needed by TM5 itself
+#         fid.write('!---------- tm5 --------- \n')
+#         for k, v in sorted(dconf.tm5.items()):
+#             fid.write(f'{k:<30s} : {v}\n')
+#
+#         # Keys needed by pyshell (but not TM5 ==> should be deprecated, eventually)
+#         fid.write('\n\n!---------- pyshell --------- \n')
+#         for k, v in sorted(dconf.pyshell2.items()):
+#             fid.write(f'{k:<30s} : {v}\n')
+#
+#     return dconf

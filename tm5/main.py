@@ -6,7 +6,7 @@ import tm5.emissions
 import tm5.observations
 from tm5.build import build_tm5
 from tm5.meteo import Meteo
-from tm5.setup import setup_tm5
+from tm5 import setup
 from tm5.run import run_tm5
 from tm5.units import units_registry as ureg
 from tm5.settings import TM5Settings
@@ -46,48 +46,70 @@ class TM5:
         """
         Do an inversion ==> this is still based on pyshell
         """
-        self.setup()
-        return run_tm5(f'pyshell optim --rc {self.configfile} --machine={self.machine}', settings=self.dconf.machine.host)
+        if self.dconf.get('tm5') is None :
+            self.dconf.tm5 = {}
+        if not self.dconf.get('pyshell2'):
+            self.dconf.pyshell2 = {}
+        self.dconf = setup.setup_initial_condition(self.dconf)
+        self.dconf = setup.setup_meteo(self.dconf)
+        self.dconf = setup.setup_paths(self.dconf)
+        return self.run_pyshell(runmode = 'optim')
 
-    def forward_pyshell(self):
+    def run_pyshell(self, runmode : str = 'forward'):
         """
-        Do a forward run, using pyshell
+        Do a forward run, using pyshell:
+        - The keys under the "pyshell2" and "tm5" nodes of self.dconc are written to the rc-file given by dconc.pyshell.rcfile ==> that file needs to be included by the pyshell rc-file (through an #include).
         """
-        return run_tm5(f'pyshell forward --rc {self.configfile} --machine={self.machine}', settings=self.dconf.machine.host)
+        with open(self.dconf.pyshell.rcfile, 'w') as fid :
+            # Keys needed by TM5 itself:
+            fid.write('!---------- tm5 --------- \n')
+            for k, v in sorted(self.dconf.tm5.items()):
+                fid.write(f'{k:<30s} : {v}\n')
 
-    def setup(self):
-        self.dconf = setup_tm5(self.dconf)
+            # Keys needed by pyshell (but not TM5 ==> should be deprecated, eventually)
+            fid.write('\n\n!---------- pyshell --------- \n')
+            for k, v in sorted(self.dconf.pyshell2.items()):
+                fid.write(f'{k:<30s} : {v}\n')
 
-    def calc_background(self, lon0, lon1, lat0, lat1):
+        return run_tm5(f'pyshell {runmode} --rc {self.configfile} --machine={self.machine}', settings=self.dconf.machine.host)
+
+    def calc_background_pyshell(self, lon0, lon1, lat0, lat1):
         """
         This should just setup the "mask.apply", "mask.region", "istart" and "PyShell.em.filename" keys
         """
 
-        # Adapt settings for computing the foreground component:
-        # - initial condition set to 0
-        self.dconf.initial_condition.type = 'zero'
-        # - masking of concentrations outside the domain enabled
-        #   ==> keys under dconf.pyshell.tm5 are appended to the TM5 rc-file by pyshell itself (ui.load_rcf)
-        self.dconf.pyshell.tm5['mask.apply'] = 'T'
-        self.dconf.pyshell.tm5['mask.complement'] = 'T'
-        self.dconf.pyshell.tm5['mask.factor'] = '0'
-        self.dconf.pyshell.tm5['mask.region'] = f'{lon0:.1f} {lon1:.1f} {lat0:.1f} {lat1:.1f}'
-        # - Read emissions optimized in the inversion step
-        #   ==> keys under dconf.pyshell2 are appended to the rc/lumia.rc rc-file, which needs to be included in the
-        #       standard
+        if self.dconf.get('tm5') is None :
+            self.dconf.tm5 = {}
+        if not self.dconf.get('pyshell2'):
+            self.dconf.pyshell2 = {}
+        self.dconf = setup.setup_meteo(self.dconf)
+        self.dconf = setup.setup_paths(self.dconf)
+
+        # Initial condition set to 0
+        self.dconf.tm5['istart'] = '1'
+
+        # Mask:
+        self.dconf.tm5['mask.apply'] = 'T'
+        self.dconf.tm5['mask.complement'] = 'T'
+        self.dconf.tm5['mask.factor'] = '0'
+        self.dconf.tm5['mask.region'] = f'{lon0:.1f} {lon1:.1f} {lat0:.1f} {lat1:.1f}'
+
+        # Emissions
         self.dconf.pyshell2 = self.dconf.get('pyshell2', {})  # Ensure that the node exists
         self.dconf.pyshell2['emission.read.optimized'] = 'T'
         self.dconf.pyshell2['emission.read.optimized.filename'] = 'emission.nc4'
 
-        # Setup the forward run again (ensure that the keys defined above are written to rc-file
-        self.setup()
-
         # Run the inversion
-        self.forward_pyshell()
+        return self.run_pyshell()
 
-        # Retrieve the results
+    def calc_background(self, lon0 : float, lon1 : float, lat0 : float, lat1 : float, emissions_file : str):
+        self.settings['istart'] = '1'
+        self.settings['mask.apply'] = 'T'
+        self.settings['mask.factor'] = '0'
+        self.settings['mask.region'] = f'{lon0:.1f} {lon1:.1f} {lat0:.1f} {lat1:.1f}'
+        self.forward(emission_file=emissions_file)
 
-    def forward(self):
+    def forward(self, emission_file : str = None):
         """
         Do a forward run, bypassing totally the pyshell
         """
@@ -103,9 +125,8 @@ class TM5:
         # - other inputs (station files, etc.)
 
         # TM5 executable generated in the build step
-
         self.setup_observations()
-        self.setup_emissions()
+        self.setup_emissions(skip_file_creation=emission_file is not None, filename=emission_file)
         self.setup_meteo()
         self.setup_tm5_optim()
         self.setup_run('forward')
@@ -251,7 +272,7 @@ class TM5:
             self.settings[f'output.point.{tracer}.minerror'] = self.dconf.observations.point[tracer].minerror
         return tm5.observations.prepare_point_obs(self.dconf.output.point)
 
-    def setup_emissions(self, skip_file_creation: bool = False):
+    def setup_emissions(self, skip_file_creation: bool = False, filename : str = None):
         """
         This will create the emission file and dailycycle files as well as setup the following rc-keys:
         - PyShell.em.filename
@@ -264,7 +285,8 @@ class TM5:
             skip_file_creation [bool] : set to True to avoid recomputing the emission files if it is already there
         """
 
-        filename = Path(self.dconf.run.paths.output) / 'emissions.nc'
+        if not filename :
+            filename = Path(self.dconf.run.paths.output) / 'emissions.nc'
         self.settings['PyShell.em.filename'] = str(filename)
         for trname in self.dconf.emissions.tracers :
             # catgroup = self.dconf.emissions[tracer].emission_categories
