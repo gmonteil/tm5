@@ -6,6 +6,7 @@ import tm5.emissions
 import tm5.observations
 from tm5.build import build_tm5
 from tm5.meteo import Meteo
+from tm5 import inicond
 from tm5 import setup
 from tm5.run import run_tm5
 from tm5.units import units_registry as ureg
@@ -41,66 +42,6 @@ class TM5:
         """
         tm5exec = build_tm5(self.dconf, clean = clean)
         shutil.copyfile(tm5exec, self.tm5exec)
-
-    def optim(self):
-        """
-        Do an inversion ==> this is still based on pyshell
-        """
-        if self.dconf.get('tm5') is None :
-            self.dconf.tm5 = {}
-        if not self.dconf.get('pyshell2'):
-            self.dconf.pyshell2 = {}
-        self.dconf = setup.setup_initial_condition(self.dconf)
-        self.dconf = setup.setup_meteo(self.dconf)
-        self.dconf = setup.setup_paths(self.dconf)
-        return self.run_pyshell(runmode = 'optim')
-
-    def run_pyshell(self, runmode : str = 'forward'):
-        """
-        Do a forward run, using pyshell:
-        - The keys under the "pyshell2" and "tm5" nodes of self.dconc are written to the rc-file given by dconc.pyshell.rcfile ==> that file needs to be included by the pyshell rc-file (through an #include).
-        """
-        with open(self.dconf.pyshell.rcfile, 'w') as fid :
-            # Keys needed by TM5 itself:
-            fid.write('!---------- tm5 --------- \n')
-            for k, v in sorted(self.dconf.tm5.items()):
-                fid.write(f'{k:<30s} : {v}\n')
-
-            # Keys needed by pyshell (but not TM5 ==> should be deprecated, eventually)
-            fid.write('\n\n!---------- pyshell --------- \n')
-            for k, v in sorted(self.dconf.pyshell2.items()):
-                fid.write(f'{k:<30s} : {v}\n')
-
-        return run_tm5(f'pyshell {runmode} --rc {self.configfile} --machine={self.machine}', settings=self.dconf.machine.host)
-
-    def calc_background_pyshell(self, lon0, lon1, lat0, lat1):
-        """
-        This should just setup the "mask.apply", "mask.region", "istart" and "PyShell.em.filename" keys
-        """
-
-        if self.dconf.get('tm5') is None :
-            self.dconf.tm5 = {}
-        if not self.dconf.get('pyshell2'):
-            self.dconf.pyshell2 = {}
-        self.dconf = setup.setup_meteo(self.dconf)
-        self.dconf = setup.setup_paths(self.dconf)
-
-        # Initial condition set to 0
-        self.dconf.tm5['istart'] = '1'
-
-        # Mask:
-        self.dconf.tm5['mask.apply'] = 'T'
-        self.dconf.tm5['mask.complement'] = 'T'
-        self.dconf.tm5['mask.factor'] = '0'
-        self.dconf.tm5['mask.region'] = f'{lon0:.1f} {lon1:.1f} {lat0:.1f} {lat1:.1f}'
-
-        # Emissions
-        self.dconf.pyshell2 = self.dconf.get('pyshell2', {})  # Ensure that the node exists
-        self.dconf.pyshell2['emission.read.optimized'] = 'T'
-        self.dconf.pyshell2['emission.read.optimized.filename'] = 'emission.nc4'
-
-        # Run the inversion
-        return self.run_pyshell()
 
     def calc_background(self, lon0 : float, lon1 : float, lat0 : float, lat1 : float, emissions_file : str):
         self.settings['istart'] = '1'
@@ -254,6 +195,18 @@ class TM5:
         elif self.dconf.initial_condition.type == 'savefile':
             self.settings['istart'] = '3'
             self.settings['start.3.filename'] = self.start.strftime(self.dconf.initial_condition.savefile)
+        elif self.dconf.initial_condition.type == 'carbontracker':
+            self.settings['istart'] = '2'
+            self.settings['start.2.iniconc_from_file'] = 'T'
+            version = self.dconf.initial_conditon.carbontracker_version
+            filename = self.dconf.run.paths.output / Timestamp(self.dconf.run.start).strftime(f'mix_co2_%Y%m%d_{version}.nc')
+            self.settings['start.2.iniconcfile'] = filename
+            inicond.get_iniconc_carbontracker(
+                self.dconf.initial_condition.carbontracker_url,
+                self.dconf.run.start,
+                self.dconf.regions,
+                filename
+            )
         else :
             logger.error("initial condition settings not understood")
             raise Exception
@@ -353,3 +306,66 @@ class TM5:
             self.settings[f'tracers.{tr}.mixrat_unit_name'] = str(mix_unit)
             self.settings[f'tracers.{tr}.emis_unit_value'] = ureg.Quantity(f'kg{spec}').to(emis_unit).m
             self.settings[f'tracers.{tr}.emis_unit_name'] = str(emis_unit)
+
+
+# The methods in the following TM5-derived class rely on the legacy pyshell
+class Pyshell(TM5):
+    def optim(self):
+        """
+        Do an inversion ==> this is still based on pyshell
+        """
+        if self.dconf.get('tm5') is None :
+            self.dconf.tm5 = {}
+        if not self.dconf.get('pyshell2'):
+            self.dconf.pyshell2 = {}
+        self.dconf = setup.setup_initial_condition(self.dconf)
+        self.dconf = setup.setup_meteo(self.dconf)
+        self.dconf = setup.setup_paths(self.dconf)
+        return self.run_pyshell(runmode = 'optim')
+
+    def run_pyshell(self, runmode : str = 'forward'):
+        """
+        Do a forward run, using pyshell:
+        - The keys under the "pyshell2" and "tm5" nodes of self.dconc are written to the rc-file given by dconc.pyshell.rcfile ==> that file needs to be included by the pyshell rc-file (through an #include).
+        """
+        with open(self.dconf.pyshell.rcfile, 'w') as fid :
+            # Keys needed by TM5 itself:
+            fid.write('!---------- tm5 --------- \n')
+            for k, v in sorted(self.dconf.tm5.items()):
+                fid.write(f'{k:<30s} : {v}\n')
+
+            # Keys needed by pyshell (but not TM5 ==> should be deprecated, eventually)
+            fid.write('\n\n!---------- pyshell --------- \n')
+            for k, v in sorted(self.dconf.pyshell2.items()):
+                fid.write(f'{k:<30s} : {v}\n')
+
+        return run_tm5(f'pyshell {runmode} --rc {self.configfile} --machine={self.machine}', settings=self.dconf.machine.host)
+
+    def calc_background_pyshell(self, lon0, lon1, lat0, lat1):
+        """
+        This should just setup the "mask.apply", "mask.region", "istart" and "PyShell.em.filename" keys
+        """
+
+        if self.dconf.get('tm5') is None :
+            self.dconf.tm5 = {}
+        if not self.dconf.get('pyshell2'):
+            self.dconf.pyshell2 = {}
+        self.dconf = setup.setup_meteo(self.dconf)
+        self.dconf = setup.setup_paths(self.dconf)
+
+        # Initial condition set to 0
+        self.dconf.tm5['istart'] = '1'
+
+        # Mask:
+        self.dconf.tm5['mask.apply'] = 'T'
+        self.dconf.tm5['mask.complement'] = 'T'
+        self.dconf.tm5['mask.factor'] = '0'
+        self.dconf.tm5['mask.region'] = f'{lon0:.1f} {lon1:.1f} {lat0:.1f} {lat1:.1f}'
+
+        # Emissions
+        self.dconf.pyshell2 = self.dconf.get('pyshell2', {})  # Ensure that the node exists
+        self.dconf.pyshell2['emission.read.optimized'] = 'T'
+        self.dconf.pyshell2['emission.read.optimized.filename'] = 'emission.nc4'
+
+        # Run the inversion
+        return self.run_pyshell()
