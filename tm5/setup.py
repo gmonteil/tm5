@@ -4,6 +4,7 @@ from omegaconf import DictConfig
 from pathlib import Path
 from pandas import Timestamp
 from tm5.meteo import Meteo
+from tm5 import inicond
 
 
 def setup_initial_condition(dconf: DictConfig) -> DictConfig:
@@ -19,6 +20,13 @@ def setup_initial_condition(dconf: DictConfig) -> DictConfig:
             dconf.tm5['start.3.filename'] = Path(fname).absolute()
         case 'zero':
             dconf.tm5['istart'] = '1'
+        case 'carbontracker':
+            dconf.tm5['istart'] = '2'
+            dconf.tm5['start.2.iniconc_from_file'] = 'T'
+            version = dconf.initial_condition.carbontracker_version
+            filename = Path(dconf.run.paths.output) / Timestamp(dconf.run.start).strftime(f'mix_co2_%Y%m%d_{version}.nc')
+            dconf.tm5['start.2.iniconcfile'] = filename
+            inicond.get_iniconc_carbontracker(dconf.initial_condition.carbontracker_url, dconf.run.start,dconf.regions, filename)
     return dconf
     
     

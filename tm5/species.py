@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from pint import Unit
-from lumia.units import units_registry as units
+from tm5.units import units_registry as units
 
 
 @dataclass
