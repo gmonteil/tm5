@@ -23,6 +23,7 @@ class Meteo:
     # Unused (so far) but valid arguments :
     coarsened : bool = False
     output : bool = False
+    output_path : str = None
 
     def gen_file_list(self, prefix: str, suffix: str, fields: List[str], start: Timestamp, end: Timestamp) -> Set[str]:
         files = []
@@ -42,7 +43,6 @@ class Meteo:
         while any(not Path(self.path).joinpath(f).exists() for f in files) and attempts < max_attempts:
             if attempts > 0 :
                 missing_files = [f for f in files if not Path(self.path).joinpath(f).exists()]
-                import pdb; pdb.set_trace()
             self.retrieve(files, msg)
             attempts += 1
         return True
@@ -71,26 +71,17 @@ class Meteo:
         """
         Download meteo data
         """
-        for region in self.regions:
+        if self.coarsened:
+            regions = self.regions
+            levels = self.levels
+        else :
+            regions = ['glb100x100']
+            levels = 'ml137'
+        for region in regions:
             for tt in date_range(start, Timestamp(end) + Timedelta(days=1), freq='MS', inclusive='left'):
-                self.get(
-                    prefix=f'ec/ea/h06h18tr3/{self.levels}/{region}/{tt:%Y/%m}/',
-                    suffix='_%Y%m%d_00p03.nc',
-                    fields=['convec', 'mfuv', 'mfw', 'q', 'sp', 't', 'tsp'],
-                    start = tt, end = tt + to_offset('MS')
-                )
-                self.get(
-                    prefix=f'ec/ea/h06h18tr1/sfc/{region}/{tt:%Y/%m}/',
-                    suffix='_%Y%m%d_00p01.nc',
-                    fields=['blh', 'ewss', 'nsss', 'sshf', 'slhf', 'u10m', 'v10m'],
-                    start=tt, end=tt + to_offset('MS')
-                )
-                self.get(
-                    prefix=f'ec/ea/an0tr1/sfc/{region}/{tt:%Y/%m}/',
-                    start = tt, end = tt + to_offset('MS'),
-                    suffix='_%Y%m%d_00p01.nc', fields=['sr']) #, 'albedo', 'veg'])
-                self.get(
-                    prefix=f'ec/ea/an0tr1/sfc/{region}/{tt:%Y/%m}/',
-                    start = tt, end = tt + to_offset('MS'),
-                    suffix='_%Y%m.nc', fields = ['srols'])
+                self.get(prefix=f'ec/ea/h06h18tr3/{levels}/{region}/{tt:%Y/%m}/', suffix='_%Y%m%d_00p03.nc', fields=['convec', 'mfuv', 'mfw', 'q', 'sp', 't', 'tsp'], start = tt, end = tt + to_offset('MS'))
+                self.get(prefix=f'ec/ea/h06h18tr1/sfc/{region}/{tt:%Y/%m}/', suffix='_%Y%m%d_00p01.nc', fields=['blh', 'ewss', 'nsss', 'sshf', 'slhf', 'u10m', 'v10m'], start=tt, end=tt + to_offset('MS'))
+                self.get(prefix=f'ec/ea/an0tr1/sfc/{region}/{tt:%Y/%m}/', start = tt, end = tt + to_offset('MS'), suffix='_%Y%m%d_00p01.nc', fields=['sr']) #, 'albedo', 'veg'])
+                self.get(prefix=f'ec/ea/an0tr1/sfc/{region}/{tt:%Y/%m}/', start = tt, end = tt + to_offset('MS'), suffix='_%Y%m.nc', fields = ['srols'])
                 self.get(prefix=f'ec/ea/an0tr1/sfc/glb100x100/', suffix='.nc', fields=['oro', 'lsm'], start = tt, end = tt + to_offset('MS'))
+

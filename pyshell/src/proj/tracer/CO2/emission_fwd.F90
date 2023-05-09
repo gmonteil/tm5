@@ -112,12 +112,15 @@ contains
         character(len=2)                :: emis_scale_name
         type(TDate)                     :: t1, t2
         character(len=DUMMY_STR_LEN)    :: cat_name
+        logical                         :: source_apply
 
         !--- begin ------------------------------------------------
 
         !
         ! Read from file
         !
+        call ReadRc(rcf, 'proces.source', source_apply, status)
+        if (.not. source_apply) return
 
         call Read_Emissions_From_PyShell ( tracers_em_info, time_window, ref_emissions_apri, status )
         IF_NOTOK_RETURN(status=1)

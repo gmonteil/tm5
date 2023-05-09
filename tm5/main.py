@@ -41,7 +41,8 @@ class TM5:
         Build TM5
         """
         tm5exec = build_tm5(self.dconf, clean = clean)
-        shutil.copyfile(tm5exec, self.tm5exec)
+        if not self.tm5exec.exists():
+            os.symlink(tm5exec, self.tm5exec)
 
     def calc_background(self, lon0 : float, lon1 : float, lat0 : float, lat1 : float, emissions_file : str):
         self.settings['istart'] = '1'
@@ -49,6 +50,20 @@ class TM5:
         self.settings['mask.factor'] = '0'
         self.settings['mask.region'] = f'{lon0:.1f} {lon1:.1f} {lat0:.1f} {lat1:.1f}'
         self.forward(emission_file=emissions_file)
+
+    def coarsen_meteo(self):
+        """
+        Do a forward run with global1x1 meteo, and no emissions, no initial condition, etc.
+        :return:
+        """
+        self.setup_meteo()
+        self.setup_run('forward')
+        self.setup_iniconc('zero')
+        self.setup_output(stations=False)
+        self.setup_regions()
+        self.settings['proces.source'] = 'F'
+        rcf = self.settings.write(Path(self.dconf.run.paths.output) / 'forward.rc')
+        run_tm5(f'{str(self.tm5exec.absolute())} {str(rcf)}', settings=self.dconf.machine.host)
 
     def forward(self, emission_file : str = None):
         """
@@ -91,23 +106,40 @@ class TM5:
         - # meteo.read.{region}.* ==> not used in 4dvar yet
         - diffusion.dir
         """
+
         self.settings['my.meteo.source.dir'] = Path(self.dconf.run.paths.meteo).absolute()
         self.settings['tmm.dir'] = Path(self.dconf.run.paths.meteo).absolute()
+
+        write_meteo = 'F'
+        if not self.dconf.meteo.coarsened:
+            write_meteo = 'T'
+            # All fields are read from glb100x100
+            self.settings[f'tmm.sourcekey.*.ml'] = f'tm5-nc:mdir=ec/ea/h06h18tr3/ml137/glb100x100/<yyyy>/<mm>;tres=_00p03;namesep=/'
+            self.settings[f'tmm.sourcekey.*.sfc.fc'] = f'tm5-nc:mdir=ec/ea/h06h18tr1/sfc/glb100x100/<yyyy>/<mm>;tres=_00p01;namesep=/'
+            self.settings[f'tmm.sourcekey.*.sfc.an'] = f'tm5-nc:mdir=ec/ea/an0tr1/sfc/glb100x100/<yyyy>/<mm>;tres=_00p01;namesep=/'
+
+            self.settings['tmm.output.dir'] = str(Path(self.dconf.meteo.output_path).absolute())
+            Path(self.dconf.meteo.output_path).mkdir(exist_ok=True, parents=True)
+            self.settings['cf-standard-name-table'] = Path(self.dconf.run.paths.cf_table).absolute()
+
+            for region in self.dconf.regions:
+                self.settings[f'tmm.destkey.{region}.ml'] = f'tm5-nc:mdir=ec/ea/h06h18tr3/tropo25/{region}/<yyyy>/<mm>;tres=_00p03;namesep=/'
+                self.settings[f'tmm.destkey.{region}.sfc.fc'] = f'tm5-nc:mdir=ec/ea/h06h18tr1/sfc/{region}/<yyyy>/<mm>;tres=_00p01;namesep=/'
+                self.settings[f'tmm.destkey.{region}.sfc.an'] = f'tm5-nc:mdir=ec/ea/an0tr1/sfc/{region}/<yyyy>/<mm>;tres=_00p01;namesep=/'
+        else :
+            for region in self.dconf.run.regions :
+                self.settings[f'tmm.sourcekey.{region}.ml'] = f'tm5-nc:mdir=ec/ea/h06h18tr3/tropo25/{region}/<yyyy>/<mm>;tres=_00p03;namesep=/'
+                self.settings[f'tmm.sourcekey.{region}.sfc.fc'] = f'tm5-nc:mdir=ec/ea/h06h18tr1/sfc/{region}/<yyyy>/<mm>;tres=_00p01;namesep=/'
+                self.settings[f'tmm.sourcekey.{region}.sfc.an'] = f'tm5-nc:mdir=ec/ea/an0tr1/sfc/{region}/<yyyy>/<mm>;tres=_00p01;namesep=/'
+
         self.settings['my.levs'] = 'tropo25'
         self.settings['cfl.outputstep'] = '3600'
-        write_meteo = 'F'
         self.settings['tmm.output'] = write_meteo       # write meteo?
         self.settings['tmm.output.*.*'] = write_meteo   # by default write all fields
         self.settings['tmm.output.*.sfc.const'] = 'F' # Except constant surface fields
-        self.settings['tmm.output.glb100x100.sfc.const'] = write_meteo # this was forced to "F" originally ...
+        self.settings['tmm.output.glb100x100.sfc.const'] = 'F'
 
-        self.settings['diffusion.dir'] = Path(self.dconf.run.paths.scratch) / 'dkg'
-        for region in self.dconf.run.regions :
-            if region != 'glb600x400':
-                raise NotImplementedError
-            self.settings[f'tmm.sourcekey.{region}.ml'] = f'tm5-nc:mdir=ec/ea/h06h18tr3/tropo25/{region}/<yyyy>/<mm>;tres=_00p03;namesep=/'
-            self.settings[f'tmm.sourcekey.{region}.sfc.fc'] = f'tm5-nc:mdir=ec/ea/h06h18tr1/sfc/{region}/<yyyy>/<mm>;tres=_00p01;namesep=/'
-            self.settings[f'tmm.sourcekey.{region}.sfc.an'] = f'tm5-nc:mdir=ec/ea/an0tr1/sfc/{region}/<yyyy>/<mm>;tres=_00p01;namesep=/'
+        self.settings['diffusion.dir'] = Path(self.dconf.run.paths.diffusion) / 'dkg'
 
         # Constant 1x1 fields (oro and lsm):
         self.settings['tmm.sourcekey.*.sfc.const'] = 'tm5-nc:mdir=ec/ea/an0tr1/sfc/glb100x100;tres=_00p01;namesep=/'
@@ -138,7 +170,7 @@ class TM5:
         self.settings['var4d.horcor.min_eigval'] = '0.0001'
         self.settings['correlation.inputdir'] = 'not-defined'
 
-    def setup_output(self):
+    def setup_output(self, stations : bool = True):
         """
         This will setup the following (group of) rc keys:
         - output.dir
@@ -154,7 +186,7 @@ class TM5:
         if 'output' not in self.dconf:
             return
 
-        if 'stations' in self.dconf.output :
+        if stations and 'stations' in self.dconf.output :
             self.setup_output_stations(self.dconf.output.stations)
 
     def setup_output_stations(self, dconf):
@@ -180,36 +212,40 @@ class TM5:
         self.settings['jobstep.timerange.end'] = self.end.strftime('%Y-%m-%d %H:%M:%S')
         self.settings['my.runmode'] = {'forward': 1, 'adjoin': 2}[mode]
 
-    def setup_iniconc(self):
+    def setup_iniconc(self, ini : str = None):
         """
         This will setup the following group of rc-keys:
         - start.*
         - istart
         """
-        if self.dconf.initial_condition.type == 'zero':
-            self.settings['istart'] = '1'
-        elif self.dconf.initial_condition.type == 'mixfile':
-            self.settings['istart'] = '2'
-            self.settings['start.2.iniconcfile'] = self.start.strftime(self.dconf.initial_condition.mixfile)
-            self.settings['start.2.iniconc_from_file'] = 'T'
-        elif self.dconf.initial_condition.type == 'savefile':
-            self.settings['istart'] = '3'
-            self.settings['start.3.filename'] = self.start.strftime(self.dconf.initial_condition.savefile)
-        elif self.dconf.initial_condition.type == 'carbontracker':
-            self.settings['istart'] = '2'
-            self.settings['start.2.iniconc_from_file'] = 'T'
-            version = self.dconf.initial_conditon.carbontracker_version
-            filename = self.dconf.run.paths.output / Timestamp(self.dconf.run.start).strftime(f'mix_co2_%Y%m%d_{version}.nc')
-            self.settings['start.2.iniconcfile'] = filename
-            inicond.get_iniconc_carbontracker(
-                self.dconf.initial_condition.carbontracker_url,
-                self.dconf.run.start,
-                self.dconf.regions,
-                filename
-            )
-        else :
-            logger.error("initial condition settings not understood")
-            raise Exception
+        if ini is None :
+            ini = self.dconf.initial_condition.type
+
+        match ini:
+            case 'zero':
+                self.settings['istart'] = '1'
+            case 'mixfile':
+                self.settings['istart'] = '2'
+                self.settings['start.2.iniconcfile'] = self.start.strftime(self.dconf.initial_condition.mixfile)
+                self.settings['start.2.iniconc_from_file'] = 'T'
+            case 'savefile':
+                self.settings['istart'] = '3'
+                self.settings['start.3.filename'] = self.start.strftime(self.dconf.initial_condition.savefile)
+            case 'carbontracker':
+                self.settings['istart'] = '2'
+                self.settings['start.2.iniconc_from_file'] = 'T'
+                version = self.dconf.initial_conditon.carbontracker_version
+                filename = self.dconf.run.paths.output / Timestamp(self.dconf.run.start).strftime(f'mix_co2_%Y%m%d_{version}.nc')
+                self.settings['start.2.iniconcfile'] = filename
+                inicond.get_iniconc_carbontracker(
+                    self.dconf.initial_condition.carbontracker_url,
+                    self.dconf.run.start,
+                    self.dconf.regions,
+                    filename
+                )
+            case other :
+                logger.error("initial condition settings not understood")
+                raise Exception
 
     def setup_observations(self) -> Path:
         """
