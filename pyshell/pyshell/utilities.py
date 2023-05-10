@@ -19,7 +19,6 @@ def checkDir(filename, is_dir=False):
 
 
 class my_Dataset(Dataset):
-
     def __init__(self, file_name, *args, **kwargs):
 
         # We need to check if the mode is 'r' or 'a'. Basically, if it's not 'w', check for file existence.

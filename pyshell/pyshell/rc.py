@@ -253,7 +253,7 @@ class RcFile( object ) :
         self.outfile = []
         self.values = {}
         self.sources = {}
-        if filename != None :
+        if filename is not None :
             self.readfile(filename, marks=marks)
 
     def readfile(self, filename, marks=('${','}'), silent=False):
@@ -261,7 +261,7 @@ class RcFile( object ) :
         logging.debug( 'reading rcfile %s ...' % filename )
         if not os.path.exists(filename) :
             msg = 'rcfile not found : %s' % filename ; logging.error(msg)
-            raise IOError, msg
+            raise IOError
         self.filename = filename
         self.rootdir = os.path.split(filename)[0]
         with open(filename,'r') as f:
@@ -326,7 +326,7 @@ class RcFile( object ) :
                 # set full traceback info:
                 if line.endswith('\\') :
                     # current input line is a continuation; combine:
-                    qfile,qlinenrs = linetrace.split(',')
+                    qfile, qlinenrs = linetrace.split(',')
                     qnrs = qlinenrs.replace('lines','').replace('line','')
                     if '-' in qnrs :
                         qnr1,qnr2 = qnrs.split('-')
@@ -634,7 +634,7 @@ class RcFile( object ) :
                     if not os.path.exists(inc_file) :
                         logging.error( 'include file not found : %s' % inc_file )
                         logging.error( linetrace )
-                        raise IOError, 'include file not found : %s' % inc_file
+                        raise IOError
                     #endif
                     # read content:
                     inc_f = open( inc_file, 'r' )

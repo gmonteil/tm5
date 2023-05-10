@@ -4,7 +4,6 @@ from pyshell.runtools import rcdat
 from pyshell.emissions import PreprocessedEmissions
 from pyshell.optimizer import Congrad
 from pyshell.model import RunTM5
-
 from pandas import Timestamp
 import os
 import shutil
