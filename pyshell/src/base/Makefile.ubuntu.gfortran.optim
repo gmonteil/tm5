@@ -1,0 +1,35 @@
+FC = gfortran 
+F77 = gfortran
+LINKER = gfortran
+
+# compile flags:
+FFLAGS = -cpp -fPIC -O2 -ffree-line-length-none -m64 -frecord-marker=4 -fbounds-check -fdefault-real-8 -I/usr/include -I/opt/udunits-1.12.11/include
+# FFLAGS = -cpp -fPIC -fp-model strict -fomit-frame-pointer -m64 -warn align -r8 -qopenmp -O3 -align -ipo -xSSE4.2 -parallel -I/opt/include -I/opt/intel/oneapi/mkl/2022.0.2/include -I/opt/intel/oneapi/mkl/2022.0.2/include/intel64/lp64
+# FFLAGS = -cpp -fPIC -fp-model strict -fomit-frame-pointer -m64 -warn align -r8 -qopenmp -O2 -g -traceback -fpe0 -ftrapuv -I/opt/include -I/opt/intel/oneapi/mkl/2022.0.2/include -I/opt/intel/oneapi/mkl/2022.0.2/include/intel64/lp64
+
+# compile flags without optim:
+FFLAGS_BASIC = -cpp -fPIC -O2 -ffree-line-length-none -m64 -frecord-marker=4 -fbounds-check -fdefault-real-8 -I/usr/include
+
+# linker flags:
+LDFLAGS = -qopenmp
+
+# library flags:
+LIBS = -lnetcdff -lnetcdf -lhdf5 -lhdf5_hl -lsz -lcurl -lz -lmfhdf -ldf -ljpeg -lz -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -lpthread -lm -ludunits  
+
+# how to form object files from F90 source:
+%.o: %.F90
+	$(FC) -c -o $@ $< $(FFLAGS)
+	@echo ' '
+
+# how to form object files from f90 source:
+%.o: %.f90
+	$(FC) -c -o $@ $< $(FFLAGS)
+	@echo ' '
+
+# compilation of mdf fails on some machine if optim flags are enabled ..
+mdf.o: mdf.F90
+	$(FC) -c -o $@ $< $(FFLAGS_BASIC)
+	@echo ' '
+
+# dependencies
+
