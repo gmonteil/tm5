@@ -1,0 +1,33 @@
+FC = gfortran 
+F77 = gfortran
+LINKER = gfortran
+
+# compile flags:
+FFLAGS = -cpp -fPIC -O2 -ffree-line-length-none -m64 -frecord-marker=4 -fbounds-check -fdefault-real-8 -I/usr/include -I/opt/udunits-1.12.11/include -I/usr/include/hdf5/serial
+
+# compile flags without optim:
+FFLAGS_BASIC = -cpp -fPIC -O2 -ffree-line-length-none -m64 -frecord-marker=4 -fbounds-check -fdefault-real-8 -I/usr/include
+
+# linker flags:
+LDFLAGS = # -fopenmp
+
+# library flags:
+LIBS = -L/usr/lib/x86_64-linux-gnu -lnetcdff -lnetcdf -L/usr/lib/x86_64-linux-gnu/hdf5/serial/ -lhdf5 -lhdf5_hl -lsz -lcurl -lz -ljpeg -lpthread -lm -ldl -llapack -lblas -L/opt/udunits-1.12.11/lib -ludunits
+
+# how to form object files from F90 source:
+%.o: %.F90
+	$(FC) -c -o $@ $< $(FFLAGS)
+	@echo ' '
+
+# how to form object files from f90 source:
+%.o: %.f90
+	$(FC) -c -o $@ $< $(FFLAGS)
+	@echo ' '
+
+# compilation of mdf fails on some machine if optim flags are enabled ..
+mdf.o: mdf.F90
+	$(FC) -c -o $@ $< $(FFLAGS_BASIC)
+	@echo ' '
+
+# dependencies
+

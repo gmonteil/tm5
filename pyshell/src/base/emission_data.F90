@@ -36,7 +36,8 @@ module Emission_Data
 
     public  ::  ref_emissions, ref_emissions_apri, adj_emissions
 
-    public  ::  Emission_Data_Init, Emission_Data_Done, update_parent_emissions
+    public  ::  Emission_Data_Init, update_parent_emissions
+    ! public  ::  Emission_Data_Init, Emission_Data_Done, update_parent_emissions
 
     ! --- const ------------------------------------
 
@@ -263,55 +264,55 @@ contains
     ! ***
 
 
-    subroutine Emission_Data_Done( status )
-
-        use TM5_Fields, only : Fields_4D_Done
-
-        ! --- in/out ---------------------------------
-
-        integer, intent(out)                ::  status
-
-        ! --- const ---------------------------------
-
-        character(len=*), parameter      :: rname = mname//'/Emission_Data_Done'
-
-        ! --- local ----------------------------------
-
-        integer       ::  year
-        integer       ::  i_cat, region, itr, ncat
-
-        ! --- begin ----------------------------------
-
-        ! emissions
-        do region = 1, nregions
-            do itr = 1,ntracet
-                ncat = tracers_em_info(region)%tracer(itr)%n_cat
-                call Fields_4D_Done( ref_emissions(region)%tracer(itr), ncat, status)
-                IF_NOTOK_RETURN(status=1)
-                call Fields_4D_Done( ref_emissions_apri(region)%tracer(itr), ncat, status)
-                IF_NOTOK_RETURN(status=1)
-            end do ! tracer
-            deallocate(ref_emissions(region)%tracer)
-            deallocate(ref_emissions_apri(region)%tracer)
-        end do ! region
-
-        ! clear:
-        deallocate( ref_emissions      )
-        deallocate( ref_emissions_apri )
-
-        do region = 1, nregions
-            do itr = 1, ntracet
-                deallocate(tracers_em_info(region)%tracer(itr)%cat)
-            end do
-            deallocate(tracers_em_info(region)%tracer)
-        end do
-
-        deallocate(tracers_em_info)
-
-        ! ok
-        status = 0
-
-    end subroutine Emission_Data_Done
+!    subroutine Emission_Data_Done( status )
+!
+!        use TM5_Fields, only : Fields_4D_Done
+!
+!        ! --- in/out ---------------------------------
+!
+!        integer, intent(out)                ::  status
+!
+!        ! --- const ---------------------------------
+!
+!        character(len=*), parameter      :: rname = mname//'/Emission_Data_Done'
+!
+!        ! --- local ----------------------------------
+!
+!        integer       ::  year
+!        integer       ::  i_cat, region, itr, ncat
+!
+!        ! --- begin ----------------------------------
+!
+!        ! emissions
+!        do region = 1, nregions
+!            do itr = 1,ntracet
+!                ncat = tracers_em_info(region)%tracer(itr)%n_cat
+!                call Fields_4D_Done( ref_emissions(region)%tracer(itr), ncat, status)
+!                IF_NOTOK_RETURN(status=1)
+!                call Fields_4D_Done( ref_emissions_apri(region)%tracer(itr), ncat, status)
+!                IF_NOTOK_RETURN(status=1)
+!            end do ! tracer
+!            deallocate(ref_emissions(region)%tracer)
+!            deallocate(ref_emissions_apri(region)%tracer)
+!        end do ! region
+!
+!        ! clear:
+!        deallocate( ref_emissions      )
+!        deallocate( ref_emissions_apri )
+!
+!        do region = 1, nregions
+!            do itr = 1, ntracet
+!                deallocate(tracers_em_info(region)%tracer(itr)%cat)
+!            end do
+!            deallocate(tracers_em_info(region)%tracer)
+!        end do
+!
+!        deallocate(tracers_em_info)
+!
+!        ! ok
+!        status = 0
+!
+!    end subroutine Emission_Data_Done
 
 
     ! ============================================================================

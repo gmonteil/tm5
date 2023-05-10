@@ -162,13 +162,14 @@ contains
     end if ! revert
 
     ! clear:
-    do region = 1, nregions
-       do itrac = 1, ntracet
-          call Fields_4D_Done( adj_emissions(region)%tracer(itrac), tracers_em_info(region)%tracer(itrac)%n_cat,  status )
-          IF_NOTOK_RETURN(status=1)
-       end do
-    end do
-    deallocate( adj_emissions )
+    ! gm, 10 may 2023: disabled this as this causes crash when no emissions are defined, and is not necessary anyways ...
+!    do region = 1, nregions
+!       do itrac = 1, ntracet
+!          call Fields_4D_Done( adj_emissions(region)%tracer(itrac), tracers_em_info(region)%tracer(itrac)%n_cat,  status )
+!          IF_NOTOK_RETURN(status=1)
+!       end do
+!    end do
+!    deallocate( adj_emissions )
 
     ! call tracer-specific routines, such as
     ! call done_adjemis_sf6(status)

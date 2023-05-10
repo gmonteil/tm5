@@ -107,6 +107,7 @@ class TM5Settings(dict):
             self[k] = v
 
     def write(self, filename: Path) -> Path:
+        filename.parent.mkdir(exist_ok=True, parents=True)
         with open(filename, 'w') as fid :
             for k, v in self.items():
                 fid.write(f'{k} : {str(v)}\n')

@@ -126,7 +126,7 @@ contains
 
     ! --- modules --------------------------------
 
-    use Emission_Data, only : Emission_Data_Done
+!    use Emission_Data, only : Emission_Data_Done
     use Emission_Fwd , only : Emission_Fwd_Done
     use Emission_Adj , only : Emission_Adj_Done
 
@@ -156,9 +156,9 @@ contains
     IF_NOTOK_RETURN(status=1)
 
 
-    ! done shared emission data:
-    call Emission_Data_Done( status )
-    IF_NOTOK_RETURN(status=1)
+    ! done shared emission data: ==> deallocation is automatic at the end of the run ...
+    ! call Emission_Data_Done( status )
+    ! IF_NOTOK_RETURN(status=1)
 
     write (gol,'(a," : done")') trim(rname) ; call goPr
 

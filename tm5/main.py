@@ -61,6 +61,7 @@ class TM5:
         self.setup_iniconc('zero')
         self.setup_output(stations=False)
         self.setup_regions()
+        self.setup_system()
         self.settings['proces.source'] = 'F'
         rcf = self.settings.write(Path(self.dconf.run.paths.output) / 'forward.rc')
         run_tm5(f'{str(self.tm5exec.absolute())} {str(rcf)}', settings=self.dconf.machine.host)
@@ -91,6 +92,7 @@ class TM5:
         self.setup_iniconc()
         self.setup_optim()
         self.setup_tracers()
+        self.setup_system()
         rcf = self.settings.write(Path(self.dconf.run.paths.output) / 'forward.rc')
         run_tm5(f'{str(self.tm5exec.absolute())} {str(rcf)}', settings=self.dconf.machine.host)
 
@@ -342,6 +344,13 @@ class TM5:
             self.settings[f'tracers.{tr}.mixrat_unit_name'] = str(mix_unit)
             self.settings[f'tracers.{tr}.emis_unit_value'] = ureg.Quantity(f'kg{spec}').to(emis_unit).m
             self.settings[f'tracers.{tr}.emis_unit_name'] = str(emis_unit)
+
+    def setup_system(self) -> None:
+        """
+        Setup system-specific settings (paths, etc.). For now the following rc-keys are set:
+        - udunits_path
+        """
+        self.settings['udunits_path'] = Path(self.dconf.machine.paths.udunits).absolute()
 
 
 # The methods in the following TM5-derived class rely on the legacy pyshell

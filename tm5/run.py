@@ -6,7 +6,7 @@ from loguru import logger
 from pathlib import Path
 
 
-def run_tm5(cmd: str | List[str] | List[Path], settings : Dict = None):
+def run_tm5(cmd: str | List[str] | List[Path], settings : Dict = None, stdout = None):
     """
     Run a command, possibly inside a singularity container (preconfigured for TM5).
     Arguments :
@@ -44,7 +44,7 @@ def run_tm5(cmd: str | List[str] | List[Path], settings : Dict = None):
 
     logger.info(' '.join([str(_) for _ in cmd]))
     try :
-        return subprocess.run(cmd)
+        return subprocess.run(cmd, stdout=stdout)
     except Exception as e:
         logger.exception(e)
         raise

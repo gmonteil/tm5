@@ -53,6 +53,9 @@ module UDUnits
 
   use UDUnits_Inc,  only : UD_POINTER_KIND
   use os_specs,     only : WRITE_STR_LEN, MAX_FILENAME_LEN
+  use go,           only : readrc
+  use global_data,  only : rcf
+
 
   implicit none
 
@@ -151,11 +154,13 @@ contains
     ! taken from the environment variable UDUnits_PATH if not specified;
     ! this does not seem to work properly however, and therefore
     ! the path is explicitly taken from the environment:
-    call Get_Environment_Variable( env_var, UDUnits_path, length, status )
-    if (status/=0) then
-      write (error_message,'("could not get environment variable `",a,"`")') trim(env_var)
-      status=error_status; return
-    end if
+!    call Get_Environment_Variable( env_var, UDUnits_path, length, status )
+!    if (status/=0) then
+!      write (error_message,'("could not get environment variable `",a,"`")') trim(env_var)
+!      status=error_status; return
+!    end if
+    
+    call readrc(rcf, 'udunits_path', udunits_path, status)
 
     ! Initialize the units package:
     status = UTOpen( trim(UDUnits_path) )
