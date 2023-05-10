@@ -20,11 +20,13 @@ module toolbox
 
   public :: zfarr
   public :: ltropo, lvlpress, print_totalmass
+  public :: dumpfield, dumpfieldi
   public :: coarsen_emission
   public :: escape_tm
   public :: distribute_emis2D
   public :: distribute1x1
   public :: distribute1x1b
+  public :: tropospheric_columns
   public :: iter_2d_s, iter_2d_m, setup_iterator_2d
 
   interface coarsen_emission
@@ -294,6 +296,69 @@ contains
     call goPr
 
   end subroutine print_totalmass
+
+
+
+  subroutine dumpfield(flag,fname,im,jm,lm,nt,field,namfield)
+    !
+    ! Write 4D field (type real) to HDF file
+    !
+    use io_hdf,  only : DFACC_CREATE, DFACC_WRITE, io_write
+
+    implicit none
+
+    ! in/out
+    integer,intent(in)                     :: im, jm, lm, nt
+    integer,intent(in)                     :: flag
+    real,dimension(im,jm,lm,nt),intent(in) :: field     ! 4D field
+    character(len=*),intent(in)            :: fname     ! file name
+    character(len=*),intent(in)            :: namfield  ! field name
+
+    ! local
+    integer              :: sfstart, io, sfend
+
+    if ( flag==0 ) then
+       io = sfstart(fname,DFACC_CREATE)
+    else
+       io = sfstart(fname,DFACC_WRITE)
+       if ( io == -1 ) io = sfstart(fname,DFACC_CREATE)
+    end if
+    call io_write(io,im,'X',jm,'Y',lm,'Z',nt,'N',field,namfield)
+    io = sfend(io)
+
+  end subroutine dumpfield
+
+
+
+  subroutine dumpfieldi(flag,fname,im,jm,lm,nt,field,namfield)
+    !
+    ! Write 4D field (type integer) to HDF file
+    !
+    use io_hdf, only : DFACC_CREATE, DFACC_WRITE, io_write
+
+    implicit none
+
+    ! in/out
+    integer,intent(in)                        :: im, jm, lm, nt
+    integer,intent(in)                        :: flag
+    integer,dimension(im,jm,lm,nt),intent(in) :: field     ! 4D field
+    character(len=*),intent(in)               :: fname     ! file name
+    character(len=*),intent(in)               :: namfield  ! field name
+
+    ! local
+    integer              :: sfstart,io,sfend
+
+    if ( flag == 0 ) then
+       io = sfstart(fname,DFACC_CREATE)
+    else
+       io = sfstart(fname,DFACC_WRITE)
+       if (io==-1) io = sfstart(fname,DFACC_CREATE)
+    end if
+    call io_write(io,im,'X',jm,'Y',lm,'Z',nt,'N',field,namfield)
+    io = sfend(io)
+
+  end subroutine dumpfieldi
+
 
 
   subroutine coarsen_emission_1d(name_field,jm_emis,field_in,field,avg)
@@ -1019,5 +1084,116 @@ contains
   if (abs(e3da-e3db-sum(fract*emi1x1)) > e3da*1e-8 ) &
                 call escape_tm(' Routine distribute1x1 : distributed amount differs!')
   end subroutine distribute1x1b
+
+
+  subroutine tropospheric_columns(region,field,slope, column,thres, xmo3)
+    ! routine to integrate tropospheric (ozone)
+    ! note: routine is now written for Ozone, but may be changed
+    ! to be more general. The definition of tropopause is critical for ozone.
+    ! here, the slope is used in the interpolation.
+    ! multiple tropopause values are ignored, but are known to
+    ! occur. The lowest crossing of thres is used.
+    ! In the lower atmosphere > 600 hPa, values > thres are ignored.
+    use binas,       only : Dobs, xmair, Avog
+    use global_data, only : region_dat, mass_dat
+    use MeteoData  , only : phlb_dat
+    use MeteoData  , only : m_dat
+    use Dims,        only : lm, isr, ier, jsr, jer, CheckShape, im, jm
+    implicit none
+    !input
+    integer, intent(in)               :: region  ! region in the TM5 zoom definition
+    real, dimension(:,:,:),intent(in) :: field   ! 3D field of tracer (O3)
+    real, dimension(:,:,:),intent(in) :: slope   ! 3D field of tracer z -slope (O3)
+    real, dimension(:,:),intent(out)  :: column  ! output: tropospheric column in DU
+    real, intent(in)                  :: thres   ! ppb threshold for tropospheric column
+    real, intent(in)                  :: xmo3    ! mol mass tracer
+    ! locals and pointers
+    integer,dimension(:,:),pointer               :: zoomed
+    real,dimension(:,:,:),pointer                :: m
+    real,dimension(:,:,:),pointer                :: phlb
+    real,dimension(:),pointer                    :: dxyp
+
+    real, dimension(2*lm(1)+1)                   :: o3a
+    real     :: o3mm, o3mmu, o3mml, o3trop, o3ml, o3mu, frac
+    integer  :: i,j,l,ip
+    ! start
+      call CheckShape( (/im(region),jm(region)/), shape(column) )
+      call CheckShape( (/im(region),jm(region), lm(region)/), shape(field) )
+      call CheckShape( (/im(region),jm(region), lm(region)/), shape(slope) )
+
+      dxyp=> region_dat(region)%dxyp
+      zoomed => region_dat(region)%zoomed
+      phlb => phlb_dat(region)%data
+      m    =>    m_dat(region)%data
+
+      ! collect ozone on mid levels and at boundaries
+      ! average the estimates from upper/lower gridboxes
+      ! except for bottom and top.
+      !
+      column(:,:) = 0.0
+      do j=jsr(region), jer(region)
+         do i=isr(region), ier(region)
+           if(zoomed(i,j)/=region) cycle
+           do l=1,lm (region)
+              ip = 2*l-1
+              o3mm = xmair/xmo3*1e9*field(i,j,l)/m(i,j,l)    ! level
+              o3mmu = xmair/xmo3*1e9*(field(i,j,l)+slope(i,j,l))/m(i,j,l) !  top
+              o3mml = xmair/xmo3*1e9*(field(i,j,l)-slope(i,j,l))/m(i,j,l) !  bottom
+              if(l == 1) then
+                 o3a(ip) = o3mml
+              else
+                 o3a(ip) = o3a(ip) + 0.5*o3mml
+              endif
+              o3a(ip+1) = o3mm
+              if(l == lm(region)) then
+                 o3a(ip+2) = o3mmu
+              else
+                 o3a(ip+2) = 0.5*o3mmu
+              endif
+           enddo
+
+           o3trop = 0.0
+           height: do l=1,lm (region)
+              ip = 2*l-1
+              ! split gridbox in upper and lower part
+              ! for more accurate interpolation
+              o3ml = 0.5*field(i,j,l) - 0.25*slope(i,j,l)
+              o3mu = 0.5*field(i,j,l) + 0.25*slope(i,j,l)
+              if (phlb(i,j,l) > 60000.0) then  ! avoid surface o3>150ppb
+                 o3trop = o3trop + field(i,j,l)
+                 cycle height
+              endif
+              if (phlb(i,j,l+1) < 7000.0) exit height  ! now about time 70 hPa at top
+              if(o3a(ip)  < thres) then   ! bottom value less than thres
+                 if(o3a(ip+1) >= thres) then  ! but central value is not
+                    frac = (thres - o3a(ip))/(o3a(ip+1)-o3a(ip))
+                    o3trop = o3trop + frac*o3ml
+                    exit height
+                 else if (o3a(ip+2) >= thres) then  ! but upper is not
+                    frac = (thres - o3a(ip+1))/(o3a(ip+2)-o3a(ip+1))
+                    o3trop = o3trop + o3ml + frac*o3mu
+                    exit height
+                 else  ! entire layer is not
+                    o3trop = o3trop + field(i,j,l)
+                 endif
+              else
+                 exit height
+              endif
+           enddo height
+           column(i,j) = o3trop*1e3/xmo3*Avog*1e-4/dxyp(j)/Dobs  ! kg ->dobs
+        enddo ! i
+      enddo !j
+      print *, 'TEST: ', region, xmo3, thres
+      call dumpfield(0,'dump.hdf', im(region), jm(region), lm(region), 1, field, 'o3')
+      call dumpfield(1,'dump.hdf', im(region), jm(region), lm(region), 1, slope, 'o3slope')
+      call dumpfield(1,'dump.hdf', im(region), jm(region), 1, 1, column, 'o3column')
+      call dumpfield(1,'dump.hdf', im(region), jm(region), lm(region)+1, 1, phlb, 'phlb')
+      call dumpfield(1,'dump.hdf', im(region), jm(region), lm(region), 1, m, 'm')
+      call dumpfield(1,'dump.hdf', jm(region),1, 1,  1, dxyp, 'dxyp')
+      nullify(dxyp)
+      nullify(zoomed)
+      nullify(phlb)
+      nullify(m)
+  end subroutine tropospheric_columns
 
 end module toolbox

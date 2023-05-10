@@ -58,7 +58,7 @@ module datetime
 
 contains
 
-  function wall_clock_time
+  function wall_clock_time()
 
     implicit none
 
@@ -713,7 +713,7 @@ contains
     real                :: seconds_in_year, seconds_elapsed
     integer             :: itau_ref, itau
 
-    if (isleap(idate(1))) then
+    if (isleap(idate(1)) == 2) then
         seconds_in_year = 366.0 * 86400.0
     else
         seconds_in_year = 365.0 * 86400.0

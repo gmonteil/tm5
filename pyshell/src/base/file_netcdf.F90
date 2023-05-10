@@ -2530,8 +2530,8 @@ end subroutine nc_set_var_r8_7d
 function pad(input_str, length) result (output_str)
 
     character(len=*), intent(in)  :: input_str
-    character(len=length)         :: output_str
     integer, intent(in)           :: length
+    character(len=length)         :: output_str
 
     output_str = input_str
 

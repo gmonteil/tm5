@@ -285,8 +285,6 @@ contains
 !      integer(4) function nArgs()
 !      end function nArgs
 !    end interface
-#else
-    integer, external  ::  iArgC
 #endif
 
     ! --- begin -------------------------------------------------

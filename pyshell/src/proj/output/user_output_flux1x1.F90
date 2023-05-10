@@ -409,9 +409,9 @@ subroutine output_fluxrecord ! only called at the end of the day
     if (flux_is_3d) then
         call nc_dump_var(output_file%nc_id, 'emission', (/'lon1x1 ', 'lat1x1 ', 'levels ', 'times  ', 'tracers'/), &
             flux1x1_3d%prod, (/'unit'/), (/'micromoles per square meter per second'/))
-        call nc_dump_var(output_file%nc_id, 'pressure', (/'lon1x1    ', 'lat1x1    ', 'boundaries', 'times    '/), &
+        call nc_dump_var(output_file%nc_id, 'pressure', (/'lon1x1    ', 'lat1x1    ', 'boundaries', 'times     '/), &
             flux1x1_3d%p, (/'unit'/), (/'layer boundary in Pascals'/))
-        call nc_dump_var(output_file%nc_id, 'gph', (/'lon1x1    ', 'lat1x1    ', 'boundaries', 'times    '/), &
+        call nc_dump_var(output_file%nc_id, 'gph', (/'lon1x1    ', 'lat1x1    ', 'boundaries', 'times     '/), &
             flux1x1_3d%gph, (/'unit'/), (/'layer boundary in meters'/))
     else
         call nc_dump_var(output_file%nc_id, 'emission', (/'lon1x1 ', 'lat1x1 ', 'times  ', 'tracers'/), &

@@ -1152,7 +1152,7 @@ subroutine close_satellitedatafile(status)
                         (/'long_name'/), (/'temperature of grid-box'/))
                     call nc_dump_var(met_group_id, 'geopotential_height', (/'n_lev_p1','n_obs   '/), IO_tracer(itrac)%out_field(region)%gph(1:lm(region)+1,1:nobs), &
                         (/'long_name'/), (/'geopotential height at layer boundaries'/))
-                    call nc_dump_var(met_group_id, 'specific_humidity', (/'n_lev','n_obs   '/), IO_tracer(itrac)%out_field(region)%q(1:lm(region),1:nobs), &
+                    call nc_dump_var(met_group_id, 'specific_humidity', (/'n_lev   ','n_obs   '/), IO_tracer(itrac)%out_field(region)%q(1:lm(region),1:nobs), &
                         (/'long_name'/), (/'specific humidity (grams/gram)'/))
                     call nc_dump_var(met_group_id, 'at', (/'n_lev_p1'/), at, (/'comment'/), (/'AT coefficient in Pa (P = AT + BT*Psurf)'/))
                     call nc_dump_var(met_group_id, 'bt', (/'n_lev_p1'/), bt, (/'comment'/), (/'BT coefficient (P = AT + BT*Psurf)'/))

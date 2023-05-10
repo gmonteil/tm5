@@ -3773,7 +3773,7 @@ contains
     use dims       , only : idate, newsrun
     use dims       , only : xcyc, im, jm
     use redgridZoom, only : calc_pdiff
-    use io_hdf     , only : io_write2d_32d, DFACC_CREATE
+!    use io_hdf     , only : io_write2d_32d, DFACC_CREATE
 
     ! --- in/out -----------------------------
 
@@ -3789,7 +3789,7 @@ contains
 
     ! --- external -------------------------
 
-    integer(4), external    ::  sfStart, sfEnd
+!    integer(4), external    ::  sfStart, sfEnd
 
     ! --- local -----------------------------
 
@@ -3829,16 +3829,17 @@ contains
         write (gol,'("  max diff. : ",es12.4," [Pa]")') pdiffmax; call goErr
         write (gol,'("  treshold  : ",es12.4," [Pa]")') pdiffmax_treshold; call goErr
         write (gol,'("pressure arrays saved to local `pressure.hdf`")'); call goErr
-        if ( myid == root ) then
-          io = sfStart( 'pressure.hdf', DFACC_CREATE )
-          if ( io > 0 ) then
-            call io_write2d_32d( io, im(n)+4, 'LON', jm(n)+4, 'LAT', sp1_dat(n)%data(:,:,1), 'p'   , idate )
-            call io_write2d_32d( io, im(n)+4, 'LON', jm(n)+4, 'LAT', sp_dat(n)%data(:,:,1), 'pold', idate )
-            status = sfend(io)
-          else
-            write (gol,'("writing pressures")'); call goErr
-          end if
-        end if   ! root
+        ! Disabled the HDF4 interface, so the following won't work:
+!        if ( myid == root ) then
+!          io = sfStart( 'pressure.hdf', DFACC_CREATE )
+!          if ( io > 0 ) then
+!            call io_write2d_32d( io, im(n)+4, 'LON', jm(n)+4, 'LAT', sp1_dat(n)%data(:,:,1), 'p'   , idate )
+!            call io_write2d_32d( io, im(n)+4, 'LON', jm(n)+4, 'LAT', sp_dat(n)%data(:,:,1), 'pold', idate )
+!            status = sfend(io)
+!          else
+!            write (gol,'("writing pressures")'); call goErr
+!          end if
+!        end if   ! root
         TRACEBACK; status=1; return
       end if   ! max diff
 

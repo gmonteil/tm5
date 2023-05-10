@@ -424,6 +424,7 @@ contains
     use GO          , only : GO_Timer_Def
 #ifdef with_tmm_tm5
     use tmm_mf_tm5_nc , only : TMM_MF_TM5_NC_Init
+    use tmm_mf_tm5_hdf, only : TMM_MF_TM5_HDF_Init
 #endif
 #ifdef with_prism
     use tmm_mf_prism, only : mfPrism_Init
@@ -486,6 +487,9 @@ contains
 #endif
 
 #ifdef with_tmm_tm5
+    ! init input of TM5/HDF files:
+    call TMM_MF_TM5_HDF_Init( rcf, status )
+    IF_NOTOK_RETURN(status=1)
     ! init input of TM5/NetCDF files:
     call TMM_MF_TM5_NC_Init( rcf, status )
     IF_NOTOK_RETURN(status=1)
@@ -520,6 +524,7 @@ contains
     use GO          , only : goErr, gol, goPr
     use tmm_mf      , only : Opened, Done
 #ifdef with_tmm_tm5
+    use tmm_mf_tm5_hdf, only : TMM_MF_TM5_HDF_Done
     use tmm_mf_tm5_nc , only : TMM_MF_TM5_NC_Done
 #endif
 #ifdef with_prism
@@ -542,6 +547,9 @@ contains
     ! --- begin -------------------------------------------
 
 #ifdef with_tmm_tm5
+    ! init input of TM5/HDF files:
+    call TMM_MF_TM5_HDF_Done( status )
+    IF_NOTOK_RETURN(status=1)
     ! init input of TM5/NetCDF files:
     call TMM_MF_TM5_NC_Done( status )
     IF_NOTOK_RETURN(status=1)

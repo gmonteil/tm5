@@ -561,7 +561,6 @@ contains
         use dims,          only : region_name, im, jm, lm
         use chem_param,    only : ntracet, ntrace_chem, names
         use global_data,   only : mass_dat
-        use io_hdf,        only : io_write, DFACC_WRITE
 #ifdef with_budgets
         use budget_global, only : diagbudg
         use budget_global, only : init_mass, apply_budget_global

@@ -21,8 +21,8 @@ module meteo
   !
   use dims, only : nregions
   !
-  use meteodata  , only : mdat_set, mdat_check
-  use meteodata  , only : mdat_timeinterpolation
+  use meteodata  , only : Set, Check
+  use meteodata  , only : TimeInterpolation
   !
   use meteodata  , only : sp1_dat, sp2_dat, sp_dat, spm_dat
   use meteodata  , only : tsp_dat
@@ -67,8 +67,8 @@ module meteo
   public  ::  Meteo_Init, Meteo_Done, Meteo_Alloc
   public  ::  Meteo_Setup_Mass
   public  ::  Meteo_Setup_Other
-  public  ::  mdat_Set, mdat_Check
-  public  ::  mdat_TimeInterpolation
+  public  ::  Set, Check
+  public  ::  TimeInterpolation
 
   !public  ::  sp1_dat, sp2_dat, sp_dat, spm_dat
   !public  ::  tsp_dat
@@ -157,7 +157,7 @@ contains
     use dims       , only : nregions, region_name
     use dims       , only : im, jm
     use dims       , only : lm, lmax_conv
-    use meteodata  , only : mdat_init
+    use meteodata  , only : Init
     use global_data, only : rcfile
 
     ! --- in/out -------------------------------
@@ -236,19 +236,19 @@ contains
       end if
 
       ! start of interval (copied from sp2_dat):
-      call mdat_init( sp1_dat(region), 'sp', 'Pa', 'computed', &
+      call Init( sp1_dat(region), 'sp', 'Pa', 'computed', &
                      (/1,imr/), (/1,jmr/), halo, (/1,1/), &
                      'no-sourcekey', .false., 'no-destkey', status )
       IF_NOTOK_RETURN(status=1)
 
       ! current pressure:
-      call mdat_init( sp_dat(region), 'sp', 'Pa', 'computed', &
+      call Init( sp_dat(region), 'sp', 'Pa', 'computed', &
                      (/1,imr/), (/1,jmr/), halo, (/1,1/), &
                      'no-sourcekey', .false., 'no-destkey', status )
       IF_NOTOK_RETURN(status=1)
 
       ! surface pressure at mid of dynamic time interval:
-      call mdat_init( spm_dat(region), 'sp', 'Pa', 'computed', &
+      call Init( spm_dat(region), 'sp', 'Pa', 'computed', &
                      (/1,imr/), (/1,jmr/), halo, (/1,1/), &
                      'no-sourcekey', .false., 'no-destkey', status )
       IF_NOTOK_RETURN(status=1)
@@ -262,13 +262,13 @@ contains
       halo = 2
 
       ! pressure at half levels (lm+1):
-      call mdat_init( phlb_dat(region), 'phlb', 'Pa', 'computed', &
+      call Init( phlb_dat(region), 'phlb', 'Pa', 'computed', &
                      (/1,imr/), (/1,jmr/), halo, (/1,lmr+1/), &
                      'no-sourcekey', .false., 'no-destkey', status )
       IF_NOTOK_RETURN(status=1)
 
       ! air mass:
-      call mdat_init( m_dat(region), 'm', 'kg', 'computed', &
+      call Init( m_dat(region), 'm', 'kg', 'computed', &
                      (/1,imr/), (/1,jmr/), halo, (/1,lmr/), &
                      'no-sourcekey', .false., 'no-destkey', status )
       IF_NOTOK_RETURN(status=1)
@@ -292,7 +292,7 @@ contains
       ! vertical flux (kg/s) : BALANCED
       ! NOTE: data is copied from mfw, thus use same tinterp
       !       for correct allocation of data arrays
-      call mdat_init( pw_dat(region), 'pw', 'kg/s', mfw_dat(region)%tinterp, &
+      call Init( pw_dat(region), 'pw', 'kg/s', mfw_dat(region)%tinterp, &
                     (/1,imr/), (/1,jmr/), halo, (/0,lmr/), &
                      'no-sourcekey', .false., 'no-destkey', status )
       IF_NOTOK_RETURN(status=1)
@@ -358,7 +358,7 @@ contains
       ! east/west flux (kg/s) : BALANCED
       ! NOTE: data is copied from mfu, thus use same tinterp
       !       for correct allocation of data arrays
-      call mdat_init( pu_dat(region), 'pu', 'kg/s', mfu_dat(region)%tinterp, &
+      call Init( pu_dat(region), 'pu', 'kg/s', mfu_dat(region)%tinterp, &
                      (/1,imr/), (/1,jmr/), halo, (/0,lmr/), &
                      'no-sourcekey', .false., 'no-destkey', status )
       IF_NOTOK_RETURN(status=1)
@@ -366,7 +366,7 @@ contains
       ! south/north flux (kg/s) : BALANCED
       ! NOTE: data is copied from mfv, thus use same tinterp
       !       for correct allocation of data arrays
-      call mdat_init( pv_dat(region), 'pv', 'kg/s', mfv_dat(region)%tinterp, &
+      call Init( pv_dat(region), 'pv', 'kg/s', mfv_dat(region)%tinterp, &
                      (/1,imr/), (/1,jmr/), halo, (/0,lmr/), &
                      'no-sourcekey', .false., 'no-destkey', status )
       IF_NOTOK_RETURN(status=1)
@@ -408,13 +408,13 @@ contains
       halo = 0
 
       ! geopotential height(m)  (lm+1, halo=0)
-      call mdat_init( gph_dat(region), 'gph', 'm', 'computed', &
+      call Init( gph_dat(region), 'gph', 'm', 'computed', &
                      (/1,imr/), (/1,jmr/), halo, (/1,lmr+1/), &
                      'no-sourcekey', .false., 'no-destkey', status )
       IF_NOTOK_RETURN(status=1)
 
       ! vertical velocity (Pa/s)  (lm+1, halo=0)
-      call mdat_init( omega_dat(region), 'omega', 'Pa/s', 'computed', &
+      call Init( omega_dat(region), 'omega', 'Pa/s', 'computed', &
                      (/1,imr/), (/1,jmr/), halo, (/1,lmr+1/), &
                      'no-sourcekey', .false., 'no-destkey', status )
       IF_NOTOK_RETURN(status=1)
@@ -510,7 +510,7 @@ contains
 
       ! climatological surface pressure (Pa) ;
       ! derived from orography:
-      call mdat_init( pclim_dat(region), 'pclim', 'Pa', 'computed', &
+      call Init( pclim_dat(region), 'pclim', 'Pa', 'computed', &
                      (/1,imr/), (/1,jmr/), halo, (/1,1/), &
                      'no-sourcekey', .false., 'no-destkey', status )
       IF_NOTOK_RETURN(status=1)
@@ -695,7 +695,7 @@ contains
     use GO          , only : TRcFile, ReadRc
     use Dims        , only : nregions, nregions_max, okdebug_tmm
     use TM5_Geometry, only : lli
-    use MeteoData   , only : TMeteoData, mdat_init, mdat_set
+    use MeteoData   , only : TMeteoData, Init, Set
     use os_specs    , only : MAX_RCKEY_LEN
 
     ! --- in/out -------------------------------------
@@ -787,7 +787,7 @@ contains
 
     ! define meteo data,
     ! but should be marked as 'used' to be allocated and filled:
-    call mdat_init( md, name, unit, tinterp, is, js, halo, ls, &
+    call Init( md, name, unit, tinterp, is, js, halo, ls, &
                    sourcekey, write_meteo, destkey, status )
     IF_NOTOK_RETURN(status=1)
 
@@ -804,7 +804,7 @@ contains
     end if
 
     ! in use ?
-    call mdat_set( md, status, used=used )
+    call Set( md, status, used=used )
     IF_NOTOK_RETURN(status=1)
 
     ! ok
@@ -820,7 +820,7 @@ contains
 
     use TMM        , only : Done
     use Dims       , only : nregions_all
-    use meteodata  , only : mdat_Done
+    use meteodata  , only : Done
 
     ! --- in/out -------------------------------
 
@@ -849,167 +849,167 @@ contains
 
       ! ***
 
-      call mdat_Done( sp1_dat(n), status )
+      call Done( sp1_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( sp2_dat(n), status )
+      call Done( sp2_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( sp_dat(n), status )
+      call Done( sp_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( spm_dat(n), status )
-      IF_NOTOK_RETURN(status=1)
-
-      ! ***
-
-      call mdat_Done( phlb_dat(n), status )
-      IF_NOTOK_RETURN(status=1)
-
-      call mdat_Done( m_dat(n), status )
+      call Done( spm_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
       ! ***
 
-      call mdat_Done( mfu_dat(n), status )
+      call Done( phlb_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( mfv_dat(n), status )
-      IF_NOTOK_RETURN(status=1)
-
-      call mdat_Done( mfw_dat(n), status )
-      IF_NOTOK_RETURN(status=1)
-
-      call mdat_Done( tsp_dat(n), status )
-      IF_NOTOK_RETURN(status=1)
-
-      call mdat_Done( pu_dat(n), status )
-      IF_NOTOK_RETURN(status=1)
-
-      call mdat_Done( pv_dat(n), status )
-      IF_NOTOK_RETURN(status=1)
-
-      call mdat_Done( pw_dat(n), status )
+      call Done( m_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
       ! ***
 
-      call mdat_Done( temper_dat(n), status )
+      call Done( mfu_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( humid_dat(n), status )
+      call Done( mfv_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( gph_dat(n), status )
+      call Done( mfw_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( omega_dat(n), status )
+      call Done( tsp_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      ! ***
-
-      call mdat_Done( lwc_dat(n), status )
+      call Done( pu_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( iwc_dat(n), status )
+      call Done( pv_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done(  cc_dat(n), status )
-      IF_NOTOK_RETURN(status=1)
-
-      call mdat_Done( cco_dat(n), status )
-      IF_NOTOK_RETURN(status=1)
-
-      call mdat_Done( ccu_dat(n), status )
+      call Done( pw_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
       ! ***
 
-      call mdat_Done( entu_dat(n), status )
+      call Done( temper_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( entd_dat(n), status )
+      call Done( humid_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( detu_dat(n), status )
+      call Done( gph_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( detd_dat(n), status )
+      call Done( omega_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
       ! ***
 
-      call mdat_Done( oro_dat(n), status )
+      call Done( lwc_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( lsmask_dat(n), status )
+      call Done( iwc_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( pclim_dat(n), status )
+      call Done(  cc_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( sr_ecm_dat(n), status )
+      call Done( cco_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( sr_ols_dat(n), status )
+      call Done( ccu_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( u10m_dat(n), status )
+      ! ***
+
+      call Done( entu_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( v10m_dat(n), status )
+      call Done( entd_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( blh_dat(n), status )
+      call Done( detu_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( sshf_dat(n), status )
+      call Done( detd_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( slhf_dat(n), status )
+      ! ***
+
+      call Done( oro_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( ewss_dat(n), status )
+      call Done( lsmask_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( nsss_dat(n), status )
+      call Done( pclim_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( ci_dat(n), status )
+      call Done( sr_ecm_dat(n), status )
+      IF_NOTOK_RETURN(status=1)
+
+      call Done( sr_ols_dat(n), status )
+      IF_NOTOK_RETURN(status=1)
+
+      call Done( u10m_dat(n), status )
+      IF_NOTOK_RETURN(status=1)
+
+      call Done( v10m_dat(n), status )
+      IF_NOTOK_RETURN(status=1)
+
+      call Done( blh_dat(n), status )
+      IF_NOTOK_RETURN(status=1)
+
+      call Done( sshf_dat(n), status )
+      IF_NOTOK_RETURN(status=1)
+
+      call Done( slhf_dat(n), status )
+      IF_NOTOK_RETURN(status=1)
+
+      call Done( ewss_dat(n), status )
+      IF_NOTOK_RETURN(status=1)
+
+      call Done( nsss_dat(n), status )
+      IF_NOTOK_RETURN(status=1)
+
+      call Done( ci_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
 #ifndef without_dry_deposition
 
-      call mdat_Done( sf_dat(n), status )
+      call Done( sf_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( sd_dat(n), status )
+      call Done( sd_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( swvl1_dat(n), status )
+      call Done( swvl1_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( src_dat(n), status )
+      call Done( src_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( d2m_dat(n), status )
+      call Done( d2m_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( t2m_dat(n), status )
+      call Done( t2m_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( ssr_dat(n), status )
+      call Done( ssr_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
       do iveg = 1, nveg
-        call mdat_Done( tv_dat(n,iveg), status )
+        call Done( tv_dat(n,iveg), status )
         IF_NOTOK_RETURN(status=1)
       end do
 
-      call mdat_Done( cvl_dat(n), status )
+      call Done( cvl_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Done( cvh_dat(n), status )
+      call Done( cvh_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 #endif
 
@@ -1027,7 +1027,7 @@ contains
   subroutine Meteo_Alloc( status )
 
     use dims       , only : nregions_all
-    use meteodata  , only : mdat_Alloc
+    use meteodata  , only : Alloc
 
     ! --- in/out -------------------------------
 
@@ -1049,165 +1049,165 @@ contains
 
       ! ***
 
-      call mdat_Alloc( sp1_dat(region), status )
+      call Alloc( sp1_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( sp2_dat(region), status )
+      call Alloc( sp2_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( sp_dat(region), status )
+      call Alloc( sp_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( spm_dat(region), status )
-      IF_NOTOK_RETURN(status=1)
-
-      ! ***
-
-      call mdat_Alloc( phlb_dat(region), status )
-      IF_NOTOK_RETURN(status=1)
-
-      call mdat_Alloc( m_dat(region), status )
+      call Alloc( spm_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
       ! ***
 
-      call mdat_Alloc( mfu_dat(region), status )
+      call Alloc( phlb_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( mfv_dat(region), status )
-      IF_NOTOK_RETURN(status=1)
-
-      call mdat_Alloc( mfw_dat(region), status )
-      IF_NOTOK_RETURN(status=1)
-
-      call mdat_Alloc( tsp_dat(region), status )
-      IF_NOTOK_RETURN(status=1)
-
-      call mdat_Alloc( pu_dat(region), status )
-      IF_NOTOK_RETURN(status=1)
-
-      call mdat_Alloc( pv_dat(region), status )
-      IF_NOTOK_RETURN(status=1)
-
-      call mdat_Alloc( pw_dat(region), status )
+      call Alloc( m_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
       ! ***
 
-      call mdat_Alloc( temper_dat(region), status )
+      call Alloc( mfu_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( humid_dat(region), status )
+      call Alloc( mfv_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( gph_dat(region), status )
+      call Alloc( mfw_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( omega_dat(region), status )
+      call Alloc( tsp_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      ! ***
-
-      call mdat_Alloc( lwc_dat(region), status )
+      call Alloc( pu_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( iwc_dat(region), status )
+      call Alloc( pv_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc(  cc_dat(region), status )
-      IF_NOTOK_RETURN(status=1)
-
-      call mdat_Alloc( cco_dat(region), status )
-      IF_NOTOK_RETURN(status=1)
-
-      call mdat_Alloc( ccu_dat(region), status )
+      call Alloc( pw_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
       ! ***
 
-      call mdat_Alloc( entu_dat(region), status )
+      call Alloc( temper_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( entd_dat(region), status )
+      call Alloc( humid_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( detu_dat(region), status )
+      call Alloc( gph_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( detd_dat(region), status )
+      call Alloc( omega_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
       ! ***
 
-      call mdat_Alloc( oro_dat(region), status )
+      call Alloc( lwc_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( lsmask_dat(region), status )
+      call Alloc( iwc_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( pclim_dat(region), status )
+      call Alloc(  cc_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( sr_ecm_dat(region), status )
+      call Alloc( cco_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( sr_ols_dat(region), status )
+      call Alloc( ccu_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( u10m_dat(region), status )
+      ! ***
+
+      call Alloc( entu_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( v10m_dat(region), status )
+      call Alloc( entd_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( blh_dat(region), status )
+      call Alloc( detu_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( sshf_dat(region), status )
+      call Alloc( detd_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( slhf_dat(region), status )
+      ! ***
+
+      call Alloc( oro_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( ewss_dat(region), status )
+      call Alloc( lsmask_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( nsss_dat(region), status )
+      call Alloc( pclim_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( ci_dat(region), status )
+      call Alloc( sr_ecm_dat(region), status )
+      IF_NOTOK_RETURN(status=1)
+
+      call Alloc( sr_ols_dat(region), status )
+      IF_NOTOK_RETURN(status=1)
+
+      call Alloc( u10m_dat(region), status )
+      IF_NOTOK_RETURN(status=1)
+
+      call Alloc( v10m_dat(region), status )
+      IF_NOTOK_RETURN(status=1)
+
+      call Alloc( blh_dat(region), status )
+      IF_NOTOK_RETURN(status=1)
+
+      call Alloc( sshf_dat(region), status )
+      IF_NOTOK_RETURN(status=1)
+
+      call Alloc( slhf_dat(region), status )
+      IF_NOTOK_RETURN(status=1)
+
+      call Alloc( ewss_dat(region), status )
+      IF_NOTOK_RETURN(status=1)
+
+      call Alloc( nsss_dat(region), status )
+      IF_NOTOK_RETURN(status=1)
+
+      call Alloc( ci_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
 #ifndef without_dry_deposition
-      call mdat_Alloc( sf_dat(region), status )
+      call Alloc( sf_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( sd_dat(region), status )
+      call Alloc( sd_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( swvl1_dat(region), status )
+      call Alloc( swvl1_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( src_dat(region), status )
+      call Alloc( src_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( d2m_dat(region), status )
+      call Alloc( d2m_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( t2m_dat(region), status )
+      call Alloc( t2m_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( ssr_dat(region), status )
+      call Alloc( ssr_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( cvl_dat(region), status )
+      call Alloc( cvl_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
-      call mdat_Alloc( cvh_dat(region), status )
+      call Alloc( cvh_dat(region), status )
       IF_NOTOK_RETURN(status=1)
 
       do iveg = 1, nveg
-        call mdat_Alloc( tv_dat(region,iveg), status )
+        call Alloc( tv_dat(region,iveg), status )
         IF_NOTOK_RETURN(status=1)
       end do
 #endif
@@ -1241,7 +1241,7 @@ contains
     use dims         , only : nregions, nregions_all, im, jm, lm, parent
     use dims         , only : xcyc
     use TM5_Geometry , only : lli, levi
-    use meteodata    , only : mdat_SetData  ! to copy %data and %tr from one MD to another
+    use meteodata    , only : SetData  ! to copy %data and %tr from one MD to another
 !    use restart      , only : Restart_Read
     use Var4D_IO_Mass, only : restore_masses
 
@@ -1356,7 +1356,7 @@ contains
       IF_NOTOK_RETURN(status=1)
 
       ! copy SP2 into SP1 (%data and %tr)...
-      call mdat_SetData( sp1_dat(n), sp2_dat(n), status )
+      call SetData( sp1_dat(n), sp2_dat(n), status )
       IF_NOTOK_RETURN(status=1)
 
       !! testing ...
@@ -1386,7 +1386,7 @@ contains
         write (gol,'("  copy SP1 to SP ...")'); call goPr
 
         ! copy sp1 into sp :
-        call mdat_SetData( sp_dat(n), sp1_dat(n), status )
+        call SetData( sp_dat(n), sp1_dat(n), status )
         IF_NOTOK_RETURN(status=1)
 
         ! fill pressure and mass from sp:
@@ -1415,7 +1415,7 @@ contains
         ! fields received from the archive or the coupled model,
         ! while sp contains the actual pressure after advection.
         !! copy sp into sp1 (PLS, 29-3-2010)
-        !call mdat_setdata( sp1_dat(n), sp_dat(n), status )
+        !call SetData( sp1_dat(n), sp_dat(n), status )
         !IF_NOTOK_RETURN(status=1)
         !<<<
 
@@ -2708,11 +2708,11 @@ contains
 
       data1_tref = data1_t1
       if ( IsAnyDate(data1_tref) ) data1_tref = tr(1)
-      call set( data1_tref, hour=0, min=0, sec=0, mili=0 )
+      call Set( data1_tref, hour=0, min=0, sec=0, mili=0 )
 
       data2_tref = data2_t1
       if ( IsAnyDate(data2_tref) ) data2_tref = tr(1)
-      call set( data2_tref, hour=0, min=0, sec=0, mili=0 )
+      call Set( data2_tref, hour=0, min=0, sec=0, mili=0 )
 
     !end if
 
@@ -2769,7 +2769,7 @@ contains
     use GO       , only : TDate, wrtgol
     use Grid     , only : TllGridInfo
     use TMM      , only : ReadField, Read_SP, Read_SR_OLS, WriteField
-    use meteodata, only : TMeteoData, mdat_TimeInterpolation
+    use meteodata, only : TMeteoData, TimeInterpolation
     use ParTools , only : myid, root, Par_Broadcast
 
     ! --- in/out ------------------------------------
@@ -2961,7 +2961,7 @@ contains
     !
 
     ! apply time interpolation:
-    call mdat_TimeInterpolation( md, tr, status )
+    call TimeInterpolation( md, tr, status )
     IF_NOTOK_RETURN(status=1)
 
     !
@@ -2984,7 +2984,7 @@ contains
     use GO       , only : TDate, wrtgol, operator(/=)
     use Grid     , only : TllGridInfo, TLevelInfo
     use TMM      , only : TMeteoInfo, ReadField, WriteField
-    use meteodata, only : TMeteoData, mdat_TimeInterpolation
+    use meteodata, only : TMeteoData, TimeInterpolation
     use ParTools , only : myid, root, Par_Broadcast
 
     ! --- in/out ----------------------------------
@@ -3174,7 +3174,7 @@ contains
     !
 
     ! apply time interpolation:
-    call mdat_TimeInterpolation( md, tr, status )
+    call TimeInterpolation( md, tr, status )
     IF_NOTOK_RETURN(status=1)
 
     !
@@ -3201,7 +3201,7 @@ contains
     use GO       , only : TDate, wrtgol, operator(/=)
     use Grid     , only : TllGridInfo, TLevelInfo
     use TMM      , only : TMeteoInfo, Read_MFUV, WriteField
-    use meteodata, only : TMeteoData, mdat_TimeInterpolation
+    use meteodata, only : TMeteoData, TimeInterpolation
     use ParTools , only : myid, root, Par_Broadcast
     use Dims     , only : okdebug
 
@@ -3478,9 +3478,9 @@ contains
     !
 
     ! apply time interpolation:
-    call mdat_TimeInterpolation( md_mfu, tr, status )
+    call TimeInterpolation( md_mfu, tr, status )
     IF_NOTOK_RETURN(status=1)
-    call mdat_TimeInterpolation( md_mfv, tr, status )
+    call TimeInterpolation( md_mfv, tr, status )
     IF_NOTOK_RETURN(status=1)
 
     !
@@ -3502,7 +3502,7 @@ contains
     use GO       , only : TDate, wrtgol, operator(/=)
     use Grid     , only : TllGridInfo, TLevelInfo
     use TMM      , only : TMeteoInfo, ReadField, Read_MFW, WriteField
-    use meteodata, only : TMeteoData, mdat_TimeInterpolation
+    use meteodata, only : TMeteoData, TimeInterpolation
     use ParTools , only : myid, root, Par_Broadcast
     use Dims     , only : okdebug
 
@@ -3746,10 +3746,10 @@ contains
     !
 
     ! apply time interpolation:
-    call mdat_TimeInterpolation( md_mfw, tr, status )
+    call TimeInterpolation( md_mfw, tr, status )
     IF_NOTOK_RETURN(status=1)
     !
-    call mdat_TimeInterpolation( md_tsp, tr, status )
+    call TimeInterpolation( md_tsp, tr, status )
     IF_NOTOK_RETURN(status=1)
 
     !
@@ -3773,7 +3773,7 @@ contains
     use dims       , only : idate, newsrun
     use dims       , only : xcyc, im, jm
     use redgridZoom, only : calc_pdiff
-!    use io_hdf     , only : io_write2d_32d, DFACC_CREATE
+    use io_hdf     , only : io_write2d_32d, DFACC_CREATE
 
     ! --- in/out -----------------------------
 
@@ -3789,7 +3789,7 @@ contains
 
     ! --- external -------------------------
 
-!    integer(4), external    ::  sfStart, sfEnd
+    integer(4), external    ::  sfStart, sfEnd
 
     ! --- local -----------------------------
 
@@ -3829,17 +3829,16 @@ contains
         write (gol,'("  max diff. : ",es12.4," [Pa]")') pdiffmax; call goErr
         write (gol,'("  treshold  : ",es12.4," [Pa]")') pdiffmax_treshold; call goErr
         write (gol,'("pressure arrays saved to local `pressure.hdf`")'); call goErr
-        ! Disabled the HDF4 interface, so the following won't work:
-!        if ( myid == root ) then
-!          io = sfStart( 'pressure.hdf', DFACC_CREATE )
-!          if ( io > 0 ) then
-!            call io_write2d_32d( io, im(n)+4, 'LON', jm(n)+4, 'LAT', sp1_dat(n)%data(:,:,1), 'p'   , idate )
-!            call io_write2d_32d( io, im(n)+4, 'LON', jm(n)+4, 'LAT', sp_dat(n)%data(:,:,1), 'pold', idate )
-!            status = sfend(io)
-!          else
-!            write (gol,'("writing pressures")'); call goErr
-!          end if
-!        end if   ! root
+        if ( myid == root ) then
+          io = sfStart( 'pressure.hdf', DFACC_CREATE )
+          if ( io > 0 ) then
+            call io_write2d_32d( io, im(n)+4, 'LON', jm(n)+4, 'LAT', sp1_dat(n)%data(:,:,1), 'p'   , idate )
+            call io_write2d_32d( io, im(n)+4, 'LON', jm(n)+4, 'LAT', sp_dat(n)%data(:,:,1), 'pold', idate )
+            status = sfend(io)
+          else
+            write (gol,'("writing pressures")'); call goErr
+          end if
+        end if   ! root
         TRACEBACK; status=1; return
       end if   ! max diff
 
@@ -3930,7 +3929,7 @@ contains
     use GO       , only : TDate, wrtgol, operator(/=), operator(>)
     use Grid     , only : TllGridInfo, TLevelInfo
     use TMM      , only : TMeteoInfo, Read_Convec, WriteField
-    use meteodata, only : TMeteoData, mdat_TimeInterpolation
+    use meteodata, only : TMeteoData, TimeInterpolation
     use ParTools , only : myid, root, Par_Broadcast
     use Dims     , only : okdebug
 
@@ -4268,13 +4267,13 @@ contains
     !
 
     ! apply time interpolation:
-    call mdat_TimeInterpolation( entu, tr, status )
+    call TimeInterpolation( entu, tr, status )
     IF_NOTOK_RETURN(status=1)
-    call mdat_TimeInterpolation( entd, tr, status )
+    call TimeInterpolation( entd, tr, status )
     IF_NOTOK_RETURN(status=1)
-    call mdat_TimeInterpolation( detu, tr, status )
+    call TimeInterpolation( detu, tr, status )
     IF_NOTOK_RETURN(status=1)
-    call mdat_TimeInterpolation( detd, tr, status )
+    call TimeInterpolation( detd, tr, status )
     IF_NOTOK_RETURN(status=1)
 
     !
@@ -4300,7 +4299,7 @@ contains
 !    use GO       , only : TDate, wrtgol, operator(/=)
 !    use Grid     , only : TllGridInfo, TLevelInfo
 !    use TMM      , only : TMeteoInfo, Read_Diffus, WriteField
-!    use meteodata, only : TMeteoData, mdat_TimeInterpolation
+!    use meteodata, only : TMeteoData, TimeInterpolation
 !    use ParTools , only : myid, root, Par_Broadcast
 !    use Dims     , only : okdebug
 !
@@ -4487,7 +4486,7 @@ contains
 !    !
 !
 !    ! apply time interpolation:
-!    call mdat_TimeInterpolation( Kzz, tr, status )
+!    call TimeInterpolation( Kzz, tr, status )
 !    IF_NOTOK_RETURN(status=1)
 !
 !    !
@@ -4511,7 +4510,7 @@ contains
     use GO       , only : TDate, wrtgol, operator(/=)
     use Grid     , only : TllGridInfo, TLevelInfo
     use TMM      , only : TMeteoInfo, Read_CloudCovers, WriteField
-    use meteodata, only : TMeteoData, mdat_TimeInterpolation
+    use meteodata, only : TMeteoData, TimeInterpolation
     use ParTools , only : myid, root, Par_Broadcast
     use Dims     , only : okdebug
 
@@ -4775,11 +4774,11 @@ contains
     !
 
     ! apply time interpolation:
-    call mdat_TimeInterpolation( cc, tr, status )
+    call TimeInterpolation( cc, tr, status )
     IF_NOTOK_RETURN(status=1)
-    call mdat_TimeInterpolation( cco, tr, status )
+    call TimeInterpolation( cco, tr, status )
     IF_NOTOK_RETURN(status=1)
-    call mdat_TimeInterpolation( ccu, tr, status )
+    call TimeInterpolation( ccu, tr, status )
     IF_NOTOK_RETURN(status=1)
 
     !

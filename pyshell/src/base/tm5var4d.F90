@@ -248,7 +248,6 @@ contains
 
     use Meteo,                 only : Meteo_Init, Meteo_Done
 
-    use toolbox,               only : dumpfield
     use var4d,                 only : run_mode
     use dims,                  only : im, jm
 

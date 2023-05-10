@@ -183,7 +183,7 @@ contains
     !-----------------------------------------
     use binas,       only : grav
     use dims
-    use io_hdf
+!    use io_hdf
     use global_data, only : mass_dat, region_dat
     use MeteoData  , only : sp_dat, phlb_dat, m_dat
     use toolbox,     only : escape_tm

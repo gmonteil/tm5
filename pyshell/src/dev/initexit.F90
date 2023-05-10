@@ -962,8 +962,6 @@ contains
     use sources_sinks,       only : trace1
     use adj_sources_sinks,   only : adj_trace1
     use io_save,             only : readnetcdf, save_filename
-    use io_save,             only : readhdfmmr
-    use io_save,             only : readhdfmmix
     use restart,             only : Restart_Read
     use os_specs,            only : MAX_FILENAME_LEN
 
@@ -1050,37 +1048,6 @@ contains
           !call Restart_Read( status, tracer_mass=.true., tendencies=.true. , air_mass=.true.) ! For cy3/chemistry code
           call Restart_Read( status, surface_pressure=.true., pressure=.true., tracer_mass=.true., air_mass=.true.)
           IF_NOTOK_RETURN(status=1)
-
-        !====================================
-        ! initial tracer fields are obtained
-        ! from 'old' savefile
-        ! (containing MIXING RATIOS).
-        !====================================
-        case(4)
-
-          do region=1,nregions
-             call ReadRc( rcF, 'start.4.'//region_name(region), fname, status )
-             IF_NOTOK_RETURN(status=1)
-             call readhdfmmr( region, fname )
-          end do
-
-        !====================================
-        ! initial tracer fields are obtained
-        ! from a mmix file.
-        !====================================
-        case(5)
-
-          !
-          ! This is typically the choice for combining different versions
-          ! or extending the number of tracers
-          ! The compounds are searched by name. If not in the mmix file
-          ! the field is initialized as zero
-
-          do region=1,nregions
-             call ReadRc( rcF, 'start.5.'//region_name(region), fname, status )
-             IF_NOTOK_RETURN(status=1)
-             call readhdfmmix(region,fname)
-          end do
 
         !====================================
         case default

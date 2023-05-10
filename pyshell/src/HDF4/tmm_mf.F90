@@ -20,6 +20,7 @@ module tmm_mf
   use tmm_mf_tmpp      , only : TMeteoFile_tmpp
 #endif
 #ifdef with_tmm_tm5
+  use tmm_mf_tm5_hdf    , only : TMeteoFile_tm5_hdf
   use tmm_mf_tm5_nc     , only : TMeteoFile_tm5_nc
 #endif
 #ifdef with_tmm_ecmwf
@@ -81,6 +82,7 @@ module tmm_mf
     type(TMeteoFile_tmpp)          ::  mf_tmpp         ! tmpp written hdf file
 #endif
 #ifdef with_tmm_tm5
+    type(TMeteoFile_tm5_hdf)       ::  mf_tm5_hdf      ! tm5 written hdf file
     type(TMeteoFile_tm5_nc)        ::  mf_tm5_nc       ! tm5 written netcdf file
 #endif
 #ifdef with_tmm_ecmwf
@@ -192,6 +194,7 @@ contains
     use tmm_mf_tmpp      , only : Done
 #endif
 #ifdef with_tmm_tm5
+    use tmm_mf_tm5_hdf    , only : Done
     use tmm_mf_tm5_nc     , only : Done
 #endif
 #ifdef with_tmm_ecmwf
@@ -229,7 +232,10 @@ contains
           IF_NOTOK_RETURN(status=1)
 #endif
 #ifdef with_tmm_tm5
-        case ('tm5-nc')
+        case ( 'hdf', 'tm5-hdf' )
+          call Done( mf%mf_tm5_hdf, status )
+          IF_NOTOK_RETURN(status=1)
+        case ( 'tm5-nc' )
           call Done( mf%mf_tm5_nc, status )
           IF_NOTOK_RETURN(status=1)
 #endif
@@ -485,6 +491,7 @@ contains
     use tmm_mf_tmpp      , only : Init, Get
 #endif
 #ifdef with_tmm_tm5
+    use tmm_mf_tm5_hdf    , only : Init, Get
     use tmm_mf_tm5_nc     , only : Init, Get
 #endif
 #ifdef with_tmm_ecmwf
@@ -589,6 +596,27 @@ contains
       ! ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       ! hdf or netcdf files written by tm5
       ! ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+      case ( 'tm5-hdf' )
+
+        ! wich of the 'mf%mf_???' is used ?
+        mf%filetype = 'tm5-hdf'
+
+        ! setup file:
+        call Init( mf%mf_tm5_hdf, 'i', dir, archivename, paramkey, &
+                               tday, t1, t2, status )
+        IF_NOTOK_RETURN(status=1)
+
+        ! store filename:
+        mf%filename = mf%mf_tm5_hdf%fname
+
+        ! extract time range:
+        call Get( mf%mf_tm5_hdf, status, trange1=mf%t1, trange2=mf%t2 )
+        IF_NOTOK_RETURN(status=1)
+
+        ! extract paramkeys for fields in file:
+        call Get( mf%mf_tm5_hdf, status, paramkeys=mf%paramkeys )
+        IF_NOTOK_RETURN(status=1)
 
       case ( 'tm5-nc' )
 
@@ -816,6 +844,7 @@ contains
     use tmm_mf_tmpp      , only : ReadRecord
 #endif
 #ifdef with_tmm_tm5
+    use tmm_mf_tm5_hdf    , only : ReadRecord
     use tmm_mf_tm5_nc     , only : ReadRecord
 #endif
 #ifdef with_tmm_ecmwf
@@ -882,6 +911,16 @@ contains
         call AddHistory( tmi, 'archivekey=='//trim(mf%archivekey), status )
 #endif
 #ifdef with_tmm_tm5
+      case ( 'hdf', 'tm5-hdf' )
+        ! read from hdf file:
+        call ReadRecord( mf%mf_tm5_hdf, paramkey, t1, t2, nuv, nw, &
+                           gridtype, levi, &
+                           lli, ll, sp_ll, &
+                           status )
+        IF_NOTOK_RETURN(status=1)
+        ! fill some info values:
+        call Init( tmi, paramkey, 'unkown', status )
+        call AddHistory( tmi, 'archivekey=='//trim(mf%archivekey), status )
       case ( 'tm5-nc' )
         ! read from hdf file:
         call ReadRecord( mf%mf_tm5_nc, paramkey, unit, t1, t2, nuv, nw, &
@@ -999,6 +1038,7 @@ contains
     use GO, only : TDate
 
 #ifdef with_tmm_tm5
+    use tmm_mf_tm5_hdf , only : Init, Get
     use tmm_mf_tm5_nc  , only : Init, Get
 #endif
 
@@ -1053,6 +1093,28 @@ contains
       ! daily hdf day files
       ! ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+      case ( 'tm5-hdf' )
+
+        ! always hdf files:
+        mf%filetype = 'tm5-hdf'
+
+        ! setup file:
+        call Init( mf%mf_tm5_hdf, 'o', dir, trim(archivename), paramkey, &
+                               tday, t1, t2, status )
+        IF_NOTOK_RETURN(status=1)
+
+        ! store filename:
+        call Get( mf%mf_tm5_hdf, status, filename=mf%filename )
+        IF_NOTOK_RETURN(status=1)
+
+        ! extract time range:
+        call Get( mf%mf_tm5_hdf, status, trange1=mf%t1, trange2=mf%t2 )
+        IF_NOTOK_RETURN(status=1)
+
+        ! extract paramkeys for fields in file:
+        call Get( mf%mf_tm5_hdf, status, paramkeys=mf%paramkeys )
+        IF_NOTOK_RETURN(status=1)
+
       case ( 'tm5-nc' )
 
         ! always netcdf files:
@@ -1106,6 +1168,7 @@ contains
     use Grid      , only : TllGridInfo
     use tmm_info  , only : TMeteoInfo
 #ifdef with_tmm_tm5
+    use tmm_mf_tm5_hdf, only : WriteRecord
     use tmm_mf_tm5_nc , only : WriteRecord
 #endif
 
@@ -1128,6 +1191,10 @@ contains
 
     select case ( mf%filetype )
 #ifdef with_tmm_tm5
+      case ( 'hdf', 'tm5-hdf' )
+        call WriteRecord( mf%mf_tm5_hdf, tmi, paramkey, unit, tday, t1, t2, &
+                            lli, nuv, ll, status )
+        IF_NOTOK_RETURN(status=1)
       case ( 'tm5-nc' )
         call WriteRecord( mf%mf_tm5_nc, tmi, paramkey, unit, tday, t1, t2, &
                             lli, nuv, ll, status )
@@ -1155,6 +1222,7 @@ contains
     use Grid      , only : TllGridInfo, TLevelInfo
     use tmm_info  , only : TMeteoInfo
 #ifdef with_tmm_tm5
+    use tmm_mf_tm5_hdf, only : WriteRecord
     use tmm_mf_tm5_nc , only : WriteRecord
 #endif
 
@@ -1182,6 +1250,11 @@ contains
 
     select case ( mf%filetype )
 #ifdef with_tmm_tm5
+      case ( 'tm5-hdf' )
+        call WriteRecord( mf%mf_tm5_hdf, tmi, spname, paramkey, unit, tday, t1, t2, &
+                            lli, nuv, levi, nw, ps, ll, status )!, &
+                            !nlev=nlev )
+        IF_NOTOK_RETURN(status=1)
       case ( 'tm5-nc' )
         call WriteRecord( mf%mf_tm5_nc, tmi, spname, paramkey, unit, tday, t1, t2, &
                             lli, nuv, levi, nw, ps, ll, status )!, &

@@ -777,7 +777,6 @@ contains
       use binas,        only : ae, cp_air, Rgas, grav, Lvap, vkarman
       use dims,         only : gtor, dx, dy, ybeg, xref, yref, okdebug
       use dims,         only : isr, ier, jsr, jer, idate, im, jm, lm, lmax_conv
-      use toolbox,      only : dumpfield
       use MeteoData,    only : slhf_dat, sshf_dat, temper_dat, humid_dat, gph_dat, pu_dat, pv_dat
       use global_data,  only : conv_dat
 
