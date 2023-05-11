@@ -143,13 +143,13 @@ contains
     end if ! revert
 
     ! clear:
-    do region = 1, nregions
-       do itrac = 1, ntracet
-          call Fields_4D_Done( adj_emissions(region)%tracer(itrac), tracers_em_info(region)%tracer(itrac)%n_cat,  status )
-          IF_NOTOK_RETURN(status=1)
-       end do
-    end do
-    deallocate( adj_emissions )
+!    do region = 1, nregions
+!       do itrac = 1, ntracet
+!          call Fields_4D_Done( adj_emissions(region)%tracer(itrac), tracers_em_info(region)%tracer(itrac)%n_cat,  status )
+!          IF_NOTOK_RETURN(status=1)
+!       end do
+!    end do
+!    deallocate( adj_emissions )
 
     call Done_adjemis_CO2(status)
     IF_NOTOK_RETURN(status=1)
