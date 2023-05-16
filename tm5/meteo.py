@@ -78,7 +78,7 @@ class Meteo:
             regions = ['glb100x100']
             levels = 'ml137'
         for region in regions:
-            for tt in date_range(start, Timestamp(end) + Timedelta(days=1), freq='MS', inclusive='left'):
+            for tt in date_range(Timestamp(start).strftime('%Y%m01'), Timestamp(end) + Timedelta(days=1), freq='MS', inclusive='left'):
                 self.get(prefix=f'ec/ea/h06h18tr3/{levels}/{region}/{tt:%Y/%m}/', suffix='_%Y%m%d_00p03.nc', fields=['convec', 'mfuv', 'mfw', 'q', 'sp', 't', 'tsp'], start = tt, end = tt + to_offset('MS'))
                 self.get(prefix=f'ec/ea/h06h18tr1/sfc/{region}/{tt:%Y/%m}/', suffix='_%Y%m%d_00p01.nc', fields=['blh', 'ewss', 'nsss', 'sshf', 'slhf', 'u10m', 'v10m'], start=tt, end=tt + to_offset('MS'))
                 self.get(prefix=f'ec/ea/an0tr1/sfc/{region}/{tt:%Y/%m}/', start = tt, end = tt + to_offset('MS'), suffix='_%Y%m%d_00p01.nc', fields=['sr']) #, 'albedo', 'veg'])

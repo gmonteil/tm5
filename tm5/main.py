@@ -128,6 +128,8 @@ class TM5:
                 self.settings[f'tmm.destkey.{region}.ml'] = f'tm5-nc:mdir=ec/ea/h06h18tr3/tropo25/{region}/<yyyy>/<mm>;tres=_00p03;namesep=/'
                 self.settings[f'tmm.destkey.{region}.sfc.fc'] = f'tm5-nc:mdir=ec/ea/h06h18tr1/sfc/{region}/<yyyy>/<mm>;tres=_00p01;namesep=/'
                 self.settings[f'tmm.destkey.{region}.sfc.an'] = f'tm5-nc:mdir=ec/ea/an0tr1/sfc/{region}/<yyyy>/<mm>;tres=_00p01;namesep=/'
+            self.settings['ndyn'] = '900'
+            self.settings['cfl.outputstep'] = '900'
         else :
             for region in self.dconf.run.regions :
                 self.settings[f'tmm.sourcekey.{region}.ml'] = f'tm5-nc:mdir=ec/ea/h06h18tr3/tropo25/{region}/<yyyy>/<mm>;tres=_00p03;namesep=/'
