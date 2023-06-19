@@ -8,9 +8,13 @@ from pandas import Timestamp
 import os
 import shutil
 import xarray as xr
+import logging
 
 
-def forward(dconf):
+logger = logging.getLogger(__name__)
+
+
+def forward(dconf, **kwargs):
     """
     Run a forward TM5 simulation
     :param dconf: omegaconf.DictConfig or dictionary containing basic settings
@@ -19,23 +23,23 @@ def forward(dconf):
 
     emclasses = {'CO2': PreprocessedEmissions}
     obs = load_observations(dconf)
-    run = setup_tm5(dconf)
+    run = setup_tm5(dconf, **kwargs)
     run.SetupObservations(obs)
     run.SetupEmissions(emclasses)
     run.RunForward()
     return run
 
 
-def optim(dconf):
+def optim(dconf, **kwargs):
     """
     Do an inversion with TM5
     :param dconf: omegaconf.DictConfig or dictionary containing basic settings
     More advanced/stable settings are stored in the TM5 rc-file, accessed under the run.rcfile key
     """
-
+    
     emclasses = {'CO2': PreprocessedEmissions}
     obs = load_observations(dconf)
-    run = setup_tm5(dconf)
+    run = setup_tm5(dconf, **kwargs)
     run.SetupObservations(obs)
     opt = Congrad(run)
     opt.SetupOptimizer(restart=False, optimized_prior_state=False, emclasses=emclasses)

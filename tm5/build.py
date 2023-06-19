@@ -131,9 +131,9 @@ def gen_makefile(config: DictConfig) -> Path:
     # Temporarily move to the build directory for that
     curdir = os.getcwd()
     os.chdir(buildpath)
-    command = ['makedepf90', '-o', 'tm5.x'] + list(Path().glob('*.[Ff]*')) # + ['>>', 'Makefile']
+    command = ['makedepf90', '-o', 'tm5.x'] + list(Path().glob('*.[Ff]*')) + ['>>', 'Makefile']
     with open(makefile_dest.name, 'a') as fid:
-        run_tm5(command, settings=config.host, stdout=fid)
+        run_tm5(command, settings=config.host) # , stdout=fid)
         # subprocess.run(command, stdout=fid)
     os.chdir(curdir)
 

@@ -373,7 +373,12 @@ class PreprocessedEmissions(Emissions):
         file_pattern = self.dconf[category].pattern
         field = self.dconf[category].get('field', 'emis')
         area = self.dconf[category].get('area_field', None)
-        data = xr.open_mfdataset(file_pattern)
+        try :
+            data = xr.open_mfdataset(file_pattern)
+        except IOError as e :
+            logger.error('No file matching pattern ' + file_pattern + ' found')
+            logger.exception(e)
+            raise e
 
         if area is None :
             area = TM5Grids.global1x1().area
@@ -402,8 +407,9 @@ class PreprocessedEmissions(Emissions):
         # regrid:
         try :
             emis_coarsened = crop_and_coarsen(emis_glo1x1, latb=destreg.latb, lonb=destreg.lonb)
-        except ValueError:
-            import pdb; pdb.set_trace()
+        except ValueError as e:
+            logger.error("Couldn't import emissions. Maybe some files are missing?")
+            raise e
 
         timestep = DatetimeIndex(emis_glo1x1.time.values) + to_offset(granularity) - DatetimeIndex(emis_glo1x1.time.values)
 

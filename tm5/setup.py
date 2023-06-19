@@ -24,7 +24,7 @@ def setup_initial_condition(dconf: DictConfig) -> DictConfig:
             dconf.tm5['istart'] = '2'
             dconf.tm5['start.2.iniconc_from_file'] = 'T'
             version = dconf.initial_condition.carbontracker_version
-            filename = Path(dconf.run.paths.output) / Timestamp(dconf.run.start).strftime(f'mix_co2_%Y%m%d_{version}.nc')
+            filename = Path(dconf.run.paths.output).absolute() / Timestamp(dconf.run.start).strftime(f'mix_co2_%Y%m%d_{version}.nc')
             dconf.tm5['start.2.iniconcfile'] = filename
             inicond.get_iniconc_carbontracker(dconf.initial_condition.carbontracker_url, dconf.run.start,dconf.regions, filename)
     return dconf
@@ -46,8 +46,9 @@ def setup_meteo(dconf: DictConfig) -> DictConfig:
 def setup_paths(dconf: DictConfig) -> DictConfig:
     dconf.pyshell2['my.run.dir'] = Path(dconf.run.paths.output).absolute()
     dconf.pyshell2['path.diffusion'] = Path(dconf.machine.paths.diffusion).absolute()
-    dconf.pyshell2['my.input.dir'] = Path(dconf.machine.paths.input).absolute()
+    dconf.pyshell2['my.input.dir'] = Path(dconf.machine.pyshell.input).absolute()
     dconf.pyshell2['pyshell2.build_directory'] = Path(dconf.build.directory).absolute()
+    dconf.pyshell2['udunits_path'] = Path(dconf.machine.pyshell.udunits_path).absolute()
     return dconf
     
     

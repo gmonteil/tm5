@@ -45,5 +45,6 @@ def get_iniconc_carbontracker(url_pattern : str, date : Timestamp | str, regions
         )
 
         logger.info(f'Writing CO2 initial condition to group CO2/{regname} of file {filename}')
+        Path(filename).parent.mkdir(parents=True, exist_ok=True)
         co2.to_netcdf(filename, group=f'{regname}/CO2', mode=file_mode)
         file_mode = 'a'

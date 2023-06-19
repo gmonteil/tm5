@@ -556,14 +556,14 @@ class RcFile( object ) :
                     # remove enclosing characters:
                     key = pat.lstrip(start_mark).rstrip(close_mark)
                     # test some dictionaries for matching key:
-                    if self.values.has_key(key) :
+                    if key in self.values :
                         # get previously defined value:
                         val = self.values[key]
                         # substitute value:
                         line = line.replace(pat,val)
                         # set flag:
                         something_done = True
-                    elif os.environ.has_key(key) :
+                    elif key in os.environ :
                         # get value from environment:
                         val = os.environ[key]
                         # substitute value:
@@ -779,7 +779,7 @@ class RcFile( object ) :
                 val = val.strip()
 
                 # already defined ?
-                if self.values.has_key(key) :
+                if key in self.values :
                     # this will occure often after the first pass since
                     # the keys are resolved again and again ;
                     # therefore, only complain if this definition is read
@@ -875,9 +875,9 @@ class RcFile( object ) :
             inptrace = self.trace
 
     def has_key( self, key ) :
-        return self.values.has_key(key)
+        return key in self.values
 
-    def keys( self ) :
+    def keys(self) :
         return self.values.keys()
 
     def get( self, key, totype='', default=None, verbose=False ) :
@@ -900,7 +900,7 @@ class RcFile( object ) :
         import logging
 
         # element found ?
-        if self.values.has_key(key) :
+        if self.has_key(key) :
             # copy value:
             value = self.values[key]
             # convert ?
@@ -1021,7 +1021,7 @@ class RcFile( object ) :
             # remove enclosing characters:
             key = pat.lstrip(start_mark).rstrip(close_mark)
             # test dictionary for matching key:
-            if self.values.has_key(key) :
+            if self.has_key(key) :
                 # get previously defined value:
                 val = self.values[key]
                 # substitute value:

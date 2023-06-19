@@ -44,7 +44,10 @@ def run_tm5(cmd: str | List[str] | List[Path], settings : Dict = None, stdout = 
 
     logger.info(' '.join([str(_) for _ in cmd]))
     try :
-        return subprocess.run(cmd, stdout=stdout)
+        _ = subprocess.run(cmd, stdout=stdout)
+        if _.returncode != 0 :
+            raise RuntimeError(_)
+        return _
     except Exception as e:
         logger.exception(e)
         raise

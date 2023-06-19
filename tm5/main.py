@@ -16,6 +16,7 @@ from pathlib import Path
 from pandas import Timestamp
 from loguru import logger
 import shutil
+from typing import Dict
 
 
 class TM5:
@@ -41,7 +42,7 @@ class TM5:
         Build TM5
         """
         tm5exec = build_tm5(self.dconf, clean = clean)
-        if not self.tm5exec.exists():
+        if not self.tm5exec.exists() and not self.tm5exec.is_symlink():
             os.symlink(tm5exec, self.tm5exec)
 
     def calc_background(self, lon0 : float, lon1 : float, lat0 : float, lat1 : float, emissions_file : str):
@@ -56,7 +57,7 @@ class TM5:
         Do a forward run with global1x1 meteo, and no emissions, no initial condition, etc.
         :return:
         """
-        self.setup_meteo()
+        self.setup_meteo(coarsen=True)
         self.setup_run('forward')
         self.setup_iniconc('zero')
         self.setup_output(stations=False)
@@ -96,7 +97,7 @@ class TM5:
         rcf = self.settings.write(Path(self.dconf.run.paths.output) / 'forward.rc')
         run_tm5(f'{str(self.tm5exec.absolute())} {str(rcf)}', settings=self.dconf.machine.host)
 
-    def setup_meteo(self):
+    def setup_meteo(self, coarsen : bool = False):
         """
         This will set the following (group of) rc keys:
         - my.meteo.source.dir
@@ -113,7 +114,9 @@ class TM5:
         self.settings['tmm.dir'] = Path(self.dconf.run.paths.meteo).absolute()
 
         write_meteo = 'F'
-        if not self.dconf.meteo.coarsened:
+        if not self.dconf.meteo.coarsened or coarsen:
+            self.meteo.coarsened = False
+            self.dconf.meteo.coarsened = True
             write_meteo = 'T'
             # All fields are read from glb100x100
             self.settings[f'tmm.sourcekey.*.ml'] = f'tm5-nc:mdir=ec/ea/h06h18tr3/ml137/glb100x100/<yyyy>/<mm>;tres=_00p03;namesep=/'
@@ -239,6 +242,7 @@ class TM5:
                 self.settings['istart'] = '2'
                 self.settings['start.2.iniconc_from_file'] = 'T'
                 version = self.dconf.initial_conditon.carbontracker_version
+                self.dconf.run.paths.output.mkdir(patents=True, exist_ok=True)
                 filename = self.dconf.run.paths.output / Timestamp(self.dconf.run.start).strftime(f'mix_co2_%Y%m%d_{version}.nc')
                 self.settings['start.2.iniconcfile'] = filename
                 inicond.get_iniconc_carbontracker(
@@ -361,6 +365,7 @@ class Pyshell(TM5):
         """
         Do an inversion ==> this is still based on pyshell
         """
+        
         if self.dconf.get('tm5') is None :
             self.dconf.tm5 = {}
         if not self.dconf.get('pyshell2'):
@@ -371,11 +376,12 @@ class Pyshell(TM5):
         self.dconf.tm5['mask.apply'] = 'F'
         return self.run_pyshell(runmode = 'optim')
 
-    def run_pyshell(self, runmode : str = 'forward'):
+    def run_pyshell(self, runmode : str = 'forward', **extra_args):
         """
         Do a forward run, using pyshell:
         - The keys under the "pyshell2" and "tm5" nodes of self.dconc are written to the rc-file given by dconc.pyshell.rcfile ==> that file needs to be included by the pyshell rc-file (through an #include).
         """
+        
         with open(self.dconf.pyshell.rcfile, 'w') as fid :
             # Keys needed by TM5 itself:
             fid.write('!---------- tm5 --------- \n')
@@ -387,9 +393,7 @@ class Pyshell(TM5):
             for k, v in sorted(self.dconf.pyshell2.items()):
                 fid.write(f'{k:<30s} : {v}\n')
 
-        return run_tm5(f'pyshell {runmode} --rc {self.configfile} --machine={self.machine}', settings=self.dconf.machine.host)
-
-    def calc_background_pyshell(self, lon0, lon1, lat0, lat1):
+    def calc_background_pyshell(self, lon0, lon1, lat0, lat1, **extra_args):
         """
         This should just setup the "mask.apply", "mask.region", "istart" and "PyShell.em.filename" keys
         """
@@ -416,4 +420,4 @@ class Pyshell(TM5):
         self.dconf.pyshell2['emission.read.optimized.filename'] = 'emission.nc4'
 
         # Run the inversion
-        return self.run_pyshell()
+        return self.run_pyshell(**extra_args)
