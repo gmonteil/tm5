@@ -22,3 +22,7 @@ dev:
 		-B .:/tm5 \
 		-B run/output:/output \
 		images/tm5-intel-ubuntu20.simg
+
+congrad:
+	make -C pyshell/src/congrad -f makefile.opensuse.gfortran congrad.exe
+	mv pyshell/src/congrad/congrad.exe bin/

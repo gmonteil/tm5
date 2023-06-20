@@ -6,3 +6,5 @@ output/*
 *.pyc
 *.egg-info*
 /.stignore
+*.o
+bin/congrad.exe
