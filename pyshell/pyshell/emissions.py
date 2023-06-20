@@ -103,8 +103,8 @@ class Emissions:
             self.zoom_info[region]['im'] = self.rcf.get('region.'+region+'.im', 'int')
             jm.append(self.rcf.get('region.'+region+'.jm', 'int'))
             self.zoom_info[region]['jm'] = self.rcf.get('region.'+region+'.jm', 'int')
-        self.zoom_regions_lon = zip(xbeg, xend, im)
-        self.zoom_regions_lat = zip(ybeg, yend, jm)
+        self.zoom_regions_lon = [_ for _ in zip(xbeg, xend, im)]  # gm, june 2023: python3.+ compatibility
+        self.zoom_regions_lat = [_ for _ in zip(ybeg, yend, jm)]
 
     def createDifferentialArea(self):
         """
@@ -138,7 +138,9 @@ class Emissions:
             optim_cat_names = []
             self.Emission[tracer] = {}
             # self.Emission[tracer]['emi_class'] = self.rcf.get(tracer+'.emission.class')
+            print(tracer)
             for region, xlims, ylims in zip(self.zoom_regions_names, self.zoom_regions_lon, self.zoom_regions_lat):
+                print(region)
                 self.Emission[region][tracer] = {}
                 ncat = self.rcf.get('emission.'+tracer+'.'+region+'.categories','int')
                 categories = []

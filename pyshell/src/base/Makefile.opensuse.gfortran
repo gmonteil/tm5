@@ -1,0 +1,43 @@
+nfconfig = /usr/lib/hpc/gnu13/netcdf-fortran/4.5.3/bin/nf-config
+H5PATH = /usr/lib/hpc/gnu13/hdf5/1.12.2/
+
+FC = $(shell ${nfconfig} --fc)
+F77 = ${FC}
+LINKER = ${FC}
+
+FFLAGS_TM5 = -cpp -fPIC -O2 -ffree-line-length-none -m64 -frecord-marker=4 -fbounds-check -fdefault-real-8
+FFLAGS_NC = $(shell ${nfconfig} --fflags)
+FFLAGS_H5 = -I${H5PATH}/include
+FFLAGS_UD = -I/opt/udunits-1.12.11/include
+FFLAGS_BLAS = 
+FFLAG_OPENMP = -fopenmp
+
+LDFLAGS_TM5 = 
+LDFLAGS_NC = $(shell ${nfconfig} --flibs) -Wl,-R$(shell ${nfconfig} --prefix)/lib64/
+LDFLAGS_H5 = -L${H5PATH}/lib64/ -lhdf5_fortran
+LDFLAGS_UD = -L/opt/udunits-1.12.11/lib -ludunits
+LDFLAGS_BLAS = -L/usr/lib64/ -lblas -llapack
+LDFLAGS_OPENMP = -lgomp
+
+FFLAGS = ${FFLAGS_TM5} ${FFLAGS_H5} ${FFLAGS_UD} ${FFLAGS_NC} ${FFLAGS_BLAS} ${FFLAG_OPENMP}
+FFLAGS_MDF = ${FFLAGS_TM5} ${FFLAGS_NC} 
+
+LIBS = ${LDFLAGS_TM5} ${LDFLAGS_H5} ${LDFLAGS_UD} ${LDFLAGS_NC} ${LDFLAGS_BLAS} ${LDFLAGS_OPENMP}
+
+# how to form object files from F90 source:
+%.o: %.F90
+	$(FC) -c -o $@ $< $(FFLAGS)
+	@echo ' '
+
+# how to form object files from f90 source:
+%.o: %.f90
+	$(FC) -c -o $@ $< $(FFLAGS)
+	@echo ' '
+
+# compilation of mdf fails on some machine if optim flags are enabled ..
+mdf.o: mdf.F90
+	$(FC) -c -o $@ $< $(FFLAGS_MDF)
+	@echo ' '
+
+# dependencies
+

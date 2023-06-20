@@ -260,8 +260,8 @@ class RunTM5:
             self.yend.append(self.rcf.get('region.'+region+'.yend','float'))
             self.im.append(self.rcf.get('region.'+region+'.im','int'))
             self.jm.append(self.rcf.get('region.'+region+'.jm','int'))
-        self.region_limits_lon = array(zip(self.xbeg,self.xend,self.im))
-        self.region_limits_lat = array(zip(self.ybeg,self.yend,self.jm))
+        self.region_limits_lon = array([_ for _ in zip(self.xbeg, self.xend, self.im)])
+        self.region_limits_lat = array([_ for _ in zip(self.ybeg, self.yend, self.jm)])
 
     def cleanUpOldAdjoint(self):
         """
