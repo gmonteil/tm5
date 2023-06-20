@@ -505,11 +505,11 @@ contains
     ! no failues yet:
     nfail = 0
 
+    !$asfdasOMP   shared ( xcyc ) &
     !$OMP PARALLEL &
     !$OMP   default ( none ) &
     !$OMP   shared ( region ) &
     !$OMP   shared ( imr ) &
-    !$OMP   shared ( xcyc ) &
     !$OMP   shared ( is, ie, js, je, ls, le ) &
     !$OMP   shared ( special_grid, imred ) &
     !$OMP   shared ( m, am ) &

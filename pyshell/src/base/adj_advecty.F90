@@ -387,10 +387,10 @@ contains
     endif
 
     ! loop over levels:
+    !kasdhfk$dsfaOMP   shared ( touch_np, touch_sp ) &
     !$OMP PARALLEL &
     !$OMP   default ( none ) &
     !$OMP   shared ( region ) &
-    !$OMP   shared ( touch_np, touch_sp ) &
     !$OMP   shared ( imr, jmr ) &
     !$OMP   shared ( is, ie, js, je, le, ls ) &
     !$OMP   shared ( m ) &
@@ -721,13 +721,13 @@ contains
     rym => mass_dat(region)%rym_t
     rzm => mass_dat(region)%rzm_t
 
+    !$afasOMP   shared ( touch_sp, touch_np ) &
     !$OMP PARALLEL &
     !$OMP   default ( none ) &
     !$OMP   shared ( region ) &
     !$OMP   shared ( jmr ) &
     !$OMP   shared ( yref_ ) &
     !$OMP   shared ( is, ie, ls, le ) &
-    !$OMP   shared ( touch_sp, touch_np ) &
     !$OMP   shared ( ntracetloc ) &
     !$OMP   shared ( m, rm, rxm, rym, rzm ) &
     !$OMP   private ( i, l, n ) &
@@ -872,13 +872,13 @@ contains
     rym => mass_dat(region)%rym_t
     rzm => mass_dat(region)%rzm_t
 
+    !$sdfafsdOMP   shared ( touch_sp, touch_np ) &
     !$OMP PARALLEL &
     !$OMP   default ( none ) &
     !$OMP   shared ( region ) &
     !$OMP   shared ( jmr ) &
     !$OMP   shared ( yref_ ) &
     !$OMP   shared ( is, ie, ls, le ) &
-    !$OMP   shared ( touch_sp, touch_np ) &
     !$OMP   shared ( ntracetloc ) &
     !$OMP   shared ( m, rm, rxm, rym, rzm ) &
     !$OMP   private ( i, l, n )
@@ -1083,6 +1083,7 @@ contains
       rzmc => mass_dat(child)%rzm_t
 
       ! loop over layers:
+      !$dsfaOMP   shared ( touch_np, touch_sp ) &
       !$OMP PARALLEL &
       !$OMP   default ( none ) &
       !$OMP   shared ( imc, jmc, lmc ) &
@@ -1090,7 +1091,6 @@ contains
       !$OMP   shared ( ibeg, jbeg, jend, lbeg ) &
       !$OMP   shared ( jpn, jps ) &
       !$OMP   shared ( xyz ) &
-      !$OMP   shared ( touch_np, touch_sp ) &
       !$OMP   shared ( xref_, yref_, zref_ ) &
       !$OMP   shared ( xzref, xyzref ) &
       !$OMP   shared ( m, am, cm ) &

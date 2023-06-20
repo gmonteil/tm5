@@ -451,6 +451,7 @@ contains
 
     ! loop over tracers and vertical layers
 
+    !$XOMP   shared ( touch_sp, touch_np ) &
     !$OMP PARALLEL &
     !$OMP   default (none) &
 #ifdef with_budgets
@@ -459,7 +460,6 @@ contains
     !$OMP   private (nglob) &
 #endif
     !$OMP   shared  (region ) &
-    !$OMP   shared  (im, jm) &
     !$OMP   shared  (imr, jmr) &
     !$OMP   shared  (is, ie, js, je, ls, le) &
     !$OMP   shared  (okdebug) &
@@ -467,7 +467,6 @@ contains
     !$OMP   shared  (myid) &
     !$OMP   shared  (rm, rym, rxm, rzm ) &
     !$OMP   shared  (m, bm ) &
-    !$OMP   shared  (touch_np,touch_sp ) &
     !$OMP   private (i, j, l, f, pf, fx, fz) &
     !$OMP   private (mnew, beta)
 
@@ -756,13 +755,13 @@ contains
     rym => mass_dat(region)%rym_t
     rzm => mass_dat(region)%rzm_t
 
+    !$XsafdOMP   shared ( touch_sp, touch_np ) &
     !$OMP PARALLEL &
     !$OMP   default ( none ) &
     !$OMP   shared ( region ) &
     !$OMP   shared ( jmr ) &
     !$OMP   shared ( yref_ ) &
     !$OMP   shared ( is, ie, ls, le ) &
-    !$OMP   shared ( touch_sp, touch_np ) &
     !$OMP   shared ( ntracetloc ) &
     !$OMP   shared ( m, rm, rxm, rym, rzm ) &
     !$OMP   private ( i, l, n )
@@ -879,13 +878,13 @@ contains
     rym => mass_dat(region)%rym_t
     rzm => mass_dat(region)%rzm_t
 
+    !$XOMP   shared ( touch_sp, touch_np ) &
     !$OMP PARALLEL &
     !$OMP   default ( none ) &
     !$OMP   shared ( region ) &
     !$OMP   shared ( jmr ) &
     !$OMP   shared ( yref_ ) &
     !$OMP   shared ( is, ie, ls, le ) &
-    !$OMP   shared ( touch_sp, touch_np ) &
     !$OMP   shared ( ntracetloc ) &
     !$OMP   shared ( m, rm, rxm, rym, rzm ) &
     !$OMP   private ( i, l, n ) &

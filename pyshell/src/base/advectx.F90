@@ -578,6 +578,7 @@ contains
     ! no failues yet:
     nfail = 0
 
+    !afds$dsakfaOMP  shared  ( xref, xcyc ) &
     !$OMP PARALLEL &
     !$OMP  default (none) &
 #ifdef with_budgets
@@ -587,7 +588,6 @@ contains
 #endif
     !$OMP  shared  ( region ) &
     !$OMP  shared  ( imr ) &
-    !$OMP  shared  ( xref, xcyc ) &
     !$OMP  shared  ( is, ie, js, je, ls, le ) &
     !$OMP  shared  ( special_grid, nred, imred ) &
     !$OMP  shared  ( m, am, rm, rxm, rym, rzm ) &
