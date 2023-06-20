@@ -48,3 +48,4 @@ def get_iniconc_carbontracker(url_pattern : str, date : Timestamp | str, regions
         Path(filename).parent.mkdir(parents=True, exist_ok=True)
         co2.to_netcdf(filename, group=f'{regname}/CO2', mode=file_mode)
         file_mode = 'a'
+        

@@ -97,6 +97,9 @@ class TM5:
         rcf = self.settings.write(Path(self.dconf.run.paths.output) / 'forward.rc')
         run_tm5(f'{str(self.tm5exec.absolute())} {str(rcf)}', settings=self.dconf.machine.host)
 
+    def optim(self):
+        raise NotImplementedError
+
     def setup_meteo(self, coarsen : bool = False):
         """
         This will set the following (group of) rc keys:
@@ -374,6 +377,7 @@ class Pyshell(TM5):
         self.dconf = setup.setup_meteo(self.dconf)
         self.dconf = setup.setup_paths(self.dconf)
         self.dconf.tm5['mask.apply'] = 'F'
+        self.dconf.tm5['optimize.conGrad.exec'] = Path(self.dconf.machine.paths.tm5) / 'bin/congrad.exe'
         return self.run_pyshell(runmode = 'optim')
 
     def run_pyshell(self, runmode : str = 'forward', **extra_args):
@@ -392,6 +396,27 @@ class Pyshell(TM5):
             fid.write('\n\n!---------- pyshell --------- \n')
             for k, v in sorted(self.dconf.pyshell2.items()):
                 fid.write(f'{k:<30s} : {v}\n')
+
+        cmd = f'pyshell {runmode} --rc {self.configfile} --machine {self.machine}'
+
+        # extra-arguments (overwrite everything else within pyshell)
+        if extra_args:
+            for k, v in extra_args.items():
+                v = str(v).replace(' ', '\ ')
+                cmd += f' --setkey {k}:{v}'
+
+        for k, v in self.dconf.tm5.items():
+            v = str(v).replace(' ', '\ ')
+            cmd += f' --setkey {k}:{v}'
+
+        for k, v in self.dconf.pyshell2.items():
+            v = str(v).replace(' ', '\ ')
+            cmd += f' --setkey {k}:{v}'
+
+        cmd += f' --start {Timestamp(self.dconf.run.start).strftime("%Y%m%d%H%M%S")} --end {Timestamp(self.dconf.run.end).strftime("%Y%m%d%H%M%S")}'
+
+        return run_tm5(cmd, settings=self.dconf.machine.host)
+
 
     def calc_background_pyshell(self, lon0, lon1, lat0, lat1, **extra_args):
         """

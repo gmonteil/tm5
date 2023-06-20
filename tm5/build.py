@@ -6,9 +6,9 @@ import filecmp
 import shutil
 from typing import Dict, List
 import tempfile
-import subprocess
 from omegaconf import OmegaConf
 from tm5.run import run_tm5
+from loguru import logger
 
 
 def build_tm5(conf: DictConfig, clean : bool = False) -> Path:
@@ -27,10 +27,10 @@ def build_tm5(conf: DictConfig, clean : bool = False) -> Path:
     cleanup(Path(conf.build.directory), list(files) + mfiles)
 
     # Create the makefile
-    makefile = gen_makefile(conf.build)
+    makefile = gen_makefile(conf.build, conf.machine.get('host', None))
 
     # Build TM5
-    return make_tm5(makefile, conf.build)
+    return make_tm5(makefile, conf.build, conf.machine.get('host', None))
 
 
 def copy_files(params : DictConfig) -> Dict[str, Path]:
@@ -45,6 +45,7 @@ def copy_files(params : DictConfig) -> Dict[str, Path]:
 
     # Ensure that the build directory exists
     build_dir = Path(params.directory)
+    logger.info(f'TM5 will be built in {build_dir}')
     build_dir.mkdir(exist_ok=True)
 
     # Make a list of all source files to be used:
@@ -65,8 +66,10 @@ def copy_files(params : DictConfig) -> Dict[str, Path]:
                 files[dest.name] = filename
 
         if not dest.exists():
+            logger.info(f"Copy {source} to {dest}")
             shutil.copy(source, dest)
         elif not filecmp.cmp(source, dest):
+            logger.info(f"Copy {source} to {dest}")
             shutil.copy(source, dest)
 
     return files
@@ -116,7 +119,7 @@ def cleanup(build_dir: Path, files: List[str]):
             f.unlink()
 
 
-def gen_makefile(config: DictConfig) -> Path:
+def gen_makefile(config: DictConfig, host : DictConfig = None) -> Path:
     """
     Create the Makefile_deps file and link to the correct makefile depending on make settings
     """
@@ -131,19 +134,19 @@ def gen_makefile(config: DictConfig) -> Path:
     # Temporarily move to the build directory for that
     curdir = os.getcwd()
     os.chdir(buildpath)
-    command = ['makedepf90', '-o', 'tm5.x'] + list(Path().glob('*.[Ff]*')) + ['>>', 'Makefile']
+    command = ['makedepf90', '-o', 'tm5.x'] + list(Path().glob('*.[Ff]*'))# + ['>>', 'Makefile']
     with open(makefile_dest.name, 'a') as fid:
-        run_tm5(command, settings=config.host) # , stdout=fid)
+        run_tm5(command, settings=host, stdout=fid) # , stdout=fid)
         # subprocess.run(command, stdout=fid)
     os.chdir(curdir)
 
     return makefile_dest
 
 
-def make_tm5(makefile : Path, settings : Dict) -> Path:
+def make_tm5(makefile : Path, settings : Dict, host : DictConfig = None) -> Path:
     # Remove the existing executable, to ensure that the script stops if the complilation fails
     (makefile.parent / 'tm5.x').unlink(missing_ok=True)
-    run_tm5(f'make -C {makefile.parent} {makefile.name} tm5.x'.split(), settings=settings['host'])
+    run_tm5(f'make -C {makefile.parent} {makefile.name} tm5.x'.split(), settings=host)
     return makefile.parent / 'tm5.x'
 
 

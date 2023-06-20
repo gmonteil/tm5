@@ -60,12 +60,12 @@ def load_observations(dconf):
     return obs
 
 
-def setup_tm5(dconf):
-    rcf = load_rcf(dconf)
+def setup_tm5(dconf, **kwargs):
+    rcf = load_rcf(dconf, **kwargs)
     return RunTM5(rcf, dconf)
 
 
-def load_rcf(dconf):
+def load_rcf(dconf, **kwargs):
     """
     Load the TM5 rc-file
     :param rc: omegaconf.DictConfig or dictionary
@@ -79,18 +79,26 @@ def load_rcf(dconf):
     rcf.ti = Timestamp(dconf['run']['start'])
     rcf.tf = Timestamp(dconf['run']['end'])
     rcf.filename = dconf.run.rcfile
-    rcf.substituteTimes()
-    rcf.setkey('jobstep.timerange.start', rcf.ti)
-    rcf.setkey('jobstep.timerange.end', rcf.tf)
-    rcf.setkey('my.run.dir', os.path.abspath(dconf.run.paths.output))
-    setup_environment(dconf)
-    setup_output(dconf, rcf)
 
     # Keys under the "tm5" group are needed by TM5 itself (not just pyshell!)
     if 'tm5' in dconf:
         for k, v in dconf.tm5.items():
+            logger.info('Set key %s to value %s' % (k, str(v)))
             rcf.setkey(k, v)
-
+            
+    # add or overwrite keys with command line arguments, passed through --setkey
+    for k, v in kwargs.items():
+        logger.info('Set key %s to value %s' % (k, str(v)))
+        rcf.setkey(k, v)
+            
+    rcf.substituteTimes()
+    rcf.setkey('jobstep.timerange.start', rcf.ti)
+    rcf.setkey('jobstep.timerange.end', rcf.tf)
+    rcf.setkey('my.run.dir', os.path.abspath(dconf.run.paths.output))
+        
+    setup_environment(dconf)
+    setup_output(dconf, rcf)
+    
     if not os.path.exists(dconf.run.paths.output):
         os.makedirs(dconf.run.paths.output)
     rcf = setup_emissions(dconf, rcf)

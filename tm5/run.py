@@ -32,7 +32,8 @@ def run_tm5(cmd: str | List[str] | List[Path], settings : Dict = None, stdout = 
     if isinstance(cmd, str):
         cmd = cmd.split()
 
-    if 'container' in settings :
+    # if 'container' in settings :
+    if settings is not None:
         # Prepare the singularity-related part of the command
         command = f'singularity run --cleanenv --bind {settings["tm5_path"]}:/tm5'
         for mountpath in settings.get('bind', []):
