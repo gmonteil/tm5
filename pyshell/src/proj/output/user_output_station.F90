@@ -440,6 +440,7 @@ subroutine user_output_station_write(status)
     type(Tdate)                     :: form_date
     character(len=256)              :: tracer_names, unit_names
     character(len=64)               :: st_group_name
+    character(len=256)              :: dummystr
 
     ! first, evaluate the station data
     do i=1,num_stations
@@ -528,9 +529,31 @@ subroutine user_output_station_write(status)
         io_status = nf90_put_att(grp_id, NF90_GLOBAL, 'abbr', trim(stations(i)%station_type)//'/'//trim(stations(i)%station_id)) ; CHECK_NCSTAT(io_status)
 
         ! write the variables, corresponding to mix, var and nsamples
-        call nc_dump_var(grp_id, 'mixing_ratio', (/'samples','tracers'/), stations(i)%mix(1:io_nrecords,1:ntracet), (/'unit'/), (/trim(unit_names)/))
-        call nc_dump_var(grp_id, 'mixing_ratio_err', (/'samples','tracers'/), sqrt(stations(i)%var(1:io_nrecords,1:ntracet)), (/'unit','type'/), (/ trim(unit_names), 'model representation error'/))
-        call nc_dump_var(grp_id, 'nsamples', (/'samples'/), stations(i)%nsamples(1:io_nrecords), (/'unit'/), (/'number of samples within the dynamic timestep'/))
+        call nc_dump_var( & 
+            grp_id, & 
+            'mixing_ratio', &
+            (/'samples', 'tracers'/), &
+            stations(i)%mix(1:io_nrecords,1:ntracet), &
+            (/'unit'/), &
+            (/trim(unit_names)/)& 
+        )
+        write(dummystr, *) 'model representation error'
+        call nc_dump_var(&
+            grp_id, &
+            'mixing_ratio_err', &
+            (/'samples', 'tracers'/), &
+            sqrt(stations(i)%var(1:io_nrecords, 1:ntracet)), &
+            (/'unit', 'type'/), &
+            (/unit_names, dummystr/)&
+        )
+        call nc_dump_var(&
+            grp_id, &
+            'nsamples', &
+            (/'samples'/), &
+            stations(i)%nsamples(1:io_nrecords), &
+            (/'unit'/), &
+            (/'number of samples within the dynamic timestep'/)&
+        )
         if (station_sample_meteo) then
             ! write the variables corresponding to blh, q, pres, temp
             call nc_dump_var(meteo_grp_id, 'blh', (/'samples'/), stations(i)%blh(1:io_nrecords), (/'unit'/), (/'boundary layer height in meters'/))
