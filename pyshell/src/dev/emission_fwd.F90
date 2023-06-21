@@ -25,6 +25,8 @@ module emission_fwd
     public :: emission_fwd_done             ! ==> called by initexit.F90
     public :: emission_fwd_after_read       ! ==> called by sources_sinks.F90
 
+    integer :: dailycycle_type
+
     character(len=*), parameter   :: mname = 'Emission_Fwd'
 
 contains
@@ -69,7 +71,6 @@ contains
         character(len=tracer_name_len)  :: tracer
         character(len=256)              :: emis_indir
         character(len=256)              :: dailycycle_pfx
-        integer                         :: dailycycle_type
 
         character(len=*), parameter     :: rname = mname//'/emission_fwd_setup'
 
@@ -177,7 +178,6 @@ contains
         integer, intent(out)                :: status
 
         logical :: apply_dailycycle
-        integer :: dailycycle_type
         integer :: iday, icat, iperiod_dcycle, iperiod_emis
         integer, dimension(6) :: idate_mid, idater
 
@@ -235,7 +235,7 @@ contains
                         if (dailycycle_type == 0) then
                             x = em(i, j, 1, iperiod_emis) * dtime * tracer%dailycycle%cycle_cat(icat)%scaling(i, j, iperiod_dcycle)
                         else if (dailycycle_type == 1) then
-                            x = em(i, j, 1, iperiod_emis) + dtime * tracer%dailycycle%cycle_cat(icat)%scaling(i, j, iperiod_dcycle)
+                            x = em(i, j, 1, iperiod_emis) + dtime * tracer%dailycycle%cycle_cat(icat)%anomaly(i, j, iperiod_dcycle)
                         end if
                     else
                         x = em(i, j, 1, iperiod_emis) * dtime

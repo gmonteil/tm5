@@ -48,7 +48,7 @@ def prepare_point_obs(dconf) -> Path:
     ds['mixing_ratio'] = ds.mixing_ratio.astype(float64)
     ds['mixing_ratio_err'] = ds.mixing_ratio_err.astype(float64)
     ds['id'] = ds['id'].astype(int32)
-    ds['time_window_length'] = ds.time_window_length.astype(int32)
+    ds['time_window_length'] = (ds.time_window_length * 1.e-9).astype(int32)
     ds['sampling_strategy'] = ds.sampling_strategy.astype(int16)
     ds['date_components'] = ds.date_components.astype(int16)
     ds['station_id'] = ds.station_id.astype(int32)

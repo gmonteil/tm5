@@ -456,7 +456,7 @@ subroutine output_mixrecord(region) ! only called at the end of the day
         mixf(region)%tau(n) = mixf(region)%tau(n)/mixf(region)%weight(n)
         call tau2date(int(mixf(region)%tau(n)), mixf(region)%times(:,n))
     end do
-
+    
     if (deflate_lvl > 0) then
         ! turn on netcdf compression
         nc_variables_deflate = .true.
@@ -483,8 +483,10 @@ subroutine output_mixrecord(region) ! only called at the end of the day
     mixf(region)%mix = 0.0
     mixf(region)%p = 0.0
     mixf(region)%gph = 0.0
-    mixf(region)%q = 0.0
-    mixf(region)%t = 0.0
+    if (mix_output_meteo) then
+        mixf(region)%q = 0.0
+        mixf(region)%t = 0.0
+    endif
     mixf(region)%nsamples = 0
     mixf(region)%times = 0
     mixf(region)%tau = 0.0

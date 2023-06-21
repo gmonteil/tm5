@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import os
 
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf, DictConfig
 import tm5.emissions
 import tm5.observations
 from tm5.build import build_tm5
@@ -13,7 +13,7 @@ from tm5.units import units_registry as ureg
 from tm5.settings import TM5Settings
 from tm5 import species as chem
 from pathlib import Path
-from pandas import Timestamp
+from pandas import Timestamp, Timedelta
 from loguru import logger
 import shutil
 from typing import Dict
@@ -198,6 +198,8 @@ class TM5:
 
         if stations and 'stations' in self.dconf.output :
             self.setup_output_stations(self.dconf.output.stations)
+            
+        self.setup_output_mix(self.dconf.output.get('mix', None))
 
     def setup_output_stations(self, dconf):
         self.settings['output.station.timeseries'] = 'T'
@@ -208,6 +210,16 @@ class TM5:
         self.settings['output.point.input.dir'] = dconf.input_dir
         self.settings['output.point.split.period'] = 'a'  # no splitting ...
         self.settings['output.point.sample.parent'] = dconf.get('sample_parent', 'F')
+        
+    def setup_output_mix(self, dconf: DictConfig | None = None):
+        if dconf is None :
+            return
+        
+        self.settings['output.mix'] = 'T'
+        self.settings['output.mix.tstep'] = int(Timedelta(dconf.output_frequency).total_seconds())
+        self.settings['output.mix.meteo'] = dconf.get('output_meteo', 'F')
+        self.settings['output.mix.filename.prefix'] = dconf.prefix
+        self.settings['output.mix.deflate.leve'] = dconf.get('deflate_level', 1)
 
     def setup_run(self, mode='forward'):
         """
@@ -244,9 +256,9 @@ class TM5:
             case 'carbontracker':
                 self.settings['istart'] = '2'
                 self.settings['start.2.iniconc_from_file'] = 'T'
-                version = self.dconf.initial_conditon.carbontracker_version
-                self.dconf.run.paths.output.mkdir(patents=True, exist_ok=True)
-                filename = self.dconf.run.paths.output / Timestamp(self.dconf.run.start).strftime(f'mix_co2_%Y%m%d_{version}.nc')
+                version = self.dconf.initial_condition.carbontracker_version
+                Path(self.dconf.run.paths.output).mkdir(parents=True, exist_ok=True)
+                filename = Path(self.dconf.run.paths.output) / Timestamp(self.dconf.run.start).strftime(f'mix_co2_%Y%m%d_{version}.nc')
                 self.settings['start.2.iniconcfile'] = filename
                 inicond.get_iniconc_carbontracker(
                     self.dconf.initial_condition.carbontracker_url,
@@ -270,6 +282,8 @@ class TM5:
         self.settings['output.point.errors'] = self.dconf.observations.point.get('errors', '1')
         for tracer in self.dconf.run.tracers:
             self.settings[f'output.point.{tracer}.minerror'] = self.dconf.observations.point[tracer].minerror
+        self.settings['output.point.timewindow'] = self.dconf.observations.point[tracer].default_assim_window
+        self.settings['output.point.interpolation'] = {'linear': 3, 'gridbox': 1, 'slopes': 2}[self.dconf.observations.point.interpolation]
         return tm5.observations.prepare_point_obs(self.dconf.output.point)
 
     def setup_emissions(self, skip_file_creation: bool = False, filename : str = None):
@@ -288,23 +302,21 @@ class TM5:
         if not filename :
             filename = Path(self.dconf.run.paths.output) / 'emissions.nc'
         self.settings['PyShell.em.filename'] = str(filename)
-        for trname in self.dconf.emissions.tracers :
-            # catgroup = self.dconf.emissions[tracer].emission_categories
-            # catlist = self.dconf.emissions[tracer].get('categories', [tracer])
-            # for cat in catlist :
-            tracer = self.dconf.emissions[trname]
-            for catname, cat in tracer.get('emission_categories', {}).items() :
-                apply_dailycycle = tracer.get('dailycycle', False)
-                self.settings[f'{trname}.{catname}.dailycycle'] = {True: 'T', False: 'F'}[apply_dailycycle]
-                # The following settings are not category-specific, but the may not be defined if none of the tracers
-                # categories applies dailycycle. Therefore only looking if really needed.
-                if apply_dailycycle :
-                    pfx = Path(tracer.dailycycle_filename_format)
-                    self.settings[f'{tracer}.dailycycle.type'] = tracer.dailycycle_type
-                    self.settings[f'{tracer}.dailycycle.prefix'] = pfx.with_suffix('').with_suffix('').name + '.'
-                    self.settings['dailycycle.folder'] = pfx.parent.parent.parent
 
+        if 'dailycycle' in self.dconf.emissions:
+            self.settings['dailycycle.folder'] = self.dconf.emissions.dailycycle.folder
+        
+        for trname in self.dconf.emissions.tracers :
+            self.settings[f'{trname}.dailycycle.type'] = self.dconf.emissions.dailycycle[trname].type
+            self.settings[f'{trname}.dailycycle.prefix'] = Path(self.dconf.emissions.dailycycle[trname].format).with_suffix('').with_suffix('').name + '.'
+            for catname in self.dconf.emissions[trname].emission_categories :
+                apply_dailycycle_to_cat = 'F'
+                if catname in self.dconf.emissions.dailycycle[trname].categories :
+                    apply_dailycycle_to_cat = 'T'
+                self.settings[f'{trname}.{catname}.dailycycle'] = apply_dailycycle_to_cat
+            
         if not skip_file_creation:
+            raise NotImplementedError # Did some changes above, code after needs to be checked.
             tm5.emissions.prepare_emissions(self.dconf.emissions, filename = filename)
 
     def setup_optim(self):
@@ -315,8 +327,7 @@ class TM5:
         """
         for tracer in self.dconf.emissions.tracers :
             for region in self.dconf.emissions.regions :
-                # cats = self.dconf.emissions[tracer].get('categories', [tracer])
-                cats = [_ for _ in self.dconf.emissions[tracer].get('emission_categories', {}).keys()]
+                cats = self.dconf.emissions[tracer].emission_categories
                 self.settings[f'emissions.{tracer}.{region}.categories'] = ', '.join([c for c in cats])
                 self.settings[f'emissions.{tracer}.{region}.ncats'] = len(cats)
                 for icat, cat in enumerate(cats):
@@ -325,7 +336,7 @@ class TM5:
                     self.settings[f'emissions.{tracer}.{region}.{cat}'] = {'MS': 'monthly', 'D': 'daily'}[catfreq]
                     # Since these are probably not needed, I just hardcode them ...
                     # self.settings[f'emission.{tracer}.{region}.category{icat+1:.0f}'] = f'{cat}; 100.0 ; 200.0-g ; 0.0-e-monthly ; 0 ; dummy'
-
+# 
     def setup_tracers(self) -> None:
         """
         Setup rc keys required by chem_params.F90:

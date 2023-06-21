@@ -398,8 +398,8 @@ contains
         !-----------------------------------------------------------------------
         use global_data, only : outdir
         use global_data, only : region_dat, mass_dat
-        use io_hdf,      only : io_write
-        use io_hdf,      only : DFACC_CREATE, DFNT_INT32, DFNT_INT64, DFNT_CHAR
+!        use io_hdf,      only : io_write
+!        use io_hdf,      only : DFACC_CREATE, DFNT_INT32, DFNT_INT64, DFNT_CHAR
         use toolbox,     only : escape_tm
         use file_netcdf
         use string_functions

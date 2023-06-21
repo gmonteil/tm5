@@ -10,7 +10,7 @@ module production
 
     private
 
-    public :: production_fwd
+    public :: production_fwd, production_init
 
     type d2d
         real, dimension(:, :), allocatable :: data
@@ -32,9 +32,11 @@ module production
     character(len=*), parameter :: mname = 'production'
     character(len=30)           :: rname
 
+    logical :: initialized = .false.
+
 contains
 
-    subroutine production_init(status)
+    subroutine production_init
 
         ! This allocates and initialize the "production" data structure (for all tracers),
         ! and initializes it for the tracer(s) for which this is relevant.
@@ -43,9 +45,9 @@ contains
         ! - production.{tracer}.enabled (default: False)
         ! - production.{tracer}.filename ==> read if the previous one is "True". Assumed to be similar for all regions of a tracer
 
-        integer, intent(out)                :: status
         integer                             :: itrac, ireg
         type(t_production_data), pointer    :: prod
+        integer                             :: status
 
         rname = mname // 'production_init'
 
@@ -65,6 +67,8 @@ contains
             end do
             call load_profile(prod%profile)
         end do
+
+        initialized = .true.
     end subroutine production_init
 
 
@@ -184,6 +188,8 @@ contains
         integer :: i, j
         real    :: dtime
 
+        if (.not. initialized) call production_init
+
         prod => production_data(itrac)
 
         ! Gatekeep tracers without production
@@ -215,7 +221,7 @@ contains
 
         status_out = status_in
         if (status_in/=0) then
-            write (gol,'("in ",a," (",a,", line",i5,")")') rname, __file__, __line__
+            write (gol,'("in ",a," (",a,", line",i5,")")') rname, __FILE__, __LINE__
             call goErr
             return
         end if
