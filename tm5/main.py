@@ -43,6 +43,7 @@ class TM5:
         """
         tm5exec = build_tm5(self.dconf, clean = clean)
         if not self.tm5exec.exists() and not self.tm5exec.is_symlink():
+            self.tm5exec.parent.mkdir(parents=True, exist_ok=True)
             os.symlink(tm5exec, self.tm5exec)
 
     def calc_background(self, lon0 : float, lon1 : float, lat0 : float, lat1 : float, emissions_file : str):
