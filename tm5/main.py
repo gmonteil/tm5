@@ -7,7 +7,6 @@ import tm5.observations
 from tm5.build import build_tm5
 from tm5.meteo import Meteo
 from tm5 import inicond
-from tm5 import setup
 from tm5.run import run_tm5
 from tm5.units import units_registry as ureg
 from tm5.settings import TM5Settings
@@ -15,8 +14,6 @@ from tm5 import species as chem
 from pathlib import Path
 from pandas import Timestamp, Timedelta
 from loguru import logger
-import shutil
-from typing import Dict
 
 
 class TM5:
@@ -367,89 +364,3 @@ class TM5:
         - udunits_path
         """
         self.settings['udunits_path'] = Path(self.dconf.machine.paths.udunits).absolute()
-
-
-# The methods in the following TM5-derived class rely on the legacy pyshell
-class Pyshell(TM5):
-    def optim(self):
-        """
-        Do an inversion ==> this is still based on pyshell
-        """
-        
-        if self.dconf.get('tm5') is None :
-            self.dconf.tm5 = {}
-        if not self.dconf.get('pyshell2'):
-            self.dconf.pyshell2 = {}
-        self.dconf = setup.setup_initial_condition(self.dconf)
-        self.dconf = setup.setup_meteo(self.dconf)
-        self.dconf = setup.setup_paths(self.dconf)
-        self.dconf.tm5['mask.apply'] = 'F'
-        self.dconf.tm5['optimize.conGrad.exec'] = Path(self.dconf.machine.paths.tm5) / 'bin/congrad.exe'
-        return self.run_pyshell(runmode = 'optim')
-
-    def run_pyshell(self, runmode : str = 'forward', **extra_args):
-        """
-        Do a forward run, using pyshell:
-        - The keys under the "pyshell2" and "tm5" nodes of self.dconc are written to the rc-file given by dconc.pyshell.rcfile ==> that file needs to be included by the pyshell rc-file (through an #include).
-        """
-        
-        with open(self.dconf.pyshell.rcfile, 'w') as fid :
-            # Keys needed by TM5 itself:
-            fid.write('!---------- tm5 --------- \n')
-            for k, v in sorted(self.dconf.tm5.items()):
-                fid.write(f'{k:<30s} : {v}\n')
-
-            # Keys needed by pyshell (but not TM5 ==> should be deprecated, eventually)
-            fid.write('\n\n!---------- pyshell --------- \n')
-            for k, v in sorted(self.dconf.pyshell2.items()):
-                fid.write(f'{k:<30s} : {v}\n')
-
-        cmd = f'pyshell {runmode} --rc {self.configfile} --machine {self.machine}'
-
-        # extra-arguments (overwrite everything else within pyshell)
-        if extra_args:
-            for k, v in extra_args.items():
-                v = str(v).replace(' ', '\ ')
-                cmd += f' --setkey {k}:{v}'
-
-        for k, v in self.dconf.tm5.items():
-            v = str(v).replace(' ', '\ ')
-            cmd += f' --setkey {k}:{v}'
-
-        for k, v in self.dconf.pyshell2.items():
-            v = str(v).replace(' ', '\ ')
-            cmd += f' --setkey {k}:{v}'
-
-        cmd += f' --start {Timestamp(self.dconf.run.start).strftime("%Y%m%d%H%M%S")} --end {Timestamp(self.dconf.run.end).strftime("%Y%m%d%H%M%S")}'
-
-        return run_tm5(cmd, settings=self.dconf.machine.host)
-
-
-    def calc_background_pyshell(self, lon0, lon1, lat0, lat1, **extra_args):
-        """
-        This should just setup the "mask.apply", "mask.region", "istart" and "PyShell.em.filename" keys
-        """
-
-        if self.dconf.get('tm5') is None :
-            self.dconf.tm5 = {}
-        if not self.dconf.get('pyshell2'):
-            self.dconf.pyshell2 = {}
-        self.dconf = setup.setup_meteo(self.dconf)
-        self.dconf = setup.setup_paths(self.dconf)
-
-        # Initial condition set to 0
-        self.dconf.tm5['istart'] = '1'
-
-        # Mask:
-        self.dconf.tm5['mask.apply'] = 'T'
-        self.dconf.tm5['mask.complement'] = 'T'
-        self.dconf.tm5['mask.factor'] = '0'
-        self.dconf.tm5['mask.region'] = f'{lon0:.1f} {lon1:.1f} {lat0:.1f} {lat1:.1f}'
-
-        # Emissions
-        self.dconf.pyshell2 = self.dconf.get('pyshell2', {})  # Ensure that the node exists
-        self.dconf.pyshell2['emission.read.optimized'] = 'T'
-        self.dconf.pyshell2['emission.read.optimized.filename'] = 'emission.nc4'
-
-        # Run the inversion
-        return self.run_pyshell(**extra_args)
