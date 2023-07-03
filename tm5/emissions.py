@@ -201,7 +201,7 @@ def prepare_emissions(dconf : DictConfig, filename : Union[str, Path]) -> Path:
                     if cat.get('dailycycle', False):
                         # Write the anomalies for the category
                         for day, anom in anoms.items():
-                            fname = day.strftime(tracer.dailycycle_filename_format)
+                            fname = day.strftime(tracer.dailycycle.filename_format)
                             Path(fname).parent.mkdir(parents=True, exist_ok=True)
                             anom.to_netcdf(fname, group=f'{regname}/{catname}', mode = dailycycle_writemode)
 

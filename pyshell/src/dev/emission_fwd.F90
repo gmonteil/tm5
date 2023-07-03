@@ -231,7 +231,7 @@ contains
                 do i = isr(ireg), ier(ireg)
                     if (region_dat(ireg)%zoomed(i, j) /= ireg) cycle
 
-                    if (tracer%dailycycle%apply) then
+                    if (tracer%dailycycle%cycle_cat(icat)%apply) then
                         if (dailycycle_type == 0) then
                             x = em(i, j, 1, iperiod_emis) * dtime * tracer%dailycycle%cycle_cat(icat)%scaling(i, j, iperiod_dcycle)
                         else if (dailycycle_type == 1) then

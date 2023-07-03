@@ -303,21 +303,16 @@ class TM5:
         if not filename :
             filename = Path(self.dconf.run.paths.output) / 'emissions.nc'
         self.settings['PyShell.em.filename'] = str(filename)
-
-        if 'dailycycle' in self.dconf.emissions:
-            self.settings['dailycycle.folder'] = self.dconf.emissions.dailycycle.folder
+        self.settings['dailycycle.folder'] = self.dconf.emissions.dailycycle_folder
         
         for trname in self.dconf.emissions.tracers :
-            self.settings[f'{trname}.dailycycle.type'] = self.dconf.emissions.dailycycle[trname].type
-            self.settings[f'{trname}.dailycycle.prefix'] = Path(self.dconf.emissions.dailycycle[trname].format).with_suffix('').with_suffix('').name + '.'
+            self.settings[f'{trname}.dailycycle.type'] = self.dconf.emissions[trname].dailycycle.type
+            self.settings[f'{trname}.dailycycle.prefix'] = Path(self.dconf.emissions[trname].dailycycle.filename_format).with_suffix('').with_suffix('').name + '.'
             for catname in self.dconf.emissions[trname].emission_categories :
-                apply_dailycycle_to_cat = 'F'
-                if catname in self.dconf.emissions.dailycycle[trname].categories :
-                    apply_dailycycle_to_cat = 'T'
+                apply_dailycycle_to_cat = {False:'F', True:'T'}[self.dconf.emissions[trname].emission_categories[catname].get('dailycycle', False)]
                 self.settings[f'{trname}.{catname}.dailycycle'] = apply_dailycycle_to_cat
             
         if not skip_file_creation:
-            raise NotImplementedError # Did some changes above, code after needs to be checked.
             tm5.emissions.prepare_emissions(self.dconf.emissions, filename = filename)
 
     def setup_optim(self):
@@ -332,7 +327,7 @@ class TM5:
                 self.settings[f'emissions.{tracer}.{region}.categories'] = ', '.join([c for c in cats])
                 self.settings[f'emissions.{tracer}.{region}.ncats'] = len(cats)
                 for icat, cat in enumerate(cats):
-                    catdconf = self.dconf.emissions[tracer].get(cat, self.dconf.emissions[tracer])
+                    catdconf = self.dconf.emissions[tracer].emission_categories.get(cat, self.dconf.emissions[tracer])
                     catfreq = catdconf.get('optim_freq', 'D')
                     self.settings[f'emissions.{tracer}.{region}.{cat}'] = {'MS': 'monthly', 'D': 'daily'}[catfreq]
                     # Since these are probably not needed, I just hardcode them ...
