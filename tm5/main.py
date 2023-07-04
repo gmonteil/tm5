@@ -171,9 +171,9 @@ class TM5:
                 rgn = self.dconf.regions[region].redgrid.nh
                 rgs = self.dconf.regions[region].redgrid.sh
                 self.settings[f'region.{region}.redgrid.nh.n'] = len(rgn)
-                self.settings[f'region.{region}.redgrid.nh.comb'] = ' '.join([_ for _ in rgn])
+                self.settings[f'region.{region}.redgrid.nh.comb'] = ' '.join([str(_) for _ in rgn])
                 self.settings[f'region.{region}.redgrid.sh.n'] = len(rgs)
-                self.settings[f'region.{region}.redgrid.sh.comb'] = ' '.join([_ for _ in rgn])
+                self.settings[f'region.{region}.redgrid.sh.comb'] = ' '.join([str(_) for _ in rgn])
             else :
                 self.settings[f'region.{region}.redgrid.nh.n'] = 0
                 self.settings[f'region.{region}.redgrid.sh.n'] = 0
