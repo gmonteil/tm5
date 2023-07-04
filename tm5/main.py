@@ -162,10 +162,14 @@ class TM5:
         - region.{region}.redgrid.nh.comb
         - region.{region}.redgrid.sh.comb
         """
-        self.settings['region.glb600x400.redgrid.nh.n'] = '3'
-        self.settings['region.glb600x400.redgrid.nh.comb'] = '60 20 10'
-        self.settings['region.glb600x400.redgrid.sh.n'] = '4'
-        self.settings['region.glb600x400.redgrid.sh.comb'] = '60 20 10 5'
+        for region in self.dconf.run.regions :
+            if 'redgrid' in dconf.regions[region]:
+                rgn = self.dconf.regions[region].redgrid.nh
+                rgs = self.dconf.regions[region].redgrid.ns
+                self.settings[f'region.{region}.redgrid.nh.n'] = len(rgn)
+                self.settings[f'region.{region}.redgrid.nh.comb'] = ' '.join([_ for _ in rgn])
+                self.settings[f'region.{region}.redgrid.sh.n'] = len(rgs)
+                self.settings[f'region.{region}.redgrid.sh.comb'] = ' '.join([_ for _ in rgn])
 
     def setup_tm5_optim(self):
         """
