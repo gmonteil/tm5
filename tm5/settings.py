@@ -35,9 +35,9 @@ defaults = {
 
     'model.output': 'F',
 
-    'my.mlevs': 'tropo25',
+    #'my.mlevs': 'tropo25',
 
-    'my.zoom': 'glb6x4',
+    #'my.zoom': 'glb6x4',
 
     'ndyn': '3600',
 
