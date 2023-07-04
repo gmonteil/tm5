@@ -164,7 +164,7 @@ class TM5:
         - region.{region}.redgrid.sh.comb
         """
         for region in self.dconf.run.regions :
-            if 'redgrid' in dconf.regions[region]:
+            if 'redgrid' in self.dconf.regions[region]:
                 rgn = self.dconf.regions[region].redgrid.nh
                 rgs = self.dconf.regions[region].redgrid.ns
                 self.settings[f'region.{region}.redgrid.nh.n'] = len(rgn)
