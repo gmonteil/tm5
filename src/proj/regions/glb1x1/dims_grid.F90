@@ -21,8 +21,8 @@ module dims_grid
 
   ! basic (coarsest) resolution in degrees for x and y (dz default 1.0)
 
-  real, parameter     ::  dx = 6.0
-  real, parameter     ::  dy = 4.0
+  real, parameter     ::  dx = 1.0
+  real, parameter     ::  dy = 1.0
   real, parameter     ::  dz = 1.0
 
 
@@ -41,7 +41,7 @@ module dims_grid
 
   integer, parameter  ::  len_region_name = 10
   character(len=len_region_name), parameter  ::  region_name(1:nregions) = &
-       (/ 'glb600x400'/)
+       (/ 'glb100x100'/)
 
   ! coordinates (in degrees) for each region:
   ! xcyc = 1 if the region has cyclic x-boundary conditions
@@ -59,8 +59,8 @@ module dims_grid
   integer, parameter  ::  xend    (nregions) = (/  180 /)
   integer, parameter  ::  ybeg    (nregions) = (/  -90 /)
   integer, parameter  ::  yend    (nregions) = (/   90 /)
-  integer, parameter  ::  im      (nregions) = (/   60 /)
-  integer, parameter  ::  jm      (nregions) = (/   45 /)
+  integer, parameter  ::  im      (nregions) = (/  360 /)
+  integer, parameter  ::  jm      (nregions) = (/  180 /)
 
 
   ! maximum refinement factor (can be arbitrary in principle):
