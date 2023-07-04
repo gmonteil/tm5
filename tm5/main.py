@@ -65,7 +65,7 @@ class TM5:
         rcf = self.settings.write(Path(self.dconf.run.paths.output) / 'forward.rc')
         run_tm5(f'{str(self.tm5exec.absolute())} {str(rcf)}', settings=self.dconf.machine.host)
 
-    def forward(self, emission_file : str = None):
+    def forward(self, emission_file : str = None, setup_emis: bool = True, setup_obs: bool = True):
         """
         Do a forward run, bypassing totally the pyshell
         """
@@ -81,8 +81,10 @@ class TM5:
         # - other inputs (station files, etc.)
 
         # TM5 executable generated in the build step
-        self.setup_observations()
-        self.setup_emissions(skip_file_creation=emission_file is not None, filename=emission_file)
+        if setup_obs :
+            self.setup_observations()
+        if setup_emis :
+            self.setup_emissions(skip_file_creation=emission_file is not None, filename=emission_file)
         self.setup_meteo()
         self.setup_tm5_optim()
         self.setup_run('forward')
