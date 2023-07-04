@@ -83,6 +83,7 @@ class TM5:
         # TM5 executable generated in the build step
         self.setup_emissions(skip_file_creation=emission_file is not None, filename=emission_file)
         self.setup_meteo()
+        self.setup_observations()
         self.setup_tm5_optim()
         self.setup_run('forward')
         self.setup_output()
