@@ -71,10 +71,10 @@ module dims_grid
   ! tref may differ from xref/yref. In the current 
   ! implementation it should be 2,2,4,6,...
 
-  integer, parameter  :: xref(1:nregions) = (/ 1,    1 /)
-  integer, parameter  :: yref(1:nregions) = (/ 1,    1 /)
-  integer, parameter  :: zref(1:nregions) = (/ 1,    1 /)
-  integer, parameter  :: tref(1:nregions) = (/ 1,    1 /)
+  integer, parameter  :: xref(1:nregions) = (/ 1 /)
+  integer, parameter  :: yref(1:nregions) = (/ 1 /)
+  integer, parameter  :: zref(1:nregions) = (/ 1 /)
+  integer, parameter  :: tref(1:nregions) = (/ 1 /)
 
   ! Define the parent of each region. 
   ! Global region 2 should have parent 0 (globe single cell);
