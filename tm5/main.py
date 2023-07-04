@@ -129,7 +129,8 @@ class TM5:
             self.settings['cf-standard-name-table'] = Path(self.dconf.run.paths.cf_table).absolute()
 
             for region in self.dconf.regions:
-                self.settings[f'tmm.destkey.{region}.ml'] = f'tm5-nc:mdir=ec/ea/h06h18tr3/tropo25/{region}/<yyyy>/<mm>;tres=_00p03;namesep=/'
+                levels = self.dconf.regions[region].levels
+                self.settings[f'tmm.destkey.{region}.ml'] = f'tm5-nc:mdir=ec/ea/h06h18tr3/{levels}/{region}/<yyyy>/<mm>;tres=_00p03;namesep=/'
                 self.settings[f'tmm.destkey.{region}.sfc.fc'] = f'tm5-nc:mdir=ec/ea/h06h18tr1/sfc/{region}/<yyyy>/<mm>;tres=_00p01;namesep=/'
                 self.settings[f'tmm.destkey.{region}.sfc.an'] = f'tm5-nc:mdir=ec/ea/an0tr1/sfc/{region}/<yyyy>/<mm>;tres=_00p01;namesep=/'
             self.settings['ndyn'] = '900'
@@ -140,7 +141,7 @@ class TM5:
                 self.settings[f'tmm.sourcekey.{region}.sfc.fc'] = f'tm5-nc:mdir=ec/ea/h06h18tr1/sfc/{region}/<yyyy>/<mm>;tres=_00p01;namesep=/'
                 self.settings[f'tmm.sourcekey.{region}.sfc.an'] = f'tm5-nc:mdir=ec/ea/an0tr1/sfc/{region}/<yyyy>/<mm>;tres=_00p01;namesep=/'
 
-        self.settings['my.levs'] = 'tropo25'
+        self.settings['my.levs'] = self.dconf.regions[region].levels
         self.settings['cfl.outputstep'] = '3600'
         self.settings['tmm.output'] = write_meteo       # write meteo?
         self.settings['tmm.output.*.*'] = write_meteo   # by default write all fields
@@ -170,6 +171,9 @@ class TM5:
                 self.settings[f'region.{region}.redgrid.nh.comb'] = ' '.join([_ for _ in rgn])
                 self.settings[f'region.{region}.redgrid.sh.n'] = len(rgs)
                 self.settings[f'region.{region}.redgrid.sh.comb'] = ' '.join([_ for _ in rgn])
+            else :
+                self.settings[f'region.{region}.redgrid.nh.n'] = 0
+                self.settings[f'region.{region}.redgrid.sh.n'] = 0
 
     def setup_tm5_optim(self):
         """
