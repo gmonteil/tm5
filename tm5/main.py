@@ -81,10 +81,7 @@ class TM5:
         # - other inputs (station files, etc.)
 
         # TM5 executable generated in the build step
-        if setup_obs :
-            self.setup_observations()
-        if setup_emis :
-            self.setup_emissions(skip_file_creation=emission_file is not None, filename=emission_file)
+        self.setup_emissions(skip_file_creation=emission_file is not None, filename=emission_file)
         self.setup_meteo()
         self.setup_tm5_optim()
         self.setup_run('forward')
@@ -145,7 +142,7 @@ class TM5:
                 self.settings[f'tmm.sourcekey.{region}.sfc.an'] = f'tm5-nc:mdir=ec/ea/an0tr1/sfc/{region}/<yyyy>/<mm>;tres=_00p01;namesep=/'
 
         self.settings['my.levs'] = self.dconf.regions[region].levels
-        self.settings['cfl.outputstep'] = '3600'
+        self.settings['cfl.outputstep'] = self.settings['ndyn'] 
         self.settings['tmm.output'] = write_meteo       # write meteo?
         self.settings['tmm.output.*.*'] = write_meteo   # by default write all fields
         self.settings['tmm.output.*.sfc.const'] = 'F' # Except constant surface fields
