@@ -14,7 +14,7 @@ defaults = {
 
     'cfl.outputstep': '${ndyn}',
 
-    'diffusion.files.deflate.level': '1',
+    'diffusion.files.deflate.level': '4',
 
     'do_steps.print.mass' : 'F',
 
@@ -35,9 +35,9 @@ defaults = {
 
     'model.output': 'F',
 
-    'my.mlevs': 'tropo25',
+    #'my.mlevs': 'tropo25',
 
-    'my.zoom': 'glb6x4',
+    #'my.zoom': 'glb6x4',
 
     'ndyn': '3600',
 

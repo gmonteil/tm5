@@ -20,5 +20,6 @@ class Specie:
 
 species = {
     'CO2' : Specie(unit_emis = 'PgCO2', unit_mix = 'ppm'),
-    '14CO2' : Specie(unit_emis = 'PgCO2', unit_mix = 'ppm')
+    '14CO2' : Specie(unit_emis = 'PgCO2', unit_mix = 'ppm'),
+    'CH4' : Specie(unit_emis = 'PgCH4', unit_mix = 'ppb')
 }

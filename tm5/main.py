@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import os
+import sys
 
 from omegaconf import OmegaConf, DictConfig
 import tm5.emissions
@@ -7,7 +8,6 @@ import tm5.observations
 from tm5.build import build_tm5
 from tm5.meteo import Meteo
 from tm5 import inicond
-from tm5 import setup
 from tm5.run import run_tm5
 from tm5.units import units_registry as ureg
 from tm5.settings import TM5Settings
@@ -15,8 +15,7 @@ from tm5 import species as chem
 from pathlib import Path
 from pandas import Timestamp, Timedelta
 from loguru import logger
-import shutil
-from typing import Dict
+from typing import Set, List
 
 
 class TM5:
@@ -44,7 +43,7 @@ class TM5:
         tm5exec = build_tm5(self.dconf, clean = clean)
         if not self.tm5exec.exists() and not self.tm5exec.is_symlink():
             self.tm5exec.parent.mkdir(parents=True, exist_ok=True)
-            os.symlink(tm5exec, self.tm5exec)
+            os.symlink(tm5exec.absolute(), self.tm5exec)
 
     def calc_background(self, lon0 : float, lon1 : float, lat0 : float, lat1 : float, emissions_file : str):
         self.settings['istart'] = '1'
@@ -58,17 +57,25 @@ class TM5:
         Do a forward run with global1x1 meteo, and no emissions, no initial condition, etc.
         :return:
         """
+        # ERROR - key not found and no default specified ...
+        # ERROR -   rcfile : output_only-coarsen-meteo/forward.rc
+        # ERROR -   key    : emissions.CO2.glb100x100.ncats
+        self.setup_emissions(skip_file_creation=True) #--MVO-ADDED::
+
         self.setup_meteo(coarsen=True)
         self.setup_run('forward')
         self.setup_iniconc('zero')
         self.setup_output(stations=False)
         self.setup_regions()
+        self.setup_tracers() #--MVO-ADDED:TM5 executable config reader expects 'tracers.keys.'
         self.setup_system()
         self.settings['proces.source'] = 'F'
         rcf = self.settings.write(Path(self.dconf.run.paths.output) / 'forward.rc')
         run_tm5(f'{str(self.tm5exec.absolute())} {str(rcf)}', settings=self.dconf.machine.host)
 
-    def forward(self, emission_file : str = None):
+    def forward(self, emission_file : str = None, setup_emis: bool = True, setup_obs: bool = True,
+                iniconc: str = None,
+                dry_run:bool = False):
         """
         Do a forward run, bypassing totally the pyshell
         """
@@ -84,24 +91,34 @@ class TM5:
         # - other inputs (station files, etc.)
 
         # TM5 executable generated in the build step
-        self.setup_observations()
         self.setup_emissions(skip_file_creation=emission_file is not None, filename=emission_file)
         self.setup_meteo()
+        self.setup_observations()
         self.setup_tm5_optim()
         self.setup_run('forward')
         self.setup_output()
         self.setup_regions()
-        self.setup_iniconc()
+        self.setup_iniconc(iniconc)
         self.setup_optim()
         self.setup_tracers()
         self.setup_system()
         rcf = self.settings.write(Path(self.dconf.run.paths.output) / 'forward.rc')
-        run_tm5(f'{str(self.tm5exec.absolute())} {str(rcf)}', settings=self.dconf.machine.host)
+        if dry_run:
+            print(f"TM5 command -->{str(self.tm5exec.absolute())} {str(rcf)}'<--")
+        else:
+            run_tm5(f'{str(self.tm5exec.absolute())} {str(rcf)}', settings=self.dconf.machine.host)
+
+    #-- MVO::this is only very preliminary testing (!)
+    def adjoint(self, filepath : str = 'test-adjoint.rc'):
+        self.setup_run('adjoin')
+        rcf = self.settings.write(Path(self.dconf.run.paths.output) / filepath)
 
     def optim(self):
         raise NotImplementedError
 
-    def setup_meteo(self, coarsen : bool = False):
+    def setup_meteo(self, coarsen : bool = False,
+                    retrieve_daily : bool = False,
+                    group : str = None, field_lst : List[str] = None):
         """
         This will set the following (group of) rc keys:
         - my.meteo.source.dir
@@ -121,30 +138,47 @@ class TM5:
         if not self.dconf.meteo.coarsened or coarsen:
             self.meteo.coarsened = False
             self.dconf.meteo.coarsened = True
-            write_meteo = 'T'
+
+            #-- MVO-question:
+            #   - worried about hardcoded 'ml137' below, while the yaml file sets 'tropo25'
+            # Guillaume, 2023-09-13:
+            #
+            """Coarsening the meteo is not just done on the horizontal grid, but also vertically (that's why, even if you were to run with glb1x1 meteo, you would at least want to coarsen it to 25 or 34 vertical levels).
+            Btw, I have hardcoded things to tropo25, but again, if you ever plan to use tropo34, keep in mind that you'll need to adapt the code a little bit."""
             # All fields are read from glb100x100
             self.settings[f'tmm.sourcekey.*.ml'] = f'tm5-nc:mdir=ec/ea/h06h18tr3/ml137/glb100x100/<yyyy>/<mm>;tres=_00p03;namesep=/'
             self.settings[f'tmm.sourcekey.*.sfc.fc'] = f'tm5-nc:mdir=ec/ea/h06h18tr1/sfc/glb100x100/<yyyy>/<mm>;tres=_00p01;namesep=/'
             self.settings[f'tmm.sourcekey.*.sfc.an'] = f'tm5-nc:mdir=ec/ea/an0tr1/sfc/glb100x100/<yyyy>/<mm>;tres=_00p01;namesep=/'
-
-            self.settings['tmm.output.dir'] = str(Path(self.dconf.meteo.output_path).absolute())
-            Path(self.dconf.meteo.output_path).mkdir(exist_ok=True, parents=True)
-            self.settings['cf-standard-name-table'] = Path(self.dconf.run.paths.cf_table).absolute()
-
-            for region in self.dconf.regions:
-                self.settings[f'tmm.destkey.{region}.ml'] = f'tm5-nc:mdir=ec/ea/h06h18tr3/tropo25/{region}/<yyyy>/<mm>;tres=_00p03;namesep=/'
-                self.settings[f'tmm.destkey.{region}.sfc.fc'] = f'tm5-nc:mdir=ec/ea/h06h18tr1/sfc/{region}/<yyyy>/<mm>;tres=_00p01;namesep=/'
-                self.settings[f'tmm.destkey.{region}.sfc.an'] = f'tm5-nc:mdir=ec/ea/an0tr1/sfc/{region}/<yyyy>/<mm>;tres=_00p01;namesep=/'
             self.settings['ndyn'] = '900'
             self.settings['cfl.outputstep'] = '900'
+
+            #-- MVO::adapted after suggestion by Guillaume (2023-09-13)
+            if self.dconf.meteo.output:
+                write_meteo = 'T'
+                self.settings['tmm.output.dir'] = str(Path(self.dconf.meteo.output_path).absolute())
+                Path(self.dconf.meteo.output_path).mkdir(exist_ok=True, parents=True)
+                self.settings['cf-standard-name-table'] = Path(self.dconf.run.paths.cf_table).absolute()
+                for region in self.dconf.regions:
+                    self.settings[f'tmm.destkey.{region}.ml'] = f'tm5-nc:mdir=ec/ea/h06h18tr3/tropo25/{region}/<yyyy>/<mm>;tres=_00p03;namesep=/'
+                    self.settings[f'tmm.destkey.{region}.sfc.fc'] = f'tm5-nc:mdir=ec/ea/h06h18tr1/sfc/{region}/<yyyy>/<mm>;tres=_00p01;namesep=/'
         else :
             for region in self.dconf.run.regions :
-                self.settings[f'tmm.sourcekey.{region}.ml'] = f'tm5-nc:mdir=ec/ea/h06h18tr3/tropo25/{region}/<yyyy>/<mm>;tres=_00p03;namesep=/'
+                levels = self.dconf.regions[region].levels
+                self.settings[f'tmm.sourcekey.{region}.ml'] = f'tm5-nc:mdir=ec/ea/h06h18tr3/{levels}/{region}/<yyyy>/<mm>;tres=_00p03;namesep=/'
                 self.settings[f'tmm.sourcekey.{region}.sfc.fc'] = f'tm5-nc:mdir=ec/ea/h06h18tr1/sfc/{region}/<yyyy>/<mm>;tres=_00p01;namesep=/'
                 self.settings[f'tmm.sourcekey.{region}.sfc.an'] = f'tm5-nc:mdir=ec/ea/an0tr1/sfc/{region}/<yyyy>/<mm>;tres=_00p01;namesep=/'
 
-        self.settings['my.levs'] = 'tropo25'
-        self.settings['cfl.outputstep'] = '3600'
+        #-- MVO-ATTENTION::key 'region' below would always be the 'last' region in list from above
+        #                  assert #levels is equal for all regions and select this value
+        region_lst = list(self.dconf.regions.keys())
+        for ireg,region in enumerate(region_lst):
+            if ireg==0:
+                levels = self.dconf.regions[region].levels
+            else:
+                assert self.dconf.regions[region].levels, \
+                    f"expected levels={levels} but for region={region} levels={self.dconf.regions[region].levels}"
+        self.settings['my.levs'] = levels #self.dconf.regions[region].levels
+        self.settings['cfl.outputstep'] = self.settings['ndyn'] 
         self.settings['tmm.output'] = write_meteo       # write meteo?
         self.settings['tmm.output.*.*'] = write_meteo   # by default write all fields
         self.settings['tmm.output.*.sfc.const'] = 'F' # Except constant surface fields
@@ -155,7 +189,11 @@ class TM5:
         # Constant 1x1 fields (oro and lsm):
         self.settings['tmm.sourcekey.*.sfc.const'] = 'tm5-nc:mdir=ec/ea/an0tr1/sfc/glb100x100;tres=_00p01;namesep=/'
 
-        self.meteo.setup_files(start=self.dconf.run.start, end=self.dconf.run.end)
+        if retrieve_daily:
+            self.meteo.setup_files_daily(start=self.dconf.run.start, end=self.dconf.run.end,
+                                         group=group, field_lst=field_lst)
+        else:
+            self.meteo.setup_files(start=self.dconf.run.start, end=self.dconf.run.end)
 
     def setup_regions(self):
         """
@@ -165,10 +203,17 @@ class TM5:
         - region.{region}.redgrid.nh.comb
         - region.{region}.redgrid.sh.comb
         """
-        self.settings['region.glb600x400.redgrid.nh.n'] = '3'
-        self.settings['region.glb600x400.redgrid.nh.comb'] = '60 20 10'
-        self.settings['region.glb600x400.redgrid.sh.n'] = '4'
-        self.settings['region.glb600x400.redgrid.sh.comb'] = '60 20 10 5'
+        for region in self.dconf.run.regions :
+            if 'redgrid' in self.dconf.regions[region]:
+                rgn = self.dconf.regions[region].redgrid.nh
+                rgs = self.dconf.regions[region].redgrid.sh
+                self.settings[f'region.{region}.redgrid.nh.n'] = len(rgn)
+                self.settings[f'region.{region}.redgrid.nh.comb'] = ' '.join([str(_) for _ in rgn])
+                self.settings[f'region.{region}.redgrid.sh.n'] = len(rgs)
+                self.settings[f'region.{region}.redgrid.sh.comb'] = ' '.join([str(_) for _ in rgs])
+            else :
+                self.settings[f'region.{region}.redgrid.nh.n'] = 0
+                self.settings[f'region.{region}.redgrid.sh.n'] = 0
 
     def setup_tm5_optim(self):
         """
@@ -194,13 +239,15 @@ class TM5:
         - output.satellite.meteo.{tracer}
         """
         self.settings['output.dir'] = self.dconf.run.paths.output
-        if 'output' not in self.dconf:
+        if 'output' not in self.dconf: #-- no outupt at all
             return
 
         if stations and 'stations' in self.dconf.output :
             self.setup_output_stations(self.dconf.output.stations)
             
         self.setup_output_mix(self.dconf.output.get('mix', None))
+
+        self.setup_output_totalcol(self.dconf.output.get('totalcol', None))
 
     def setup_output_stations(self, dconf):
         self.settings['output.station.timeseries'] = 'T'
@@ -213,14 +260,27 @@ class TM5:
         self.settings['output.point.sample.parent'] = dconf.get('sample_parent', 'F')
         
     def setup_output_mix(self, dconf: DictConfig | None = None):
+        from omegaconf import errors as omegaconf_errors
         if dconf is None :
             return
         
         self.settings['output.mix'] = 'T'
-        self.settings['output.mix.tstep'] = int(Timedelta(dconf.output_frequency).total_seconds())
+        tstep = Timedelta(dconf.output_frequency, unit='s')
+        self.settings['output.mix.tstep'] = int(tstep.total_seconds())
         self.settings['output.mix.meteo'] = dconf.get('output_meteo', 'F')
-        self.settings['output.mix.filename.prefix'] = dconf.prefix
-        self.settings['output.mix.deflate.leve'] = dconf.get('deflate_level', 1)
+        self.settings['output.mix.filename.prefix'] = dconf.get('prefix', 'mix')
+        self.settings['output.mix.deflate.level'] = dconf.get('deflate_level', 1)
+
+    def setup_output_totalcol(self, dconf: DictConfig | None = None):
+        if dconf is None :
+            return
+        
+        self.settings['output.totalcol'] = 'T'
+        tstep = Timedelta(dconf.output_frequency, unit='s')
+        self.settings['output.totalcol.tstep'] = int(tstep.total_seconds())
+        self.settings['output.totalcol.filename.prefix'] = dconf.get('prefix', 'totalcol')
+        #MVO::no such key is being read in user_output_column.F90
+        # self.settings['output.totalcol.deflate.level'] = dconf.get('deflate_level', 1)
 
     def setup_run(self, mode='forward'):
         """
@@ -268,7 +328,7 @@ class TM5:
                     filename
                 )
             case other :
-                logger.error("initial condition settings not understood")
+                logger.error(f"initial condition settings not understood ==>{ini}<==")
                 raise Exception
 
     def setup_observations(self) -> Path:
@@ -278,14 +338,19 @@ class TM5:
         - output.point.errors
         - output.point.{tracer}.minerror
         """
-
-        self.setup_output_point(self.dconf.output.point)
-        self.settings['output.point.errors'] = self.dconf.observations.point.get('errors', '1')
-        for tracer in self.dconf.run.tracers:
-            self.settings[f'output.point.{tracer}.minerror'] = self.dconf.observations.point[tracer].minerror
-        self.settings['output.point.timewindow'] = self.dconf.observations.point[tracer].default_assim_window
-        self.settings['output.point.interpolation'] = {'linear': 3, 'gridbox': 1, 'slopes': 2}[self.dconf.observations.point.interpolation]
-        return tm5.observations.prepare_point_obs(self.dconf.output.point)
+        from omegaconf import errors as omegaconf_errors
+        try:
+            self.setup_output_point(self.dconf.output.point)
+            self.settings['output.point.errors'] = self.dconf.observations.point.get('errors', '1')
+            for tracer in self.dconf.run.tracers:
+                self.settings[f'output.point.{tracer}.minerror'] = self.dconf.observations.point[tracer].minerror
+            self.settings['output.point.timewindow'] = self.dconf.observations.point[tracer].default_assim_window
+            self.settings['output.point.interpolation'] = {'linear': 3, 'gridbox': 1, 'slopes': 2}[self.dconf.observations.point.interpolation]
+            return tm5.observations.prepare_point_obs(self.dconf.output.point)
+        except omegaconf_errors.ConfigAttributeError as exc:
+            msg = f"observational setup failed, not point observations are prepared (==>{exc}<==)"
+            logger.error(msg)
+            pass
 
     def setup_emissions(self, skip_file_creation: bool = False, filename : str = None):
         """
@@ -311,7 +376,6 @@ class TM5:
             for catname in self.dconf.emissions[trname].emission_categories :
                 apply_dailycycle_to_cat = {False:'F', True:'T'}[self.dconf.emissions[trname].emission_categories[catname].get('dailycycle', False)]
                 self.settings[f'{trname}.{catname}.dailycycle'] = apply_dailycycle_to_cat
-            
         if not skip_file_creation:
             tm5.emissions.prepare_emissions(self.dconf.emissions, filename = filename)
 
@@ -367,89 +431,3 @@ class TM5:
         - udunits_path
         """
         self.settings['udunits_path'] = Path(self.dconf.machine.paths.udunits).absolute()
-
-
-# The methods in the following TM5-derived class rely on the legacy pyshell
-class Pyshell(TM5):
-    def optim(self):
-        """
-        Do an inversion ==> this is still based on pyshell
-        """
-        
-        if self.dconf.get('tm5') is None :
-            self.dconf.tm5 = {}
-        if not self.dconf.get('pyshell2'):
-            self.dconf.pyshell2 = {}
-        self.dconf = setup.setup_initial_condition(self.dconf)
-        self.dconf = setup.setup_meteo(self.dconf)
-        self.dconf = setup.setup_paths(self.dconf)
-        self.dconf.tm5['mask.apply'] = 'F'
-        self.dconf.tm5['optimize.conGrad.exec'] = Path(self.dconf.machine.paths.tm5) / 'bin/congrad.exe'
-        return self.run_pyshell(runmode = 'optim')
-
-    def run_pyshell(self, runmode : str = 'forward', **extra_args):
-        """
-        Do a forward run, using pyshell:
-        - The keys under the "pyshell2" and "tm5" nodes of self.dconc are written to the rc-file given by dconc.pyshell.rcfile ==> that file needs to be included by the pyshell rc-file (through an #include).
-        """
-        
-        with open(self.dconf.pyshell.rcfile, 'w') as fid :
-            # Keys needed by TM5 itself:
-            fid.write('!---------- tm5 --------- \n')
-            for k, v in sorted(self.dconf.tm5.items()):
-                fid.write(f'{k:<30s} : {v}\n')
-
-            # Keys needed by pyshell (but not TM5 ==> should be deprecated, eventually)
-            fid.write('\n\n!---------- pyshell --------- \n')
-            for k, v in sorted(self.dconf.pyshell2.items()):
-                fid.write(f'{k:<30s} : {v}\n')
-
-        cmd = f'pyshell {runmode} --rc {self.configfile} --machine {self.machine}'
-
-        # extra-arguments (overwrite everything else within pyshell)
-        if extra_args:
-            for k, v in extra_args.items():
-                v = str(v).replace(' ', '\ ')
-                cmd += f' --setkey {k}:{v}'
-
-        for k, v in self.dconf.tm5.items():
-            v = str(v).replace(' ', '\ ')
-            cmd += f' --setkey {k}:{v}'
-
-        for k, v in self.dconf.pyshell2.items():
-            v = str(v).replace(' ', '\ ')
-            cmd += f' --setkey {k}:{v}'
-
-        cmd += f' --start {Timestamp(self.dconf.run.start).strftime("%Y%m%d%H%M%S")} --end {Timestamp(self.dconf.run.end).strftime("%Y%m%d%H%M%S")}'
-
-        return run_tm5(cmd, settings=self.dconf.machine.host)
-
-
-    def calc_background_pyshell(self, lon0, lon1, lat0, lat1, **extra_args):
-        """
-        This should just setup the "mask.apply", "mask.region", "istart" and "PyShell.em.filename" keys
-        """
-
-        if self.dconf.get('tm5') is None :
-            self.dconf.tm5 = {}
-        if not self.dconf.get('pyshell2'):
-            self.dconf.pyshell2 = {}
-        self.dconf = setup.setup_meteo(self.dconf)
-        self.dconf = setup.setup_paths(self.dconf)
-
-        # Initial condition set to 0
-        self.dconf.tm5['istart'] = '1'
-
-        # Mask:
-        self.dconf.tm5['mask.apply'] = 'T'
-        self.dconf.tm5['mask.complement'] = 'T'
-        self.dconf.tm5['mask.factor'] = '0'
-        self.dconf.tm5['mask.region'] = f'{lon0:.1f} {lon1:.1f} {lat0:.1f} {lat1:.1f}'
-
-        # Emissions
-        self.dconf.pyshell2 = self.dconf.get('pyshell2', {})  # Ensure that the node exists
-        self.dconf.pyshell2['emission.read.optimized'] = 'T'
-        self.dconf.pyshell2['emission.read.optimized.filename'] = 'emission.nc4'
-
-        # Run the inversion
-        return self.run_pyshell(**extra_args)

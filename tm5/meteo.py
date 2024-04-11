@@ -85,3 +85,42 @@ class Meteo:
                 self.get(prefix=f'ec/ea/an0tr1/sfc/{region}/{tt:%Y/%m}/', start = tt, end = tt + to_offset('MS'), suffix='_%Y%m.nc', fields = ['srols'])
                 self.get(prefix=f'ec/ea/an0tr1/sfc/glb100x100/', suffix='.nc', fields=['oro', 'lsm'], start = tt, end = tt + to_offset('MS'))
 
+
+    def setup_files_daily(self, start: Timestamp, end: Timestamp,
+                          group : str = None, field_lst : List[str] = None) -> None:
+        """
+        Download meteo data
+        """
+        field_dct = {
+            'h06h18tr3':['convec', 'mfuv', 'mfw', 'q', 'sp', 't', 'tsp'],
+            'h06h18tr1':['blh', 'ewss', 'nsss', 'sshf', 'slhf', 'u10m', 'v10m']
+            }
+        suffix_dct = {
+            'h06h18tr3':'_%Y%m%d_00p03.nc',
+            'h06h18tr1':'_%Y%m%d_00p01.nc'
+            }
+        if self.coarsened:
+            regions = self.regions
+            levels = self.levels
+        else :
+            regions = ['glb100x100']
+            levels = 'ml137'
+        for region in regions:
+            tts  = Timestamp(start).strftime('%Y%m%d')
+            tte  = Timestamp(end) # + Timedelta(days=1)
+            cur_trange = date_range(tts, tte, freq='D', inclusive='left')
+            for tt in cur_trange:
+                tte = tt + Timedelta(days=1)
+                if group!=None:
+                    suffix = suffix_dct[group]
+                    if field_lst!=None:
+                        fields = field_lst
+                    else:
+                        fields = field_dct[group]
+                    self.get(prefix=f'ec/ea/{group}/{levels}/{region}/{tt:%Y/%m}/', suffix=suffix, fields=fields, start = tt, end = tte)
+                else:
+                    self.get(prefix=f'ec/ea/h06h18tr3/{levels}/{region}/{tt:%Y/%m}/', suffix='_%Y%m%d_00p03.nc', fields=['convec', 'mfuv', 'mfw', 'q', 'sp', 't', 'tsp'], start = tt, end = tte)
+                    self.get(prefix=f'ec/ea/h06h18tr1/sfc/{region}/{tt:%Y/%m}/', suffix='_%Y%m%d_00p01.nc', fields=['blh', 'ewss', 'nsss', 'sshf', 'slhf', 'u10m', 'v10m'], start=tt, end=tte)
+                    self.get(prefix=f'ec/ea/an0tr1/sfc/{region}/{tt:%Y/%m}/', start = tt, end = tte, suffix='_%Y%m%d_00p01.nc', fields=['sr']) #, 'albedo', 'veg'])
+                    self.get(prefix=f'ec/ea/an0tr1/sfc/{region}/{tt:%Y/%m}/', start = tt, end = tte, suffix='_%Y%m.nc', fields = ['srols'])
+                    self.get(prefix=f'ec/ea/an0tr1/sfc/glb100x100/', suffix='.nc', fields=['oro', 'lsm'], start = tt, end = tte)
