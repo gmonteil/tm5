@@ -1,0 +1,8 @@
+# This is for numpy compiled with intel mkl on a 64-bit machine
+#f2py --compiler=intelem --fcompiler=intelem -c interpolate_levels.pyf -liomp5 interpolate_levels.F90 
+#f2py --compiler=intelem --fcompiler=intelem -c averaging_kernels.pyf -liomp5 averaging_kernels.F90
+
+f2py --compiler=intelem --fcompiler=intelem -c interpolate_levels.pyf --f90flags='-qopenmp' -liomp5 interpolate_levels.F90 
+#f2py --compiler=intelem --fcompiler=intelem -c averaging_kernels.pyf --opt='-qopenmp' averaging_kernels.F90
+#f2py --compiler=intelem --fcompiler=intelem -c interpol_grid.pyf --opt='-qopenmp' interpol_grid.F90
+#f2py --compiler=intelem --fcompiler=intelem -c linalg_routines.pyf --opt='-qopenmp -mkl' -L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -liomp5 -lpthread -lm -ldl -lmkl_def -lmkl_avx2 linalg_routines.F90

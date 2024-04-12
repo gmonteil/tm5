@@ -1,0 +1,126 @@
+python module averaging_kernels
+  interface
+
+    module carbonsat
+
+      subroutine takecolumn_createobs(n_obs, n_lev, n_poly, n_total, model_profiles, err_model_profiles, model_psurf, indices, AT, BT, ak_poly, prior_mix, mismatches, J_obs, departures)
+        integer, optional, intent(in) :: n_obs = len(model_psurf)
+        integer, optional, intent(in) :: n_lev = shape(model_profiles,1)
+        integer, optional, intent(in) :: n_poly = shape(ak_poly,1)
+        integer, optional, intent(in) :: n_total = shape(ak_poly,0)
+        double precision, dimension(n_obs,n_lev), intent(in) :: model_profiles
+        double precision, dimension(n_obs,n_lev), intent(in) :: err_model_profiles
+        double precision, dimension(n_obs), intent(in) :: model_psurf
+        integer, dimension(n_obs), intent(in) :: indices
+        double precision, dimension(n_lev+1), intent(in) :: AT, BT
+        double precision, dimension(n_total, n_poly), intent(in) :: ak_poly
+        double precision, intent(in) :: prior_mix
+        real, dimension(n_obs, 5), intent(out) :: mismatches
+        double precision, intent(out) :: J_obs
+        double precision, dimension(n_obs, n_lev), intent(out) :: departures
+      end subroutine takecolumn_createobs
+
+      subroutine applyaveragingkernel(n_obs, n_lev, n_poly, n_total, model_profiles, err_model_profiles, model_psurf, meas_tc, meas_dtc, indices, AT, BT, ak_poly, prior_mix, mismatches, J_obs, departures)
+        integer, optional, intent(in) :: n_obs = len(model_psurf)
+        integer, optional, intent(in) :: n_lev = shape(model_profiles,1)
+        integer, optional, intent(in) :: n_poly = shape(ak_poly,1)
+        integer, optional, intent(in) :: n_total = shape(ak_poly,0)
+        double precision, dimension(n_obs,n_lev), intent(in) :: model_profiles
+        double precision, dimension(n_obs,n_lev), intent(in) :: err_model_profiles
+        double precision, dimension(n_obs), intent(in) :: model_psurf
+        double precision, dimension(n_obs), intent(in) :: meas_tc
+        double precision, dimension(n_obs), intent(in) :: meas_dtc
+        integer, dimension(n_obs), intent(in) :: indices
+        double precision, dimension(n_lev+1), intent(in) :: AT, BT
+        double precision, dimension(n_total, n_poly), intent(in) :: ak_poly
+        double precision, intent(in) :: prior_mix
+        double precision, dimension(n_obs, 5), intent(out) :: mismatches
+        double precision, intent(out) :: J_obs
+        double precision, dimension(n_obs, n_lev), intent(out) :: departures
+      end subroutine applyaveragingkernel
+
+      subroutine apply_ak_perturb(n_obs, n_lev, n_poly, n_total, model_profiles, err_model_profiles, model_psurf, meas_tc, meas_dtc, perturb_meas, indices, AT, BT, ak_poly, prior_mix, mismatches, J_obs, departures)
+        integer, optional, intent(in) :: n_obs = len(model_psurf)
+        integer, optional, intent(in) :: n_lev = shape(model_profiles,1)
+        integer, optional, intent(in) :: n_poly = shape(ak_poly,1)
+        integer, optional, intent(in) :: n_total = shape(ak_poly,0)
+        double precision, dimension(n_obs,n_lev), intent(in) :: model_profiles
+        double precision, dimension(n_obs,n_lev), intent(in) :: err_model_profiles
+        double precision, dimension(n_obs), intent(in) :: model_psurf
+        double precision, dimension(n_obs), intent(in) :: meas_tc
+        double precision, dimension(n_obs), intent(in) :: meas_dtc
+        double precision, dimension(n_obs), intent(in) :: perturb_meas
+        integer, dimension(n_obs), intent(in) :: indices
+        double precision, dimension(n_lev+1), intent(in) :: AT, BT
+        double precision, dimension(n_total, n_poly), intent(in) :: ak_poly
+        double precision, intent(in) :: prior_mix
+        double precision, dimension(n_obs, 5), intent(out) :: mismatches
+        double precision, intent(out) :: J_obs
+        double precision, dimension(n_obs, n_lev), intent(out) :: departures
+      end subroutine apply_ak_perturb
+
+    end module carbonsat
+
+    module iasi
+
+      subroutine applyaveragingkernel(n_obs, n_lev, n_tot, n_lay, model_profile, model_psurf, meas_tc, meas_dtc, gph_grid, indices, AT, BT, prior_profiles, avg_ker, mismatches, J_obs, departures, valid_deps)
+        integer, optional, intent(in) :: n_obs = len(model_psurf)
+        integer, optional, intent(in) :: n_lev = shape(model_profile,1)
+        integer, optional, intent(in) :: n_tot = shape(prior_profiles,0)
+        integer, optional, intent(in) :: n_lay = shape(prior_profiles,1)
+        double precision, dimension(n_obs,n_lev), intent(in) :: model_profile
+        double precision, dimension(n_obs), intent(in) :: model_psurf
+        double precision, dimension(n_obs), intent(in) :: meas_tc, meas_dtc
+        double precision, dimension(n_obs,n_lev+1), intent(in) :: gph_grid
+        integer, dimension(n_obs), intent(in) :: indices
+        double precision, dimension(n_lev+1), intent(in) :: AT, BT
+        double precision, dimension(n_tot,n_lay), intent(in) :: prior_profiles, avg_ker
+        double precision, dimension(n_obs, 5), intent(out) :: mismatches
+        double precision, intent(out) :: J_obs
+        double precision, dimension(n_obs,n_lev), intent(out) :: departures
+        integer(1), dimension(n_obs), intent(out) :: valid_deps
+      end subroutine applyaveragingkernel
+
+    end module iasi
+
+    module oco2
+
+      subroutine applyaveragingkernel(n_obs, n_tot, n_lev_mod, n_lev_oco, model_profiles, model_column_err, model_psurf, indices, oco_totalcol, oco_totalcol_err, AT, BT, oco_pres_levels, avg_ker, prior_profile, mismatches, J_obs, departures, valid_deps)
+        integer, optional, intent(in)   :: n_obs = len(model_psurf)
+        integer, optional, intent(in)   :: n_tot = shape(prior_profile,0)
+        integer, optional, intent(in)   :: n_lev_mod = shape(model_profiles,1)
+        integer, optional, intent(in)   :: n_lev_oco = shape(prior_profile,1)
+        double precision, intent(in)    :: model_profiles(n_obs, n_lev_mod), model_column_err(n_obs), model_psurf(n_obs)
+        integer, intent(in)             :: indices(n_obs)
+        double precision, intent(in)    :: oco_totalcol(n_obs), oco_totalcol_err(n_obs), AT(n_lev_mod+1), BT(n_lev_mod+1)
+        double precision, intent(in)    :: oco_pres_levels(n_tot, n_lev_oco+1), avg_ker(n_tot, n_lev_oco), prior_profile(n_tot, n_lev_oco)
+        double precision, intent(out)   :: J_obs, departures(n_obs, n_lev_mod), mismatches(n_obs, 5)
+        integer(1), intent(out)         :: valid_deps(n_obs)
+      end subroutine applyaveragingkernel
+
+    end module oco2
+
+    module mopitt
+
+      subroutine applyaveragingkernel(n_obs, n_lay_mod, n_lay_sat, model_profile, model_plevs, meas_col, sigma_meas_col, sat_plevs, valid_layers, prior_profiles, avg_ker, J_obs, departures, mismatches, valid_deps)
+        integer, optional, intent(in)   :: n_obs = len(meas_col)
+        integer, optional, intent(in)   :: n_lay_mod = shape(model_profile, 1)
+        integer, optional, intent(in)   :: n_lay_sat = shape(prior_profiles, 1)
+        double precision, dimension(n_obs, n_lay_mod), intent(in)   :: model_profile
+        double precision, dimension(n_obs, n_lay_mod+1), intent(in) :: model_plevs
+        double precision, dimension(n_obs), intent(in)              :: meas_col, sigma_meas_col
+        double precision, dimension(n_obs, n_lay_sat+1), intent(in) :: sat_plevs
+        integer, dimension(n_obs), intent(in)                       :: valid_layers
+        double precision, dimension(n_obs, n_lay_sat), intent(in)   :: prior_profiles
+        double precision, dimension(n_obs, n_lay_sat, n_lay_sat), intent(in)    :: avg_ker
+        double precision, intent(out)                               :: J_obs
+        double precision, dimension(n_obs, n_lay_mod), intent(out)  :: departures
+        double precision, dimension(n_obs, 3), intent(out)          :: mismatches
+        integer(1), dimension(n_obs), intent(out)                   :: valid_deps
+      end subroutine applyaveragingkernel
+
+    end module mopitt
+
+  end interface
+end python module averaging_kernels
+

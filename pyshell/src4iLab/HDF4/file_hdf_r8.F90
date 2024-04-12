@@ -1,0 +1,2898 @@
+!
+! Template for file_hdf routines with real arguments.
+!
+! To generate kind specific versions, use:
+!
+!    /bin/sed -e 's/8/4/g' file_hdf_rwp.F90.in > file_hdf_r4.F90
+!    /bin/sed -e 's/8/8/g' file_hdf_rwp.F90.in > file_hdf_r8.F90
+!
+
+module file_hdf_r8
+
+  implicit none
+
+  ! --- in/out --------------------------
+
+  private
+
+  public   ::  ReadData
+  public   ::  WriteData
+
+  public   ::  SetScale, SetDim
+
+  public   ::  ReadAttribute, CheckAttribute
+  public   ::  WriteAttribute
+
+  ! --- const ----------------------------
+
+  include "hdf.f90"
+
+  character(len=*), parameter ::  mname = 'file_hdf_r8'
+
+
+  ! --- interfaces ------------------------
+
+
+  interface ReadData
+    module procedure sds_ReadData_r8_1d
+    module procedure sds_ReadData_r8_2d
+    module procedure sds_ReadData_r8_3d
+    module procedure sds_ReadData_r8_4d
+    module procedure sds_ReadData_r8_5d
+    module procedure sds_ReadData_r8_6d
+    module procedure sds_ReadData_r8_7d
+  end interface
+
+  interface WriteData
+    module procedure sds_WriteData_r8_1d
+    module procedure sds_WriteData_r8_2d
+    module procedure sds_WriteData_r8_3d
+    module procedure sds_WriteData_r8_4d
+    module procedure sds_WriteData_r8_5d
+    module procedure sds_WriteData_r8_6d
+    module procedure sds_WriteData_r8_7d
+  end interface
+
+  interface SetScale
+    module procedure dim_SetScale_r8
+  end interface
+
+  interface SetDim
+    module procedure sds_SetDim_r8
+  end interface
+
+  interface ReadAttribute
+    module procedure obj_ReadAttribute_r8_0d
+    module procedure obj_ReadAttribute_r8_1d
+    !
+    module procedure sds_ReadAttribute_r8_0d
+    module procedure sds_ReadAttribute_r8_1d
+    !
+    module procedure dim_ReadAttribute_r8_0d
+    module procedure dim_ReadAttribute_r8_1d
+    !
+    module procedure hdf_ReadAttribute_r8_0d
+    module procedure hdf_ReadAttribute_r8_1d
+  end interface
+
+  interface CheckAttribute
+    module procedure obj_CheckAttribute_r8_0d
+    module procedure obj_CheckAttribute_r8_1d
+    !
+    module procedure sds_CheckAttribute_r8_0d
+    module procedure sds_CheckAttribute_r8_1d
+    !
+    module procedure dim_CheckAttribute_r8_0d
+    module procedure dim_CheckAttribute_r8_1d
+    !
+    module procedure hdf_CheckAttribute_r8_0d
+    module procedure hdf_CheckAttribute_r8_1d
+  end interface
+
+  interface WriteAttribute
+    module procedure obj_WriteAttribute_r8_0d
+    module procedure obj_WriteAttribute_r8_1d
+    !
+    module procedure sds_WriteAttribute_r8_0d
+    module procedure sds_WriteAttribute_r8_1d
+    !
+    module procedure dim_WriteAttribute_r8_0d
+    module procedure dim_WriteAttribute_r8_1d
+    !
+    module procedure hdf_WriteAttribute_r8_0d
+    module procedure hdf_WriteAttribute_r8_1d
+  end interface
+
+
+
+contains
+
+
+  ! ############################################################
+  ! ###
+  ! ### objects
+  ! ###
+  ! ############################################################
+
+
+
+  ! ================================================================
+  ! ===
+  ! === read attributes
+  ! ===
+  ! ================================================================
+
+
+  subroutine obj_ReadAttribute_r8_0d( obj_id, name, r, status )
+
+    use file_hdf_base, only : wpi
+    use file_hdf_base, only : wp_float32, wp_float64
+    use file_hdf_base, only : FindAttribute, CheckAttributeInfo, GetAttributeInfo
+
+    ! --- in/out -------------------------
+
+    integer(wpi), intent(in)            ::  obj_id
+    character(len=*), intent(in)        ::  name
+    real(8), intent(out)             ::  r
+    integer, intent(out)                ::  status
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/obj_ReadAttribute_r8_0d'
+
+    ! --- local -------------------------------
+
+    integer                ::  attr_index, data_type
+    real(wp_float32)       ::  float32
+    real(wp_float64)       ::  float64
+
+    ! --- external ----------------------------
+
+    integer(wpi), external   ::  sfRNAtt
+
+    ! --- begin -------------------------------
+
+    call FindAttribute( obj_id, name, attr_index, status )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+
+    call CheckAttributeInfo( obj_id, attr_index, status, n_values=1 )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+
+    ! extract value:
+    call GetAttributeInfo( obj_id, attr_index, status, data_type=data_type )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+    select case ( data_type )
+      case ( DFNT_FLOAT32 )
+        status = sfRNAtt( obj_id, attr_index, float32 ); r = real(float32,kind=8)
+      case ( DFNT_FLOAT64 )
+        status = sfRNAtt( obj_id, attr_index, float64 ); r = real(float64,kind=8)
+      case default
+        write (*,'("ERROR - not implemented for data type ",i6)') data_type
+        write (*,'("ERROR in ",a)') rname; status=1; return
+    end select
+    if ( status /= SUCCEED ) then
+      write (*,'("ERROR - reading attribute : ",a)') trim(name)
+      write (*,'("ERROR in ",a)') rname; status=1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine obj_ReadAttribute_r8_0d
+
+
+  ! ***
+
+
+  subroutine obj_ReadAttribute_r8_1d( obj_id, name, r, status )
+
+    use file_hdf_base, only : wpi
+    use file_hdf_base, only : wp_float32, wp_float64
+    use file_hdf_base, only : FindAttribute, CheckAttributeInfo, GetAttributeInfo
+
+    ! --- in/out -------------------------
+
+    integer(wpi), intent(in)            ::  obj_id
+    character(len=*), intent(in)        ::  name
+    real(8), intent(out)             ::  r(:)
+    integer, intent(out)                ::  status
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/obj_ReadAttribute_r8_1d'
+
+    ! --- local -------------------------------
+
+    integer                         ::  attr_index, data_type
+    integer                         ::  n
+    real(wp_float32), allocatable   ::  float32(:)
+    real(wp_float64), allocatable   ::  float64(:)
+
+    ! --- external ----------------------------
+
+    integer(wpi), external   ::  sfRNAtt
+
+    ! --- begin -------------------------------
+
+    n = size(r)
+
+    call FindAttribute( obj_id, name, attr_index, status )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+
+    call CheckAttributeInfo( obj_id, attr_index, status, n_values=n )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+
+    ! extract value:
+    call GetAttributeInfo( obj_id, attr_index, status, data_type=data_type )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+    select case ( data_type )
+      case ( DFNT_FLOAT32 )
+        allocate( float32(n) )
+        status = sfRNAtt( obj_id, attr_index, float32 )
+        r = real(float32,kind=8)
+        deallocate( float32 )
+      case ( DFNT_FLOAT64 )
+        allocate( float64(n) )
+        status = sfRNAtt( obj_id, attr_index, float64 )
+        r = real(float64,kind=8)
+        deallocate( float64 )
+      case default
+        write (*,'("ERROR - not implemented for data type ",i6)') data_type
+        write (*,'("ERROR in ",a)') rname; status=1; return
+    end select
+    if ( status /= SUCCEED ) then
+      write (*,'("ERROR - reading attribute : ",a)') trim(name)
+      write (*,'("ERROR in ",a)') rname; status=1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine obj_ReadAttribute_r8_1d
+
+
+
+
+  ! ================================================================
+  ! ===
+  ! === check attributes
+  ! ===
+  ! ================================================================
+
+
+  subroutine obj_CheckAttribute_r8_0d( obj_id, name, r, status )
+
+    use file_hdf_base, only : wpi
+
+    ! --- in/out -------------------------
+
+    integer(wpi), intent(in)            ::  obj_id
+    character(len=*), intent(in)        ::  name
+    real(8), intent(in)              ::  r
+    integer, intent(inout)              ::  status
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/obj_CheckAttribute_r8_0d'
+
+    ! --- local -------------------------------
+
+    logical                  ::  verbose
+    real(8)               ::  attr_r
+
+    ! --- begin -------------------------------
+
+    ! write error messages ?
+    verbose = status == 0
+
+    call ReadAttribute( obj_id, name, attr_r, status )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+
+    if ( attr_r /= r ) then
+      if (verbose) then
+        write (*,'("ERROR - foud different attribute values:")')
+        write (*,'("ERROR -   attr name : ",a)') trim(name)
+        write (*,'("ERROR -   requested : ",e13.6)') r
+        write (*,'("ERROR -   found     : ",e13.6)') attr_r
+        write (*,'("ERROR in ",a)') rname
+      end if
+      status=-1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine obj_CheckAttribute_r8_0d
+
+
+  ! ***
+
+
+  subroutine obj_CheckAttribute_r8_1d( obj_id, name, r, status )
+
+    use file_hdf_base, only : wpi
+
+    ! --- in/out -------------------------
+
+    integer(wpi), intent(in)            ::  obj_id
+    character(len=*), intent(in)        ::  name
+    real(8), intent(in)              ::  r(:)
+    integer, intent(inout)              ::  status
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/obj_CheckAttribute_r8_1d'
+
+    ! --- local -------------------------------
+
+    logical                      ::  verbose
+    integer                      ::  n
+    real(8), allocatable      ::  attr_r(:)
+    logical                      ::  failed
+
+    ! --- begin -------------------------------
+
+    ! write error messages ?
+    verbose = status == 0
+
+    n = size(r)
+    allocate( attr_r(n) )
+
+    call ReadAttribute( obj_id, name, attr_r, status )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+
+    ! test
+    failed = any( attr_r /= r )
+
+    ! clear
+    deallocate( attr_r )
+
+    ! not ok
+    if ( failed ) then
+      if (verbose) then
+        write (*,'("ERROR - foud different attribute values:")')
+        write (*,'("ERROR -   attr name : ",a)') trim(name)
+        write (*,'("ERROR -   requested : ",e13.6," ...")') r
+        write (*,'("ERROR -   found     : ",e13.6," ...")') attr_r
+        write (*,'("ERROR in ",a)') rname
+      end if
+      status=-1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine obj_CheckAttribute_r8_1d
+
+
+
+  ! ================================================================
+  ! ===
+  ! === write attributes
+  ! ===
+  ! ================================================================
+
+
+  subroutine obj_WriteAttribute_r8_0d( obj_id, name, r, status, knd )
+
+    use file_hdf_base, only : wpi
+    use file_hdf_base, only : wp_float32, wp_float64
+
+    ! --- in/out -------------------------
+
+    integer(wpi), intent(in)            ::  obj_id
+    character(len=*), intent(in)        ::  name
+    real(8), intent(in)              ::  r
+    integer, intent(out)                ::  status
+
+    integer, intent(in), optional       ::  knd
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/obj_WriteAttribute_r8_0d'
+
+    ! --- local -------------------------------
+
+    integer              ::  rkind
+
+    ! --- external ----------------------------
+
+    integer(wpi), external   ::  sfSNAtt
+
+    ! --- begin -------------------------------
+
+    rkind = kind(r)
+    if ( present(knd) ) rkind = knd
+
+    select case ( rkind )
+      case ( 4 )
+        status = sfSNAtt( obj_id, name, DFNT_FLOAT32, 1, real(r,kind=wp_float32) )
+      case ( 8 )
+        status = sfSNAtt( obj_id, name, DFNT_FLOAT64, 1, real(r,kind=wp_float64) )
+      case default
+        write (*,'("ERROR - no implementation for writing with kind ",i2)') rkind
+        write (*,'("ERROR in ",a)') rname; status=-1; return
+    end select
+    if ( status /= SUCCEED ) then
+      write (*,'("ERROR - while writing attribute:")')
+      write (*,'("ERROR -   attr name   : ",a)') name
+      write (*,'("ERROR -   input kind  : ",i2)') kind(r)
+      write (*,'("ERROR -   output kind : ",i2)') rkind
+      write (*,'("ERROR in ",a)') rname; status=-1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine obj_WriteAttribute_r8_0d
+
+
+  ! ***
+
+
+  subroutine obj_WriteAttribute_r8_1d( obj_id, name, r, status, knd )
+
+    use file_hdf_base, only : wpi
+    use file_hdf_base, only : wp_float32, wp_float64
+
+    ! --- in/out -------------------------
+
+    integer(wpi), intent(in)            ::  obj_id
+    character(len=*), intent(in)        ::  name
+    real(8), intent(in)              ::  r(:)
+    integer, intent(out)                ::  status
+
+    integer, intent(in), optional       ::  knd
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/obj_WriteAttribute_r8_1d'
+
+    ! --- local -------------------------------
+
+    integer              ::  rkind
+
+    ! --- external ----------------------------
+
+    integer(wpi), external   ::  sfSNAtt
+
+    ! --- begin -------------------------------
+
+    rkind = kind(r)
+    if ( present(knd) ) rkind = knd
+
+    select case ( rkind )
+      case ( 4 )
+        status = sfSNAtt( obj_id, name, DFNT_FLOAT32, size(r), real(r,kind=wp_float32) )
+      case ( 8 )
+        status = sfSNAtt( obj_id, name, DFNT_FLOAT64, size(r), real(r,kind=wp_float64) )
+      case default
+        write (*,'("ERROR - no implementation for writing with kind ",i2)') rkind
+        write (*,'("ERROR in ",a)') rname; status=-1; return
+    end select
+    if ( status /= SUCCEED ) then
+      write (*,'("ERROR - while writing attribute:")')
+      write (*,'("ERROR -   attr name   : ",a)') name
+      write (*,'("ERROR -   input kind  : ",i2)') kind(r)
+      write (*,'("ERROR -   output kind : ",i2)') rkind
+      write (*,'("ERROR in ",a)') rname; status=-1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine obj_WriteAttribute_r8_1d
+
+
+
+
+  ! ############################################################
+  ! ###
+  ! ### scientific data sets
+  ! ###
+  ! ############################################################
+
+
+  ! ================================================================
+  ! get attributes
+  ! ================================================================
+
+
+  subroutine sds_ReadAttribute_r8_0d( sds, name, r, status )
+
+    use file_hdf_base, only : TSds
+
+    ! --- in/out -------------------------
+
+    type(Tsds), intent(in)             ::  sds
+    character(len=*), intent(in)       ::  name
+    real(8), intent(out)            ::  r
+    integer, intent(out)               ::  status
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/sds_ReadAttribute_r8_0d'
+
+    ! --- begin -------------------------------
+
+    call ReadAttribute( sds%id, name, r, status )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+
+    ! ok
+    status = 0
+
+  end subroutine sds_ReadAttribute_r8_0d
+
+
+  ! ***
+
+
+  subroutine sds_ReadAttribute_r8_1d( sds, name, r, status )
+
+    use file_hdf_base, only : TSds
+
+    ! --- in/out -------------------------
+
+    type(Tsds), intent(in)                ::  sds
+    character(len=*), intent(in)          ::  name
+    real(8), intent(out)               ::  r(:)
+    integer, intent(out)                  ::  status
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/sds_ReadAttribute_r8_1d'
+
+    ! --- begin -------------------------------
+
+    call ReadAttribute( sds%id, name, r, status )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+
+    ! ok
+    status = 0
+
+  end subroutine sds_ReadAttribute_r8_1d
+
+
+
+  ! =============================================================
+  ! === check attributes
+  ! =============================================================
+
+
+  subroutine sds_CheckAttribute_r8_0d( sds, name, r, status )
+
+    use file_hdf_base, only : TSds
+
+    ! --- in/out -------------------------
+
+    type(TSds), intent(in)             ::  Sds
+    character(len=*), intent(in)       ::  name
+    real(8), intent(in)             ::  r
+    integer, intent(inout)             ::  status
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/sds_CheckAttribute_r8_0d'
+
+    ! --- local ------------------------------
+
+    logical          ::  verbose
+
+    ! --- begin ---------------------------
+
+    ! write error messages ?
+    verbose = status == 0
+
+    call CheckAttribute( sds%id, name, r, status )
+    if (status>0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+    if (status<0) then
+      if (verbose) write (*,'("ERROR in ",a)') rname
+      status=-1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine sds_CheckAttribute_r8_0d
+
+
+  ! ***
+
+
+  subroutine sds_CheckAttribute_r8_1d( sds, name, r, status )
+
+    use file_hdf_base, only : TSds
+
+    ! --- in/out -------------------------
+
+    type(TSds), intent(in)             ::  Sds
+    character(len=*), intent(in)       ::  name
+    real(8), intent(in)             ::  r(:)
+    integer, intent(inout)             ::  status
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/sds_CheckAttribute_r8_1d'
+
+    ! --- local ------------------------------
+
+    logical          ::  verbose
+
+    ! --- begin ---------------------------
+
+    ! write error messages ?
+    verbose = status == 0
+
+    call CheckAttribute( sds%id, name, r, status )
+    if (status>0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+    if (status<0) then
+      if (verbose) write (*,'("ERROR in ",a)') rname
+      status=-1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine sds_CheckAttribute_r8_1d
+
+
+
+  ! ================================================================
+  ! write attributes
+  ! ================================================================
+
+
+  subroutine sds_WriteAttribute_r8_0d( sds, name, r, status, knd )
+
+    use file_hdf_base, only : TSds
+
+    ! --- in/out -------------------------
+
+    type(Tsds), intent(in)             ::  sds
+    character(len=*), intent(in)       ::  name
+    real(8), intent(in)             ::  r
+    integer, intent(out)               ::  status
+
+    integer, intent(in), optional      ::  knd
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/sds_WriteAttribute_r8_0d'
+
+    ! --- begin -------------------------------
+
+    call WriteAttribute( sds%id, name, r, status, knd )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+
+    ! ok
+    status = 0
+
+  end subroutine sds_WriteAttribute_r8_0d
+
+
+  ! ***
+
+
+  subroutine sds_WriteAttribute_r8_1d( sds, name, r, status, knd )
+
+    use file_hdf_base, only : TSds
+
+    ! --- in/out -------------------------
+
+    type(Tsds), intent(in)             ::  sds
+    character(len=*), intent(in)       ::  name
+    real(8), intent(in)             ::  r(:)
+    integer, intent(out)               ::  status
+
+    integer, intent(in), optional      ::  knd
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/sds_WriteAttribute_r8_1d'
+
+    ! --- begin -------------------------------
+
+    call WriteAttribute( sds%id, name, r, status, knd )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+
+    ! ok
+    status = 0
+
+  end subroutine sds_WriteAttribute_r8_1d
+
+
+
+  ! =============================================================
+  ! === read data
+  ! =============================================================
+
+
+  subroutine sds_ReadData_r8_1d( sds, data, status, start, stride )
+
+    use parray, only : pa_Init, pa_SetShape, pa_Done
+    use file_hdf_base, only : wpi
+    use file_hdf_base, only : TSds
+    use file_hdf_base, only : wp_int8, wp_int16, wp_int32, wp_int64
+    use file_hdf_base, only : wp_float32, wp_float64
+    use file_hdf_base, only : CheckInfo, GetInfo
+
+    ! --- const ------------------------------
+
+    character(len=*), parameter ::  rname = mname//'/sds_ReadData_r8_1d'
+
+    integer, parameter  ::  rank = 1
+
+    ! --- in/out ----------------------------
+
+    type(TSds), intent(in)              ::  sds
+    real(8), intent(out)             ::  data(:)
+    integer, intent(out)                ::  status
+
+    integer, intent(in), optional       ::  start(rank)
+    integer, intent(in), optional       ::  stride(rank)
+
+    ! --- local -------------------------------
+
+    integer                             ::  data_type
+    integer                             ::  the_start(rank)
+    integer                             ::  the_stride(rank)
+    integer(wp_int8 ), pointer          ::  int8 (:)
+    integer(wp_int16), pointer          ::  int16(:)
+    integer(wp_int32), pointer          ::  int32(:)
+    integer(wp_int64), pointer          ::  int64(:)
+    real(wp_float32), pointer           ::  float32(:)
+    real(wp_float64), pointer           ::  float64(:)
+
+    ! --- external ----------------------------
+
+    integer(wpi), external  ::  sfRData
+
+    ! --- begin -------------------------------
+
+    ! check data rank and shape:
+    !call CheckInfo( sds, data_rank=rank, data_dims=shape(data) )
+
+    ! read data of specified kind:
+    the_start  = 0; if ( present(start ) ) the_start  = start
+    the_stride = 1; if ( present(stride) ) the_stride = stride
+    call GetInfo( sds, status, data_type=data_type )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+    select case ( data_type )
+      case ( DFNT_INT8  )
+        call pa_Init( int8  )
+        call pa_SetShape( int8 , shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int8 ), int8  )
+        data = real(int8 ,kind=8)
+        call pa_Done( int8  )
+      case ( DFNT_INT16 )
+        call pa_Init( int16 )
+        call pa_SetShape( int16, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int16), int16 )
+        data = real(int16,kind=8)
+        call pa_Done( int16 )
+      case ( DFNT_INT32 )
+        call pa_Init( int32 )
+        call pa_SetShape( int32, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int32), int32 )
+        data = real(int32,kind=8)
+        call pa_Done( int32 )
+      case ( DFNT_INT64 )
+        call pa_Init( int64 )
+        call pa_SetShape( int64, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int64), int64 )
+        data = real(int64,kind=8)
+        call pa_Done( int64 )
+      case ( DFNT_FLOAT32 )
+        call pa_Init( float32 )
+        call pa_SetShape( float32, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(float32), float32 )
+        data = real(float32,kind=8)
+        call pa_Done( float32 )
+      case ( DFNT_FLOAT64 )
+        call pa_Init( float64 )
+        call pa_SetShape( float64, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(float64), float64 )
+        data = real(float64,kind=8)
+        call pa_Done( float64 )
+      case default
+        write (*,'("ERROR - not implemented for data type ",i6)') data_type
+        write (*,'("ERROR in ",a)') rname; status=1; return
+    end select
+    if ( status == FAIL ) then
+      write (*,'("ERROR - reading data `",a,"`")') trim(sds%name)
+      write (*,'("ERROR in ",a)') rname; status=1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine sds_ReadData_r8_1d
+
+
+  ! ***
+
+
+  subroutine sds_ReadData_r8_2d( sds, data, status, start, stride )
+
+    use parray, only : pa_Init, pa_SetShape, pa_Done
+    use file_hdf_base, only : wpi
+    use file_hdf_base, only : TSds
+    use file_hdf_base, only : wp_int8, wp_int16, wp_int32, wp_int64
+    use file_hdf_base, only : wp_float32, wp_float64
+    use file_hdf_base, only : CheckInfo, GetInfo
+
+    ! --- const ------------------------------
+
+    character(len=*), parameter ::  rname = mname//'/sds_ReadData_r8_2d'
+
+    integer, parameter  ::  rank = 2
+
+    ! --- in/out ----------------------------
+
+    type(TSds), intent(in)              ::  sds
+    real(8), intent(out)             ::  data(:,:)
+    integer, intent(out)                ::  status
+
+    integer, intent(in), optional       ::  start(rank)
+    integer, intent(in), optional       ::  stride(rank)
+
+    ! --- local -------------------------------
+
+    integer                             ::  data_type
+    integer                             ::  the_start(rank)
+    integer                             ::  the_stride(rank)
+    integer(wp_int8 ), pointer          ::  int8 (:,:)
+    integer(wp_int16), pointer          ::  int16(:,:)
+    integer(wp_int32), pointer          ::  int32(:,:)
+    integer(wp_int64), pointer          ::  int64(:,:)
+    real(wp_float32), pointer           ::  float32(:,:)
+    real(wp_float64), pointer           ::  float64(:,:)
+
+    ! --- external ----------------------------
+
+    integer(wpi), external  ::  sfRData
+
+    ! --- begin -------------------------------
+
+    ! check data rank and shape:
+    !call CheckInfo( sds, data_rank=rank, data_dims=shape(data) )
+
+    ! read data of specified kind:
+    the_start  = 0; if ( present(start ) ) the_start  = start
+    the_stride = 1; if ( present(stride) ) the_stride = stride
+    call GetInfo( sds, status, data_type=data_type )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+    select case ( data_type )
+      case ( DFNT_INT8  )
+        call pa_Init( int8  )
+        call pa_SetShape( int8 , shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int8 ), int8  )
+        data = real(int8 ,kind=8)
+        call pa_Done( int8  )
+      case ( DFNT_INT16 )
+        call pa_Init( int16 )
+        call pa_SetShape( int16, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int16), int16 )
+        data = real(int16,kind=8)
+        call pa_Done( int16 )
+      case ( DFNT_INT32 )
+        call pa_Init( int32 )
+        call pa_SetShape( int32, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int32), int32 )
+        data = real(int32,kind=8)
+        call pa_Done( int32 )
+      case ( DFNT_INT64 )
+        call pa_Init( int64 )
+        call pa_SetShape( int64, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int64), int64 )
+        data = real(int64,kind=8)
+        call pa_Done( int64 )
+      case ( DFNT_FLOAT32 )
+        call pa_Init( float32 )
+        call pa_SetShape( float32, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(float32), float32 )
+        data = real(float32,kind=8)
+        call pa_Done( float32 )
+      case ( DFNT_FLOAT64 )
+        call pa_Init( float64 )
+        call pa_SetShape( float64, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(float64), float64 )
+        data = real(float64,kind=8)
+        call pa_Done( float64 )
+      case default
+        write (*,'("ERROR - not implemented for data type ",i6)') data_type
+        write (*,'("ERROR in ",a)') rname; status=1; return
+    end select
+    if ( status == FAIL ) then
+      write (*,'("ERROR - reading data `",a,"`")') trim(sds%name)
+      write (*,'("ERROR in ",a)') rname; status=1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine sds_ReadData_r8_2d
+
+
+  ! ***
+
+
+  subroutine sds_ReadData_r8_3d( sds, data, status, start, stride )
+
+    use parray, only : pa_Init, pa_SetShape, pa_Done
+    use file_hdf_base, only : wpi
+    use file_hdf_base, only : TSds
+    use file_hdf_base, only : wp_int8, wp_int16, wp_int32, wp_int64
+    use file_hdf_base, only : wp_float32, wp_float64
+    use file_hdf_base, only : CheckInfo, GetInfo
+
+    ! --- const ------------------------------
+
+    character(len=*), parameter ::  rname = mname//'/sds_ReadData_r8_3d'
+
+    integer, parameter  ::  rank = 3
+
+    ! --- in/out ----------------------------
+
+    type(TSds), intent(in)              ::  sds
+    real(8), intent(out)             ::  data(:,:,:)
+    integer, intent(out)                ::  status
+
+    integer, intent(in), optional       ::  start(rank)
+    integer, intent(in), optional       ::  stride(rank)
+
+    ! --- local -------------------------------
+
+    integer                             ::  data_type
+    integer                             ::  the_start(rank)
+    integer                             ::  the_stride(rank)
+    integer(wp_int8 ), pointer          ::  int8 (:,:,:)
+    integer(wp_int16), pointer          ::  int16(:,:,:)
+    integer(wp_int32), pointer          ::  int32(:,:,:)
+    integer(wp_int64), pointer          ::  int64(:,:,:)
+    real(wp_float32), pointer           ::  float32(:,:,:)
+    real(wp_float64), pointer           ::  float64(:,:,:)
+
+    ! --- external ----------------------------
+
+    integer(wpi), external  ::  sfRData
+
+    ! --- begin -------------------------------
+
+    ! check data rank and shape:
+    !call CheckInfo( sds, data_rank=rank, data_dims=shape(data) )
+
+    ! read data of specified kind:
+    the_start  = 0; if ( present(start ) ) the_start  = start
+    the_stride = 1; if ( present(stride) ) the_stride = stride
+    call GetInfo( sds, status, data_type=data_type )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+    select case ( data_type )
+      case ( DFNT_INT8  )
+        call pa_Init( int8  )
+        call pa_SetShape( int8 , shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int8 ), int8  )
+        data = real(int8 ,kind=8)
+        call pa_Done( int8  )
+      case ( DFNT_INT16 )
+        call pa_Init( int16 )
+        call pa_SetShape( int16, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int16), int16 )
+        data = real(int16,kind=8)
+        call pa_Done( int16 )
+      case ( DFNT_INT32 )
+        call pa_Init( int32 )
+        call pa_SetShape( int32, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int32), int32 )
+        data = real(int32,kind=8)
+        call pa_Done( int32 )
+      case ( DFNT_INT64 )
+        call pa_Init( int64 )
+        call pa_SetShape( int64, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int64), int64 )
+        data = real(int64,kind=8)
+        call pa_Done( int64 )
+      case ( DFNT_FLOAT32 )
+        call pa_Init( float32 )
+        call pa_SetShape( float32, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(float32), float32 )
+        data = real(float32,kind=8)
+        call pa_Done( float32 )
+      case ( DFNT_FLOAT64 )
+        call pa_Init( float64 )
+        call pa_SetShape( float64, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(float64), float64 )
+        data = real(float64,kind=8)
+        call pa_Done( float64 )
+      case default
+        write (*,'("ERROR - not implemented for data type ",i6)') data_type
+        write (*,'("ERROR in ",a)') rname; status=1; return
+    end select
+    if ( status == FAIL ) then
+      write (*,'("ERROR - reading data `",a,"`")') trim(sds%name)
+      write (*,'("ERROR in ",a)') rname; status=1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine sds_ReadData_r8_3d
+
+
+  ! ***
+
+
+  subroutine sds_ReadData_r8_4d( sds, data, status, start, stride )
+
+    use parray, only : pa_Init, pa_SetShape, pa_Done
+    use file_hdf_base, only : wpi
+    use file_hdf_base, only : TSds
+    use file_hdf_base, only : wp_int8, wp_int16, wp_int32, wp_int64
+    use file_hdf_base, only : wp_float32, wp_float64
+    use file_hdf_base, only : CheckInfo, GetInfo
+
+    ! --- const ------------------------------
+
+    character(len=*), parameter ::  rname = mname//'/sds_ReadData_r8_4d'
+
+    integer, parameter  ::  rank = 4
+
+    ! --- in/out ----------------------------
+
+    type(TSds), intent(in)              ::  sds
+    real(8), intent(out)             ::  data(:,:,:,:)
+    integer, intent(out)                ::  status
+
+    integer, intent(in), optional       ::  start(rank)
+    integer, intent(in), optional       ::  stride(rank)
+
+    ! --- local -------------------------------
+
+    integer                             ::  data_type
+    integer                             ::  the_start(rank)
+    integer                             ::  the_stride(rank)
+    integer(wp_int8 ), pointer          ::  int8 (:,:,:,:)
+    integer(wp_int16), pointer          ::  int16(:,:,:,:)
+    integer(wp_int32), pointer          ::  int32(:,:,:,:)
+    integer(wp_int64), pointer          ::  int64(:,:,:,:)
+    real(wp_float32), pointer           ::  float32(:,:,:,:)
+    real(wp_float64), pointer           ::  float64(:,:,:,:)
+
+    ! --- external ----------------------------
+
+    integer(wpi), external  ::  sfRData
+
+    ! --- begin -------------------------------
+
+    ! check data rank and shape:
+    !call CheckInfo( sds, data_rank=rank, data_dims=shape(data) )
+
+    ! read data of specified kind:
+    the_start  = 0; if ( present(start ) ) the_start  = start
+    the_stride = 1; if ( present(stride) ) the_stride = stride
+    call GetInfo( sds, status, data_type=data_type )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+    select case ( data_type )
+      case ( DFNT_INT8  )
+        call pa_Init( int8  )
+        call pa_SetShape( int8 , shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int8 ), int8  )
+        data = real(int8 ,kind=8)
+        call pa_Done( int8  )
+      case ( DFNT_INT16 )
+        call pa_Init( int16 )
+        call pa_SetShape( int16, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int16), int16 )
+        data = real(int16,kind=8)
+        call pa_Done( int16 )
+      case ( DFNT_INT32 )
+        call pa_Init( int32 )
+        call pa_SetShape( int32, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int32), int32 )
+        data = real(int32,kind=8)
+        call pa_Done( int32 )
+      case ( DFNT_INT64 )
+        call pa_Init( int64 )
+        call pa_SetShape( int64, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int64), int64 )
+        data = real(int64,kind=8)
+        call pa_Done( int64 )
+      case ( DFNT_FLOAT32 )
+        call pa_Init( float32 )
+        call pa_SetShape( float32, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(float32), float32 )
+        data = real(float32,kind=8)
+        call pa_Done( float32 )
+      case ( DFNT_FLOAT64 )
+        call pa_Init( float64 )
+        call pa_SetShape( float64, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(float64), float64 )
+        data = real(float64,kind=8)
+        call pa_Done( float64 )
+      case default
+        write (*,'("ERROR - not implemented for data type ",i6)') data_type
+        write (*,'("ERROR in ",a)') rname; status=1; return
+    end select
+    if ( status == FAIL ) then
+      write (*,'("ERROR - reading data `",a,"`")') trim(sds%name)
+      write (*,'("ERROR in ",a)') rname; status=1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine sds_ReadData_r8_4d
+
+
+  ! ***
+
+
+  subroutine sds_ReadData_r8_5d( sds, data, status, start, stride )
+
+    use parray, only : pa_Init, pa_SetShape, pa_Done
+    use file_hdf_base, only : wpi
+    use file_hdf_base, only : TSds
+    use file_hdf_base, only : wp_int8, wp_int16, wp_int32, wp_int64
+    use file_hdf_base, only : wp_float32, wp_float64
+    use file_hdf_base, only : CheckInfo, GetInfo
+
+    ! --- const ------------------------------
+
+    character(len=*), parameter ::  rname = mname//'/sds_ReadData_r8_5d'
+
+    integer, parameter  ::  rank = 5
+
+    ! --- in/out ----------------------------
+
+    type(TSds), intent(in)              ::  sds
+    real(8), intent(out)             ::  data(:,:,:,:,:)
+    integer, intent(out)                ::  status
+
+    integer, intent(in), optional       ::  start(rank)
+    integer, intent(in), optional       ::  stride(rank)
+
+    ! --- local -------------------------------
+
+    integer                             ::  data_type
+    integer                             ::  the_start(rank)
+    integer                             ::  the_stride(rank)
+    integer(wp_int8 ), pointer          ::  int8 (:,:,:,:,:)
+    integer(wp_int16), pointer          ::  int16(:,:,:,:,:)
+    integer(wp_int32), pointer          ::  int32(:,:,:,:,:)
+    integer(wp_int64), pointer          ::  int64(:,:,:,:,:)
+    real(wp_float32), pointer           ::  float32(:,:,:,:,:)
+    real(wp_float64), pointer           ::  float64(:,:,:,:,:)
+
+    ! --- external ----------------------------
+
+    integer(wpi), external  ::  sfRData
+
+    ! --- begin -------------------------------
+
+    ! check data rank and shape:
+    !call CheckInfo( sds, data_rank=rank, data_dims=shape(data) )
+
+    ! read data of specified kind:
+    the_start  = 0; if ( present(start ) ) the_start  = start
+    the_stride = 1; if ( present(stride) ) the_stride = stride
+    call GetInfo( sds, status, data_type=data_type )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+    select case ( data_type )
+      case ( DFNT_INT8  )
+        call pa_Init( int8  )
+        call pa_SetShape( int8 , shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int8 ), int8  )
+        data = real(int8 ,kind=8)
+        call pa_Done( int8  )
+      case ( DFNT_INT16 )
+        call pa_Init( int16 )
+        call pa_SetShape( int16, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int16), int16 )
+        data = real(int16,kind=8)
+        call pa_Done( int16 )
+      case ( DFNT_INT32 )
+        call pa_Init( int32 )
+        call pa_SetShape( int32, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int32), int32 )
+        data = real(int32,kind=8)
+        call pa_Done( int32 )
+      case ( DFNT_INT64 )
+        call pa_Init( int64 )
+        call pa_SetShape( int64, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int64), int64 )
+        data = real(int64,kind=8)
+        call pa_Done( int64 )
+      case ( DFNT_FLOAT32 )
+        call pa_Init( float32 )
+        call pa_SetShape( float32, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(float32), float32 )
+        data = real(float32,kind=8)
+        call pa_Done( float32 )
+      case ( DFNT_FLOAT64 )
+        call pa_Init( float64 )
+        call pa_SetShape( float64, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(float64), float64 )
+        data = real(float64,kind=8)
+        call pa_Done( float64 )
+      case default
+        write (*,'("ERROR - not implemented for data type ",i6)') data_type
+        write (*,'("ERROR in ",a)') rname; status=1; return
+    end select
+    if ( status == FAIL ) then
+      write (*,'("ERROR - reading data `",a,"`")') trim(sds%name)
+      write (*,'("ERROR in ",a)') rname; status=1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine sds_ReadData_r8_5d
+
+
+  ! ***
+
+
+  subroutine sds_ReadData_r8_6d( sds, data, status, start, stride )
+
+    use parray, only : pa_Init, pa_SetShape, pa_Done
+    use file_hdf_base, only : wpi
+    use file_hdf_base, only : TSds
+    use file_hdf_base, only : wp_int8, wp_int16, wp_int32, wp_int64
+    use file_hdf_base, only : wp_float32, wp_float64
+    use file_hdf_base, only : CheckInfo, GetInfo
+
+    ! --- const ------------------------------
+
+    character(len=*), parameter ::  rname = mname//'/sds_ReadData_r8_6d'
+
+    integer, parameter  ::  rank = 6
+
+    ! --- in/out ----------------------------
+
+    type(TSds), intent(in)              ::  sds
+    real(8), intent(out)             ::  data(:,:,:,:,:,:)
+    integer, intent(out)                ::  status
+
+    integer, intent(in), optional       ::  start(rank)
+    integer, intent(in), optional       ::  stride(rank)
+
+    ! --- local -------------------------------
+
+    integer                             ::  data_type
+    integer                             ::  the_start(rank)
+    integer                             ::  the_stride(rank)
+    integer(wp_int8 ), pointer          ::  int8 (:,:,:,:,:,:)
+    integer(wp_int16), pointer          ::  int16(:,:,:,:,:,:)
+    integer(wp_int32), pointer          ::  int32(:,:,:,:,:,:)
+    integer(wp_int64), pointer          ::  int64(:,:,:,:,:,:)
+    real(wp_float32), pointer           ::  float32(:,:,:,:,:,:)
+    real(wp_float64), pointer           ::  float64(:,:,:,:,:,:)
+
+    ! --- external ----------------------------
+
+    integer(wpi), external  ::  sfRData
+
+    ! --- begin -------------------------------
+
+    ! check data rank and shape:
+    !call CheckInfo( sds, data_rank=rank, data_dims=shape(data) )
+
+    ! read data of specified kind:
+    the_start  = 0; if ( present(start ) ) the_start  = start
+    the_stride = 1; if ( present(stride) ) the_stride = stride
+    call GetInfo( sds, status, data_type=data_type )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+    select case ( data_type )
+      case ( DFNT_INT8  )
+        call pa_Init( int8  )
+        call pa_SetShape( int8 , shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int8 ), int8  )
+        data = real(int8 ,kind=8)
+        call pa_Done( int8  )
+      case ( DFNT_INT16 )
+        call pa_Init( int16 )
+        call pa_SetShape( int16, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int16), int16 )
+        data = real(int16,kind=8)
+        call pa_Done( int16 )
+      case ( DFNT_INT32 )
+        call pa_Init( int32 )
+        call pa_SetShape( int32, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int32), int32 )
+        data = real(int32,kind=8)
+        call pa_Done( int32 )
+      case ( DFNT_INT64 )
+        call pa_Init( int64 )
+        call pa_SetShape( int64, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int64), int64 )
+        data = real(int64,kind=8)
+        call pa_Done( int64 )
+      case ( DFNT_FLOAT32 )
+        call pa_Init( float32 )
+        call pa_SetShape( float32, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(float32), float32 )
+        data = real(float32,kind=8)
+        call pa_Done( float32 )
+      case ( DFNT_FLOAT64 )
+        call pa_Init( float64 )
+        call pa_SetShape( float64, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(float64), float64 )
+        data = real(float64,kind=8)
+        call pa_Done( float64 )
+      case default
+        write (*,'("ERROR - not implemented for data type ",i6)') data_type
+        write (*,'("ERROR in ",a)') rname; status=1; return
+    end select
+    if ( status == FAIL ) then
+      write (*,'("ERROR - reading data `",a,"`")') trim(sds%name)
+      write (*,'("ERROR in ",a)') rname; status=1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine sds_ReadData_r8_6d
+
+
+  ! ***
+
+
+  subroutine sds_ReadData_r8_7d( sds, data, status, start, stride )
+
+    use parray, only : pa_Init, pa_SetShape, pa_Done
+    use file_hdf_base, only : wpi
+    use file_hdf_base, only : TSds
+    use file_hdf_base, only : wp_int8, wp_int16, wp_int32, wp_int64
+    use file_hdf_base, only : wp_float32, wp_float64
+    use file_hdf_base, only : CheckInfo, GetInfo
+
+    ! --- const ------------------------------
+
+    character(len=*), parameter ::  rname = mname//'/sds_ReadData_r8_7d'
+
+    integer, parameter  ::  rank = 7
+
+    ! --- in/out ----------------------------
+
+    type(TSds), intent(in)              ::  sds
+    real(8), intent(out)             ::  data(:,:,:,:,:,:,:)
+    integer, intent(out)                ::  status
+
+    integer, intent(in), optional       ::  start(rank)
+    integer, intent(in), optional       ::  stride(rank)
+
+    ! --- local -------------------------------
+
+    integer                             ::  data_type
+    integer                             ::  the_start(rank)
+    integer                             ::  the_stride(rank)
+    integer(wp_int8 ), pointer          ::  int8 (:,:,:,:,:,:,:)
+    integer(wp_int16), pointer          ::  int16(:,:,:,:,:,:,:)
+    integer(wp_int32), pointer          ::  int32(:,:,:,:,:,:,:)
+    integer(wp_int64), pointer          ::  int64(:,:,:,:,:,:,:)
+    real(wp_float32), pointer           ::  float32(:,:,:,:,:,:,:)
+    real(wp_float64), pointer           ::  float64(:,:,:,:,:,:,:)
+
+    ! --- external ----------------------------
+
+    integer(wpi), external  ::  sfRData
+
+    ! --- begin -------------------------------
+
+    ! check data rank and shape:
+    !call CheckInfo( sds, data_rank=rank, data_dims=shape(data) )
+
+    ! read data of specified kind:
+    the_start  = 0; if ( present(start ) ) the_start  = start
+    the_stride = 1; if ( present(stride) ) the_stride = stride
+    call GetInfo( sds, status, data_type=data_type )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+    select case ( data_type )
+      case ( DFNT_INT8  )
+        call pa_Init( int8  )
+        call pa_SetShape( int8 , shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int8 ), int8  )
+        data = real(int8 ,kind=8)
+        call pa_Done( int8  )
+      case ( DFNT_INT16 )
+        call pa_Init( int16 )
+        call pa_SetShape( int16, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int16), int16 )
+        data = real(int16,kind=8)
+        call pa_Done( int16 )
+      case ( DFNT_INT32 )
+        call pa_Init( int32 )
+        call pa_SetShape( int32, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int32), int32 )
+        data = real(int32,kind=8)
+        call pa_Done( int32 )
+      case ( DFNT_INT64 )
+        call pa_Init( int64 )
+        call pa_SetShape( int64, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(int64), int64 )
+        data = real(int64,kind=8)
+        call pa_Done( int64 )
+      case ( DFNT_FLOAT32 )
+        call pa_Init( float32 )
+        call pa_SetShape( float32, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(float32), float32 )
+        data = real(float32,kind=8)
+        call pa_Done( float32 )
+      case ( DFNT_FLOAT64 )
+        call pa_Init( float64 )
+        call pa_SetShape( float64, shape(data) )
+        status = sfRData( sds%id, the_start, the_stride, shape(float64), float64 )
+        data = real(float64,kind=8)
+        call pa_Done( float64 )
+      case default
+        write (*,'("ERROR - not implemented for data type ",i6)') data_type
+        write (*,'("ERROR in ",a)') rname; status=1; return
+    end select
+    if ( status == FAIL ) then
+      write (*,'("ERROR - reading data `",a,"`")') trim(sds%name)
+      write (*,'("ERROR in ",a)') rname; status=1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine sds_ReadData_r8_7d
+
+
+
+  ! =============================================================
+  ! === Write data
+  ! =============================================================
+
+
+  subroutine sds_WriteData_r8_1d( sds, data, status, start, stride )
+
+    use parray, only : pa_Init, pa_SetShape, pa_Done
+    use file_hdf_base, only : wpi
+    use file_hdf_base, only : TSds
+    use file_hdf_base, only : wp_int8, wp_int16, wp_int32, wp_int64
+    use file_hdf_base, only : wp_float32, wp_float64
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/sds_WriteData_r8_1d'
+
+    integer, parameter   ::  rank = 1
+
+    ! --- in/out -------------------------
+
+    type(TSds), intent(in)                    ::  sds
+    real(8), intent(in)                    ::  data(:)
+    integer, intent(out)                      ::  status
+
+    integer, intent(in), optional             ::  start(:)
+    integer, intent(in), optional             ::  stride(:)
+
+    ! --- local -------------------------------
+
+    integer               ::  strt(7), strd(7)
+    integer               ::  shap(7), ns
+
+    integer(wp_int8 ), pointer          ::  int8 (:)
+    integer(wp_int16), pointer          ::  int16(:)
+    integer(wp_int32), pointer          ::  int32(:)
+    integer(wp_int64), pointer          ::  int64(:)
+    real(wp_float32), pointer           ::  float32(:)
+    real(wp_float64), pointer           ::  float64(:)
+
+    ! --- external ----------------------------
+
+    integer(wpi), external  ::  sfWData
+
+    ! --- begin -------------------------------
+
+    !! check shape
+    !if ( any( shape(data) /= sds%shp(1:sds%rnk) ) ) then
+    !  print *, 'Shape of data does not match shape specified during creation:'
+    !  print *, '  data        : ', shape(data)
+    !  print *, '  created for : ', sds%shp(1:sds%rnk)
+    !  stop 'FATAL ERROR IN sds_WriteData_r8_1d'
+    !end if
+
+    ! set shape of data, extend with dimensions 1
+    shap = 1
+    shap(1:rank) = shape(data)
+    ns = rank
+    if ( present(start ) ) ns = size(start)
+
+    ! write data:
+    strt = 0; if ( present(start ) ) strt(1:ns) = start
+    strd = 1; if ( present(stride) ) strd(1:ns) = stride
+    select case ( sds%typ )
+      case ( 'int' )
+        select case ( sds%knd )
+          case ( 1 )
+            call pa_Init( int8 )
+            call pa_SetShape( int8 , shape(data) )
+            int8 = int(data,kind=1)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int8 )
+            call pa_Done( int8  )
+          case ( 2 )
+            call pa_Init( int16 )
+            call pa_SetShape( int16 , shape(data) )
+            int16 = int(data,kind=2)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int16 )
+            call pa_Done( int16  )
+          case ( 4 )
+            call pa_Init( int32 )
+            call pa_SetShape( int32 , shape(data) )
+            int32 = int(data,kind=4)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int32 )
+            call pa_Done( int32  )
+          case ( 8 )
+            call pa_Init( int64 )
+            call pa_SetShape( int64 , shape(data) )
+            int64 = int(data,kind=8)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int64 )
+            call pa_Done( int64  )
+          case default
+            write (*,'("ERROR - unsupported integer kind : ",i4)') sds%knd
+            write (*,'("ERROR in ",a)') rname; status=1; return
+        end select
+      case ( 'flt' )
+        select case ( sds%knd )
+          case ( 4 )
+            call pa_Init( float32 )
+            call pa_SetShape( float32 , shape(data) )
+            float32 = real(data,kind=4)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), float32 )
+            call pa_Done( float32  )
+          case ( 8 )
+            call pa_Init( float64 )
+            call pa_SetShape( float64 , shape(data) )
+            float64 = real(data,kind=8)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), float64 )
+            call pa_Done( float64  )
+          case default
+            write (*,'("ERROR - unsupported real kind : ",i4)') sds%knd
+            write (*,'("ERROR in ",a)') rname; status=1; return
+        end select
+      case default
+        write (*,'("ERROR - unknown sds%typ : ",a)') trim(sds%typ)
+        write (*,'("ERROR in ",a)') rname; status=1; return
+    end select
+    if ( status == FAIL ) then
+      write (*,'("ERROR - writing data set:")')
+      write (*,'("ERROR -   data set : ",a)') trim(sds%name)
+      write (*,'("ERROR -   hdf file : ",a)') trim(sds%hdfname)
+      write (*,'("ERROR in ",a)') rname; status=1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine sds_WriteData_r8_1d
+
+
+  ! ***
+
+
+  subroutine sds_WriteData_r8_2d( sds, data, status, start, stride )
+
+    use parray, only : pa_Init, pa_SetShape, pa_Done
+    use file_hdf_base, only : wpi
+    use file_hdf_base, only : TSds
+    use file_hdf_base, only : wp_int8, wp_int16, wp_int32, wp_int64
+    use file_hdf_base, only : wp_float32, wp_float64
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/sds_WriteData_r8_2d'
+
+    integer, parameter   ::  rank = 2
+
+    ! --- in/out -------------------------
+
+    type(TSds), intent(in)                    ::  sds
+    real(8), intent(in)                    ::  data(:,:)
+    integer, intent(out)                      ::  status
+
+    integer, intent(in), optional             ::  start(:)
+    integer, intent(in), optional             ::  stride(:)
+
+    ! --- local -------------------------------
+
+    integer               ::  strt(7), strd(7)
+    integer               ::  shap(7), ns
+
+    integer(wp_int8 ), pointer                ::  int8 (:,:)
+    integer(wp_int16), pointer                ::  int16(:,:)
+    integer(wp_int32), pointer                ::  int32(:,:)
+    integer(wp_int64), pointer                ::  int64(:,:)
+    real(wp_float32), pointer                 ::  float32(:,:)
+    real(wp_float64), pointer                 ::  float64(:,:)
+
+    ! --- external ----------------------------
+
+    integer(wpi), external  ::  sfWData
+
+    ! --- begin -------------------------------
+
+    !! check shape
+    !if ( any( shape(data) /= sds%shp(1:sds%rnk) ) ) then
+    !  print *, 'Shape of data does not match shape specified during creation:'
+    !  print *, '  data        : ', shape(data)
+    !  print *, '  created for : ', sds%shp(1:sds%rnk)
+    !  stop 'FATAL ERROR IN sds_WriteData_r8_1d'
+    !end if
+
+    ! set shape of data, extend with dimensions 1
+    shap = 1
+    shap(1:rank) = shape(data)
+    ns = rank
+    if ( present(start ) ) ns = size(start)
+
+    ! write data:
+    strt = 0; if ( present(start ) ) strt(1:ns) = start
+    strd = 1; if ( present(stride) ) strd(1:ns) = stride
+    select case ( sds%typ )
+      case ( 'int' )
+        select case ( sds%knd )
+          case ( 1 )
+            call pa_Init( int8 )
+            call pa_SetShape( int8 , shape(data) )
+            int8 = int(data,kind=1)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int8 )
+            call pa_Done( int8  )
+          case ( 2 )
+            call pa_Init( int16 )
+            call pa_SetShape( int16 , shape(data) )
+            int16 = int(data,kind=2)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int16 )
+            call pa_Done( int16  )
+          case ( 4 )
+            call pa_Init( int32 )
+            call pa_SetShape( int32 , shape(data) )
+            int32 = int(data,kind=4)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int32 )
+            call pa_Done( int32  )
+          case ( 8 )
+            call pa_Init( int64 )
+            call pa_SetShape( int64 , shape(data) )
+            int64 = int(data,kind=8)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int64 )
+            call pa_Done( int64  )
+          case default
+            write (*,'("ERROR - unsupported integer kind : ",i4)') sds%knd
+            write (*,'("ERROR in ",a)') rname; status=1; return
+        end select
+      case ( 'flt' )
+        select case ( sds%knd )
+          case ( 4 )
+            call pa_Init( float32 )
+            call pa_SetShape( float32 , shape(data) )
+            float32 = real(data,kind=4)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), float32 )
+            call pa_Done( float32  )
+          case ( 8 )
+            call pa_Init( float64 )
+            call pa_SetShape( float64 , shape(data) )
+            float64 = real(data,kind=8)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), float64 )
+            call pa_Done( float64  )
+          case default
+            write (*,'("ERROR - unsupported real kind : ",i4)') sds%knd
+            write (*,'("ERROR in ",a)') rname; status=1; return
+        end select
+      case default
+        write (*,'("ERROR - unknown sds%typ : ",a)') trim(sds%typ)
+        write (*,'("ERROR in ",a)') rname; status=1; return
+    end select
+    if ( status == FAIL ) then
+      write (*,'("ERROR - writing data set:")')
+      write (*,'("ERROR -   data set : ",a)') trim(sds%name)
+      write (*,'("ERROR -   hdf file : ",a)') trim(sds%hdfname)
+      write (*,'("ERROR in ",a)') rname; status=1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine sds_WriteData_r8_2d
+
+
+  ! ***
+
+
+  subroutine sds_WriteData_r8_3d( sds, data, status, start, stride )
+
+    use parray, only : pa_Init, pa_SetShape, pa_Done
+    use file_hdf_base, only : wpi
+    use file_hdf_base, only : TSds
+    use file_hdf_base, only : wp_int8, wp_int16, wp_int32, wp_int64
+    use file_hdf_base, only : wp_float32, wp_float64
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/sds_WriteData_r8_3d'
+
+    integer, parameter   ::  rank = 3
+
+    ! --- in/out -------------------------
+
+    type(TSds), intent(in)                    ::  sds
+    real(8), intent(in)                    ::  data(:,:,:)
+    integer, intent(out)                      ::  status
+
+    integer, intent(in), optional             ::  start(:)
+    integer, intent(in), optional             ::  stride(:)
+
+    ! --- local -------------------------------
+
+    integer               ::  strt(7), strd(7)
+    integer               ::  shap(7), ns
+
+    integer(wp_int8 ), pointer                ::  int8 (:,:,:)
+    integer(wp_int16), pointer                ::  int16(:,:,:)
+    integer(wp_int32), pointer                ::  int32(:,:,:)
+    integer(wp_int64), pointer                ::  int64(:,:,:)
+    real(wp_float32), pointer                 ::  float32(:,:,:)
+    real(wp_float64), pointer                 ::  float64(:,:,:)
+
+    ! --- external ----------------------------
+
+    integer(wpi), external  ::  sfWData
+
+    ! --- begin -------------------------------
+
+    !! check shape
+    !if ( any( shape(data) /= sds%shp(1:sds%rnk) ) ) then
+    !  print *, 'Shape of data does not match shape specified during creation:'
+    !  print *, '  data        : ', shape(data)
+    !  print *, '  created for : ', sds%shp(1:sds%rnk)
+    !  stop 'FATAL ERROR IN sds_WriteData_r8_1d'
+    !end if
+
+    ! set shape of data, extend with dimensions 1
+    shap = 1
+    shap(1:rank) = shape(data)
+    ns = rank
+    if ( present(start ) ) ns = size(start)
+
+    ! write data:
+    strt = 0; if ( present(start ) ) strt(1:ns) = start
+    strd = 1; if ( present(stride) ) strd(1:ns) = stride
+    select case ( sds%typ )
+      case ( 'int' )
+        select case ( sds%knd )
+          case ( 1 )
+            call pa_Init( int8 )
+            call pa_SetShape( int8 , shape(data) )
+            int8 = int(data,kind=1)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int8 )
+            call pa_Done( int8  )
+          case ( 2 )
+            call pa_Init( int16 )
+            call pa_SetShape( int16 , shape(data) )
+            int16 = int(data,kind=2)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int16 )
+            call pa_Done( int16  )
+          case ( 4 )
+            call pa_Init( int32 )
+            call pa_SetShape( int32 , shape(data) )
+            int32 = int(data,kind=4)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int32 )
+            call pa_Done( int32  )
+          case ( 8 )
+            call pa_Init( int64 )
+            call pa_SetShape( int64 , shape(data) )
+            int64 = int(data,kind=8)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int64 )
+            call pa_Done( int64  )
+          case default
+            write (*,'("ERROR - unsupported integer kind : ",i4)') sds%knd
+            write (*,'("ERROR in ",a)') rname; status=1; return
+        end select
+      case ( 'flt' )
+        select case ( sds%knd )
+          case ( 4 )
+            call pa_Init( float32 )
+            call pa_SetShape( float32 , shape(data) )
+            float32 = real(data,kind=4)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), float32 )
+            call pa_Done( float32  )
+          case ( 8 )
+            call pa_Init( float64 )
+            call pa_SetShape( float64 , shape(data) )
+            float64 = real(data,kind=8)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), float64 )
+            call pa_Done( float64  )
+          case default
+            write (*,'("ERROR - unsupported real kind : ",i4)') sds%knd
+            write (*,'("ERROR in ",a)') rname; status=1; return
+        end select
+      case default
+        write (*,'("ERROR - unknown sds%typ : ",a)') trim(sds%typ)
+        write (*,'("ERROR in ",a)') rname; status=1; return
+    end select
+    if ( status == FAIL ) then
+      write (*,'("ERROR - writing data set:")')
+      write (*,'("ERROR -   data set : ",a)') trim(sds%name)
+      write (*,'("ERROR -   hdf file : ",a)') trim(sds%hdfname)
+      write (*,'("ERROR in ",a)') rname; status=1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine sds_WriteData_r8_3d
+
+
+  ! ***
+
+
+  subroutine sds_WriteData_r8_4d( sds, data, status, start, stride )
+
+    use parray, only : pa_Init, pa_SetShape, pa_Done
+    use file_hdf_base, only : wpi
+    use file_hdf_base, only : TSds
+    use file_hdf_base, only : wp_int8, wp_int16, wp_int32, wp_int64
+    use file_hdf_base, only : wp_float32, wp_float64
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/sds_WriteData_r8_4d'
+
+    integer, parameter   ::  rank = 4
+
+    ! --- in/out -------------------------
+
+    type(TSds), intent(in)                    ::  sds
+    real(8), intent(in)                    ::  data(:,:,:,:)
+    integer, intent(out)                      ::  status
+
+    integer, intent(in), optional             ::  start(:)
+    integer, intent(in), optional             ::  stride(:)
+
+    ! --- local -------------------------------
+
+    integer               ::  strt(7), strd(7)
+    integer               ::  shap(7), ns
+
+    integer(wp_int8 ), pointer                ::  int8 (:,:,:,:)
+    integer(wp_int16), pointer                ::  int16(:,:,:,:)
+    integer(wp_int32), pointer                ::  int32(:,:,:,:)
+    integer(wp_int64), pointer                ::  int64(:,:,:,:)
+    real(wp_float32), pointer                 ::  float32(:,:,:,:)
+    real(wp_float64), pointer                 ::  float64(:,:,:,:)
+
+    ! --- external ----------------------------
+
+    integer(wpi), external  ::  sfWData
+
+    ! --- begin -------------------------------
+
+    !! check shape
+    !if ( any( shape(data) /= sds%shp(1:sds%rnk) ) ) then
+    !  print *, 'Shape of data does not match shape specified during creation:'
+    !  print *, '  data        : ', shape(data)
+    !  print *, '  created for : ', sds%shp(1:sds%rnk)
+    !  stop 'FATAL ERROR IN sds_WriteData_r8_1d'
+    !end if
+
+    ! set shape of data, extend with dimensions 1
+    shap = 1
+    shap(1:rank) = shape(data)
+    ns = rank
+    if ( present(start ) ) ns = size(start)
+
+    ! write data:
+    strt = 0; if ( present(start ) ) strt(1:ns) = start
+    strd = 1; if ( present(stride) ) strd(1:ns) = stride
+    select case ( sds%typ )
+      case ( 'int' )
+        select case ( sds%knd )
+          case ( 1 )
+            call pa_Init( int8 )
+            call pa_SetShape( int8 , shape(data) )
+            int8 = int(data,kind=1)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int8 )
+            call pa_Done( int8  )
+          case ( 2 )
+            call pa_Init( int16 )
+            call pa_SetShape( int16 , shape(data) )
+            int16 = int(data,kind=2)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int16 )
+            call pa_Done( int16  )
+          case ( 4 )
+            call pa_Init( int32 )
+            call pa_SetShape( int32 , shape(data) )
+            int32 = int(data,kind=4)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int32 )
+            call pa_Done( int32  )
+          case ( 8 )
+            call pa_Init( int64 )
+            call pa_SetShape( int64 , shape(data) )
+            int64 = int(data,kind=8)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int64 )
+            call pa_Done( int64  )
+          case default
+            write (*,'("ERROR - unsupported integer kind : ",i4)') sds%knd
+            write (*,'("ERROR in ",a)') rname; status=1; return
+        end select
+      case ( 'flt' )
+        select case ( sds%knd )
+          case ( 4 )
+            call pa_Init( float32 )
+            call pa_SetShape( float32 , shape(data) )
+            float32 = real(data,kind=4)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), float32 )
+            call pa_Done( float32  )
+          case ( 8 )
+            call pa_Init( float64 )
+            call pa_SetShape( float64 , shape(data) )
+            float64 = real(data,kind=8)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), float64 )
+            call pa_Done( float64  )
+          case default
+            write (*,'("ERROR - unsupported real kind : ",i4)') sds%knd
+            write (*,'("ERROR in ",a)') rname; status=1; return
+        end select
+      case default
+        write (*,'("ERROR - unknown sds%typ : ",a)') trim(sds%typ)
+        write (*,'("ERROR in ",a)') rname; status=1; return
+    end select
+    if ( status == FAIL ) then
+      write (*,'("ERROR - writing data set:")')
+      write (*,'("ERROR -   data set : ",a)') trim(sds%name)
+      write (*,'("ERROR -   hdf file : ",a)') trim(sds%hdfname)
+      write (*,'("ERROR in ",a)') rname; status=1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine sds_WriteData_r8_4d
+
+
+  ! ***
+
+
+  subroutine sds_WriteData_r8_5d( sds, data, status, start, stride )
+
+    use parray, only : pa_Init, pa_SetShape, pa_Done
+    use file_hdf_base, only : wpi
+    use file_hdf_base, only : TSds
+    use file_hdf_base, only : wp_int8, wp_int16, wp_int32, wp_int64
+    use file_hdf_base, only : wp_float32, wp_float64
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/sds_WriteData_r8_5d'
+
+    integer, parameter   ::  rank = 5
+
+    ! --- in/out -------------------------
+
+    type(TSds), intent(in)                    ::  sds
+    real(8), intent(in)                    ::  data(:,:,:,:,:)
+    integer, intent(out)                      ::  status
+
+    integer, intent(in), optional             ::  start(:)
+    integer, intent(in), optional             ::  stride(:)
+
+    ! --- local -------------------------------
+
+    integer               ::  strt(7), strd(7)
+    integer               ::  shap(7), ns
+
+    integer(wp_int8 ), pointer                ::  int8 (:,:,:,:,:)
+    integer(wp_int16), pointer                ::  int16(:,:,:,:,:)
+    integer(wp_int32), pointer                ::  int32(:,:,:,:,:)
+    integer(wp_int64), pointer                ::  int64(:,:,:,:,:)
+    real(wp_float32), pointer                 ::  float32(:,:,:,:,:)
+    real(wp_float64), pointer                 ::  float64(:,:,:,:,:)
+
+    ! --- external ----------------------------
+
+    integer(wpi), external  ::  sfWData
+
+    ! --- begin -------------------------------
+
+    !! check shape
+    !if ( any( shape(data) /= sds%shp(1:sds%rnk) ) ) then
+    !  print *, 'Shape of data does not match shape specified during creation:'
+    !  print *, '  data        : ', shape(data)
+    !  print *, '  created for : ', sds%shp(1:sds%rnk)
+    !  stop 'FATAL ERROR IN sds_WriteData_r8_1d'
+    !end if
+
+    ! set shape of data, extend with dimensions 1
+    shap = 1
+    shap(1:rank) = shape(data)
+    ns = rank
+    if ( present(start ) ) ns = size(start)
+
+    ! write data:
+    strt = 0; if ( present(start ) ) strt(1:ns) = start
+    strd = 1; if ( present(stride) ) strd(1:ns) = stride
+    select case ( sds%typ )
+      case ( 'int' )
+        select case ( sds%knd )
+          case ( 1 )
+            call pa_Init( int8 )
+            call pa_SetShape( int8 , shape(data) )
+            int8 = int(data,kind=1)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int8 )
+            call pa_Done( int8  )
+          case ( 2 )
+            call pa_Init( int16 )
+            call pa_SetShape( int16 , shape(data) )
+            int16 = int(data,kind=2)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int16 )
+            call pa_Done( int16  )
+          case ( 4 )
+            call pa_Init( int32 )
+            call pa_SetShape( int32 , shape(data) )
+            int32 = int(data,kind=4)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int32 )
+            call pa_Done( int32  )
+          case ( 8 )
+            call pa_Init( int64 )
+            call pa_SetShape( int64 , shape(data) )
+            int64 = int(data,kind=8)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int64 )
+            call pa_Done( int64  )
+          case default
+            write (*,'("ERROR - unsupported integer kind : ",i4)') sds%knd
+            write (*,'("ERROR in ",a)') rname; status=1; return
+        end select
+      case ( 'flt' )
+        select case ( sds%knd )
+          case ( 4 )
+            call pa_Init( float32 )
+            call pa_SetShape( float32 , shape(data) )
+            float32 = real(data,kind=4)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), float32 )
+            call pa_Done( float32  )
+          case ( 8 )
+            call pa_Init( float64 )
+            call pa_SetShape( float64 , shape(data) )
+            float64 = real(data,kind=8)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), float64 )
+            call pa_Done( float64  )
+          case default
+            write (*,'("ERROR - unsupported real kind : ",i4)') sds%knd
+            write (*,'("ERROR in ",a)') rname; status=1; return
+        end select
+      case default
+        write (*,'("ERROR - unknown sds%typ : ",a)') trim(sds%typ)
+        write (*,'("ERROR in ",a)') rname; status=1; return
+    end select
+    if ( status == FAIL ) then
+      write (*,'("ERROR - writing data set:")')
+      write (*,'("ERROR -   data set : ",a)') trim(sds%name)
+      write (*,'("ERROR -   hdf file : ",a)') trim(sds%hdfname)
+      write (*,'("ERROR in ",a)') rname; status=1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine sds_WriteData_r8_5d
+
+
+  ! ***
+
+
+  subroutine sds_WriteData_r8_6d( sds, data, status, start, stride )
+
+    use parray, only : pa_Init, pa_SetShape, pa_Done
+    use file_hdf_base, only : wpi
+    use file_hdf_base, only : TSds
+    use file_hdf_base, only : wp_int8, wp_int16, wp_int32, wp_int64
+    use file_hdf_base, only : wp_float32, wp_float64
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/sds_WriteData_r8_6d'
+
+    integer, parameter   ::  rank = 6
+
+    ! --- in/out -------------------------
+
+    type(TSds), intent(in)                    ::  sds
+    real(8), intent(in)                    ::  data(:,:,:,:,:,:)
+    integer, intent(out)                      ::  status
+
+    integer, intent(in), optional             ::  start(:)
+    integer, intent(in), optional             ::  stride(:)
+
+    ! --- local -------------------------------
+
+    integer               ::  strt(7), strd(7)
+    integer               ::  shap(7), ns
+
+    integer(wp_int8 ), pointer                ::  int8 (:,:,:,:,:,:)
+    integer(wp_int16), pointer                ::  int16(:,:,:,:,:,:)
+    integer(wp_int32), pointer                ::  int32(:,:,:,:,:,:)
+    integer(wp_int64), pointer                ::  int64(:,:,:,:,:,:)
+    real(wp_float32), pointer                 ::  float32(:,:,:,:,:,:)
+    real(wp_float64), pointer                 ::  float64(:,:,:,:,:,:)
+
+    ! --- external ----------------------------
+
+    integer(wpi), external  ::  sfWData
+
+    ! --- begin -------------------------------
+
+    !! check shape
+    !if ( any( shape(data) /= sds%shp(1:sds%rnk) ) ) then
+    !  print *, 'Shape of data does not match shape specified during creation:'
+    !  print *, '  data        : ', shape(data)
+    !  print *, '  created for : ', sds%shp(1:sds%rnk)
+    !  stop 'FATAL ERROR IN sds_WriteData_r8_1d'
+    !end if
+
+    ! set shape of data, extend with dimensions 1
+    shap = 1
+    shap(1:rank) = shape(data)
+    ns = rank
+    if ( present(start ) ) ns = size(start)
+
+    ! write data:
+    strt = 0; if ( present(start ) ) strt(1:ns) = start
+    strd = 1; if ( present(stride) ) strd(1:ns) = stride
+    select case ( sds%typ )
+      case ( 'int' )
+        select case ( sds%knd )
+          case ( 1 )
+            call pa_Init( int8 )
+            call pa_SetShape( int8 , shape(data) )
+            int8 = int(data,kind=1)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int8 )
+            call pa_Done( int8  )
+          case ( 2 )
+            call pa_Init( int16 )
+            call pa_SetShape( int16 , shape(data) )
+            int16 = int(data,kind=2)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int16 )
+            call pa_Done( int16  )
+          case ( 4 )
+            call pa_Init( int32 )
+            call pa_SetShape( int32 , shape(data) )
+            int32 = int(data,kind=4)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int32 )
+            call pa_Done( int32  )
+          case ( 8 )
+            call pa_Init( int64 )
+            call pa_SetShape( int64 , shape(data) )
+            int64 = int(data,kind=8)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int64 )
+            call pa_Done( int64  )
+          case default
+            write (*,'("ERROR - unsupported integer kind : ",i4)') sds%knd
+            write (*,'("ERROR in ",a)') rname; status=1; return
+        end select
+      case ( 'flt' )
+        select case ( sds%knd )
+          case ( 4 )
+            call pa_Init( float32 )
+            call pa_SetShape( float32 , shape(data) )
+            float32 = real(data,kind=4)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), float32 )
+            call pa_Done( float32  )
+          case ( 8 )
+            call pa_Init( float64 )
+            call pa_SetShape( float64 , shape(data) )
+            float64 = real(data,kind=8)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), float64 )
+            call pa_Done( float64  )
+          case default
+            write (*,'("ERROR - unsupported real kind : ",i4)') sds%knd
+            write (*,'("ERROR in ",a)') rname; status=1; return
+        end select
+      case default
+        write (*,'("ERROR - unknown sds%typ : ",a)') trim(sds%typ)
+        write (*,'("ERROR in ",a)') rname; status=1; return
+    end select
+    if ( status == FAIL ) then
+      write (*,'("ERROR - writing data set:")')
+      write (*,'("ERROR -   data set : ",a)') trim(sds%name)
+      write (*,'("ERROR -   hdf file : ",a)') trim(sds%hdfname)
+      write (*,'("ERROR in ",a)') rname; status=1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine sds_WriteData_r8_6d
+
+
+  ! ***
+
+
+  subroutine sds_WriteData_r8_7d( sds, data, status, start, stride )
+
+    use parray, only : pa_Init, pa_SetShape, pa_Done
+    use file_hdf_base, only : wpi
+    use file_hdf_base, only : TSds
+    use file_hdf_base, only : wp_int8, wp_int16, wp_int32, wp_int64
+    use file_hdf_base, only : wp_float32, wp_float64
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/sds_WriteData_r8_7d'
+
+    integer, parameter   ::  rank = 7
+
+    ! --- in/out -------------------------
+
+    type(TSds), intent(in)                    ::  sds
+    real(8), intent(in)                    ::  data(:,:,:,:,:,:,:)
+    integer, intent(out)                      ::  status
+
+    integer, intent(in), optional             ::  start(:)
+    integer, intent(in), optional             ::  stride(:)
+
+    ! --- local -------------------------------
+
+    integer               ::  strt(7), strd(7)
+    integer               ::  shap(7), ns
+
+    integer(wp_int8 ), pointer                ::  int8 (:,:,:,:,:,:,:)
+    integer(wp_int16), pointer                ::  int16(:,:,:,:,:,:,:)
+    integer(wp_int32), pointer                ::  int32(:,:,:,:,:,:,:)
+    integer(wp_int64), pointer                ::  int64(:,:,:,:,:,:,:)
+    real(wp_float32), pointer                 ::  float32(:,:,:,:,:,:,:)
+    real(wp_float64), pointer                 ::  float64(:,:,:,:,:,:,:)
+
+    ! --- external ----------------------------
+
+    integer(wpi), external  ::  sfWData
+
+    ! --- begin -------------------------------
+
+    !! check shape
+    !if ( any( shape(data) /= sds%shp(1:sds%rnk) ) ) then
+    !  print *, 'Shape of data does not match shape specified during creation:'
+    !  print *, '  data        : ', shape(data)
+    !  print *, '  created for : ', sds%shp(1:sds%rnk)
+    !  stop 'FATAL ERROR IN sds_WriteData_r8_1d'
+    !end if
+
+    ! set shape of data, extend with dimensions 1
+    shap = 1
+    shap(1:rank) = shape(data)
+    ns = rank
+    if ( present(start ) ) ns = size(start)
+
+    ! write data:
+    strt = 0; if ( present(start ) ) strt(1:ns) = start
+    strd = 1; if ( present(stride) ) strd(1:ns) = stride
+    select case ( sds%typ )
+      case ( 'int' )
+        select case ( sds%knd )
+          case ( 1 )
+            call pa_Init( int8 )
+            call pa_SetShape( int8 , shape(data) )
+            int8 = int(data,kind=1)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int8 )
+            call pa_Done( int8  )
+          case ( 2 )
+            call pa_Init( int16 )
+            call pa_SetShape( int16 , shape(data) )
+            int16 = int(data,kind=2)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int16 )
+            call pa_Done( int16  )
+          case ( 4 )
+            call pa_Init( int32 )
+            call pa_SetShape( int32 , shape(data) )
+            int32 = int(data,kind=4)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int32 )
+            call pa_Done( int32  )
+          case ( 8 )
+            call pa_Init( int64 )
+            call pa_SetShape( int64 , shape(data) )
+            int64 = int(data,kind=8)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), int64 )
+            call pa_Done( int64  )
+          case default
+            write (*,'("ERROR - unsupported integer kind : ",i4)') sds%knd
+            write (*,'("ERROR in ",a)') rname; status=1; return
+        end select
+      case ( 'flt' )
+        select case ( sds%knd )
+          case ( 4 )
+            call pa_Init( float32 )
+            call pa_SetShape( float32 , shape(data) )
+            float32 = real(data,kind=4)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), float32 )
+            call pa_Done( float32  )
+          case ( 8 )
+            call pa_Init( float64 )
+            call pa_SetShape( float64 , shape(data) )
+            float64 = real(data,kind=8)
+            status = sfWData( sds%id, strt(1:ns), strd(1:ns), shap(1:ns), float64 )
+            call pa_Done( float64  )
+          case default
+            write (*,'("ERROR - unsupported real kind : ",i4)') sds%knd
+            write (*,'("ERROR in ",a)') rname; status=1; return
+        end select
+      case default
+        write (*,'("ERROR - unknown sds%typ : ",a)') trim(sds%typ)
+        write (*,'("ERROR in ",a)') rname; status=1; return
+    end select
+    if ( status == FAIL ) then
+      write (*,'("ERROR - writing data set:")')
+      write (*,'("ERROR -   data set : ",a)') trim(sds%name)
+      write (*,'("ERROR -   hdf file : ",a)') trim(sds%hdfname)
+      write (*,'("ERROR in ",a)') rname; status=1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine sds_WriteData_r8_7d
+
+
+
+
+  ! ############################################################
+  ! ###
+  ! ### dimensions
+  ! ###
+  ! ############################################################
+
+
+  ! ================================================================
+  ! set dimension scale
+  ! ================================================================
+
+
+  subroutine dim_SetScale_r8( sdim, scale, status, knd )
+
+    use file_hdf_base, only : wpi
+    use file_hdf_base, only : TSdsDim
+    use file_hdf_base, only : wp_float32, wp_float64
+
+    ! --- in/out -------------------------
+
+    type(TSdsDim), intent(in)           ::  sdim
+    real(8), intent(in)              ::  scale(:)
+    integer, intent(out)                ::  status
+
+    integer, intent(in), optional       ::  knd
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/dim_SetScale_r8'
+
+    ! --- local ---------------------------
+
+    integer              ::  rkind
+
+    ! --- external ---------------------------
+
+    integer(wpi), external   :: sfSDScale
+
+    ! --- begin ---------------------------
+
+    rkind = kind(scale)
+    if ( present(knd) ) rkind = knd
+
+    select case ( rkind )
+      case ( 4 )
+        status = sfSDScale( sdim%id, size(scale), DFNT_FLOAT32, real(scale,kind=wp_float32) )
+      case ( 8 )
+        status = sfSDScale( sdim%id, size(scale), DFNT_FLOAT64, real(scale,kind=wp_float64) )
+      case default
+        write (*,'("ERROR - unsupported real kind : ",i4)') rkind
+        write (*,'("ERROR in ",a)') rname; status=1; return
+    end select
+    if ( status /= SUCCEED ) then
+      write (*,'("ERROR - writing scale")')
+      write (*,'("ERROR in ",a)') rname; status=1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine dim_SetScale_r8
+
+
+  ! ================================================================
+  ! set dimension stuff
+  ! ================================================================
+
+
+  subroutine sds_SetDim_r8( sds, dim_index, name, unit, scale, status, knd )
+
+    use file_hdf_base, only : TSds, TSdsDim, Init, Done
+    use file_hdf_base, only : MAX_DATA_RANK
+    use file_hdf_base, only : GetInfo
+    use file_hdf_base, only : Select, SetName
+    use file_hdf_s, only : WriteAttribute
+
+    ! --- in/out -------------------------
+
+    type(TSds), intent(in)              ::  sds
+    integer, intent(in)                 ::  dim_index
+    character(len=*), intent(in)        ::  name
+    character(len=*), intent(in)        ::  unit
+    real(8), intent(in)              ::  scale(:)
+    integer, intent(out)                ::  status
+
+    integer, intent(in), optional       ::  knd
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/sds_SetDim_r8'
+
+    ! --- local ---------------------------
+
+    integer              ::  data_rank, data_dims(0:MAX_DATA_RANK-1)
+    type(TSdsDim)        ::  sdim
+
+    ! --- begin ---------------------------
+
+    call GetInfo( sds, status, data_rank=data_rank, data_dims=data_dims )
+    if ( dim_index < 0 .or. dim_index > data_rank-1 ) then
+      write (*,'("ERROR - wrong dimension index : ",i4)') dim_index
+      write (*,'("ERROR - expecting range 0, .., ",i4)') data_rank-1
+      write (*,'("ERROR in ",a)') rname; status=1; return
+    end if
+
+    call Init( sdim, status )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+
+    call Select( sdim, sds, dim_index, status )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+
+    call SetName( sdim, name, status )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+
+    call WriteAttribute( sdim, 'unit', unit, status )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+
+    if ( size(scale) /= data_dims(dim_index) ) then
+      write (*,'("ERROR - wrong scale length : ",i4)') size(scale)
+      write (*,'("ERROR - expecting length ",i4," for dim index ",i4)') data_dims(dim_index), dim_index
+      write (*,'("ERROR in ",a)') rname; status=1; return
+    end if
+
+    call SetScale( sdim, scale, status, knd )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+
+    call Done( sdim, status )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+
+    ! ok
+    status = 0
+
+  end subroutine sds_SetDim_r8
+
+
+
+  ! ================================================================
+  ! get attributes
+  ! ================================================================
+
+
+  subroutine dim_ReadAttribute_r8_0d( sdim, name, r, status )
+
+    use file_hdf_base, only : TSdsDim
+
+    ! --- in/out -------------------------
+
+    type(TSdsDim), intent(in)          ::  sdim
+    character(len=*), intent(in)       ::  name
+    real(8), intent(out)            ::  r
+    integer, intent(out)               ::  status
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/dim_ReadAttribute_r8_0d'
+
+    ! --- begin -------------------------------
+
+    call ReadAttribute( sdim%id, name, r, status )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+
+    ! ok
+    status = 0
+
+  end subroutine dim_ReadAttribute_r8_0d
+
+
+  ! ***
+
+
+  subroutine dim_ReadAttribute_r8_1d( sdim, name, r, status )
+
+    use file_hdf_base, only : TSdsDim
+
+    ! --- in/out -------------------------
+
+    type(TSdsDim), intent(in)          ::  sdim
+    character(len=*), intent(in)       ::  name
+    real(8), intent(out)            ::  r(:)
+    integer, intent(out)               ::  status
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/dim_ReadAttribute_r8_1d'
+
+    ! --- begin -------------------------------
+
+    call ReadAttribute( sdim%id, name, r, status )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+
+    ! ok
+    status = 0
+
+  end subroutine dim_ReadAttribute_r8_1d
+
+
+
+  ! =============================================================
+  ! === check attributes
+  ! =============================================================
+
+
+  subroutine dim_CheckAttribute_r8_0d( sdim, name, r, status )
+
+    use file_hdf_base, only : TSdsDim
+
+    ! --- in/out -------------------------
+
+    type(TSdsDim), intent(in)          ::  sdim
+    character(len=*), intent(in)       ::  name
+    real(8), intent(in)             ::  r
+    integer, intent(inout)             ::  status
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/dim_CheckAttribute_r8_0d'
+
+    ! --- local ------------------------------
+
+    logical          ::  verbose
+
+    ! --- begin ---------------------------
+
+    ! write error messages ?
+    verbose = status == 0
+
+    call CheckAttribute( sdim%id, name, r, status )
+    if (status>0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+    if (status<0) then
+      if (verbose) write (*,'("ERROR in ",a)') rname
+      status=-1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine dim_CheckAttribute_r8_0d
+
+
+  ! ***
+
+
+  subroutine dim_CheckAttribute_r8_1d( sdim, name, r, status )
+
+    use file_hdf_base, only : TSdsDim
+
+    ! --- in/out -------------------------
+
+    type(TSdsDim), intent(in)          ::  sdim
+    character(len=*), intent(in)       ::  name
+    real(8), intent(in)             ::  r(:)
+    integer, intent(inout)             ::  status
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/dim_CheckAttribute_r8_1d'
+
+    ! --- local ------------------------------
+
+    logical          ::  verbose
+
+    ! --- begin ---------------------------
+
+    ! write error messages ?
+    verbose = status == 0
+
+    call CheckAttribute( sdim%id, name, r, status )
+    if (status>0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+    if (status<0) then
+      if (verbose) write (*,'("ERROR in ",a)') rname
+      status=-1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine dim_CheckAttribute_r8_1d
+
+
+
+  ! ================================================================
+  ! write attributes
+  ! ================================================================
+
+
+  subroutine dim_WriteAttribute_r8_0d( sdim, name, r, status, knd )
+
+    use file_hdf_base, only : TSdsDim
+
+    ! --- in/out -------------------------
+
+    type(TSdsDim), intent(in)          ::  sdim
+    character(len=*), intent(in)       ::  name
+    real(8), intent(in)             ::  r
+    integer, intent(out)               ::  status
+
+    integer, intent(in), optional      ::  knd
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/dim_WriteAttribute_r8_0d'
+
+    ! --- begin -------------------------------
+
+    call WriteAttribute( sdim%id, name, r, status, knd )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+
+    ! ok
+    status = 0
+
+  end subroutine dim_WriteAttribute_r8_0d
+
+
+  ! ***
+
+
+  subroutine dim_WriteAttribute_r8_1d( sdim, name, r, status, knd )
+
+    use file_hdf_base, only : TSdsDim
+
+    ! --- in/out -------------------------
+
+    type(TSdsDim), intent(in)          ::  sdim
+    character(len=*), intent(in)       ::  name
+    real(8), intent(in)             ::  r(:)
+    integer, intent(out)               ::  status
+
+    integer, intent(in), optional      ::  knd
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/dim_WriteAttribute_r8_1d'
+
+    ! --- begin -------------------------------
+
+    call WriteAttribute( sdim%id, name, r, status, knd )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+
+    ! ok
+    status = 0
+
+  end subroutine dim_WriteAttribute_r8_1d
+
+
+
+  ! ############################################################
+  ! ###
+  ! ### hdf files
+  ! ###
+  ! ############################################################
+
+
+  ! ================================================================
+  ! get attributes
+  ! ================================================================
+
+
+  subroutine hdf_ReadAttribute_r8_0d( hdf, name, r, status )
+
+    use file_hdf_base, only : THdfFile
+
+    ! --- in/out -------------------------
+
+    type(THdfFile), intent(in)         ::  hdf
+    character(len=*), intent(in)       ::  name
+    real(8), intent(out)            ::  r
+    integer, intent(out)               ::  status
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/hdf_ReadAttribute_r8_0d'
+
+    ! --- begin -------------------------------
+
+    call ReadAttribute( hdf%id, name, r, status )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+
+    ! ok
+    status = 0
+
+  end subroutine hdf_ReadAttribute_r8_0d
+
+
+  ! ***
+
+
+  subroutine hdf_ReadAttribute_r8_1d( hdf, name, r, status )
+
+    use file_hdf_base, only : THdfFile
+
+    ! --- in/out -------------------------
+
+    type(THdfFile), intent(in)         ::  hdf
+    character(len=*), intent(in)       ::  name
+    real(8), intent(out)            ::  r(:)
+    integer, intent(out)               ::  status
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/hdf_ReadAttribute_r8_1d'
+
+    ! --- begin -------------------------------
+
+    call ReadAttribute( hdf%id, name, r, status )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+
+    ! ok
+    status = 0
+
+  end subroutine hdf_ReadAttribute_r8_1d
+
+
+
+  ! =============================================================
+  ! === check attributes
+  ! =============================================================
+
+
+  subroutine hdf_CheckAttribute_r8_0d( hdf, name, r, status )
+
+    use file_hdf_base, only : THdfFile
+
+    ! --- in/out -------------------------
+
+    type(THdfFile), intent(in)         ::  hdf
+    character(len=*), intent(in)       ::  name
+    real(8), intent(in)             ::  r
+    integer, intent(inout)             ::  status
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/hdf_CheckAttribute_r8_0d'
+
+    ! --- local ------------------------------
+
+    logical          ::  verbose
+
+    ! --- begin ---------------------------
+
+    ! write error messages ?
+    verbose = status == 0
+
+    call CheckAttribute( hdf%id, name, r, status )
+    if (status>0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+    if (status<0) then
+      if (verbose) write (*,'("ERROR in ",a)') rname
+      status=-1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine hdf_CheckAttribute_r8_0d
+
+
+  ! ***
+
+
+  subroutine hdf_CheckAttribute_r8_1d( hdf, name, r, status )
+
+    use file_hdf_base, only : THdfFile
+
+    ! --- in/out -------------------------
+
+    type(THdfFile), intent(in)         ::  hdf
+    character(len=*), intent(in)       ::  name
+    real(8), intent(in)             ::  r(:)
+    integer, intent(inout)             ::  status
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/hdf_CheckAttribute_r8_1d'
+
+    ! --- local ------------------------------
+
+    logical          ::  verbose
+
+    ! --- begin ---------------------------
+
+    ! write error messages ?
+    verbose = status == 0
+
+    call CheckAttribute( hdf%id, name, r, status )
+    if (status>0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+    if (status<0) then
+      if (verbose) write (*,'("ERROR in ",a)') rname
+      status=-1; return
+    end if
+
+    ! ok
+    status = 0
+
+  end subroutine hdf_CheckAttribute_r8_1d
+
+
+
+  ! ================================================================
+  ! write attributes
+  ! ================================================================
+
+
+  subroutine hdf_WriteAttribute_r8_0d( hdf, name, r, status, knd )
+
+    use file_hdf_base, only : THdfFile
+
+    ! --- in/out -------------------------
+
+    type(THdfFile), intent(in)         ::  hdf
+    character(len=*), intent(in)       ::  name
+    real(8), intent(in)             ::  r
+    integer, intent(out)               ::  status
+
+    integer, intent(in), optional      ::  knd
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/hdf_WriteAttribute_r8_0d'
+
+    ! --- begin -------------------------------
+
+    call WriteAttribute( hdf%id, name, r, status, knd )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+
+    ! ok
+    status = 0
+
+  end subroutine hdf_WriteAttribute_r8_0d
+
+
+  ! ***
+
+
+  subroutine hdf_WriteAttribute_r8_1d( hdf, name, r, status, knd )
+
+    use file_hdf_base, only : THdfFile
+
+    ! --- in/out -------------------------
+
+    type(THdfFile), intent(in)         ::  hdf
+    character(len=*), intent(in)       ::  name
+    real(8), intent(in)             ::  r(:)
+    integer, intent(out)               ::  status
+
+    integer, intent(in), optional      ::  knd
+
+    ! --- const --------------------------
+
+    character(len=*), parameter ::  rname = mname//'/hdf_WriteAttribute_r8_1d'
+
+    ! --- begin -------------------------------
+
+    call WriteAttribute( hdf%id, name, r, status, knd )
+    if (status/=0) then; write (*,'("ERROR in ",a)') rname; status=1; return; end if
+
+    ! ok
+    status = 0
+
+  end subroutine hdf_WriteAttribute_r8_1d
+
+
+
+end module file_hdf_r8
+

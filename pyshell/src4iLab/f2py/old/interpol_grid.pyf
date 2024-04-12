@@ -1,0 +1,20 @@
+!    -*- f90 -*-
+! Note: the context of this file is case sensitive.
+
+python module interpol ! in
+  interface
+    module interpol_grid ! in interpol_grid.F90
+        subroutine redis_partialcol_altitude(old_levels,new_levels,old_grid,old_prof,new_grid,new_prof,matr) ! in interpol_grid.F90:interpol_grid
+            integer optional,intent(in),check((len(old_grid)-1)==old_levels),depend(old_grid) :: old_levels=(len(old_grid)-1)
+            integer optional,intent(in),check((len(new_grid)-1)==new_levels),depend(new_grid) :: new_levels=(len(new_grid)-1)
+            double precision dimension(old_levels + 1),intent(in) :: old_grid
+            double precision dimension(old_levels),intent(in),depend(old_levels) :: old_prof
+            double precision dimension(new_levels + 1),intent(in) :: new_grid
+            double precision dimension(new_levels),intent(out),depend(new_levels) :: new_prof
+            double precision dimension(new_levels,old_levels),intent(out),depend(new_levels,old_levels) :: matr
+        end subroutine redis_partialcol_altitude
+    end module interpol_grid
+  end interface
+end python module interpol
+! This file was auto-generated with f2py (version:2_4422).
+! See http://cens.ioc.ee/projects/f2py2e/

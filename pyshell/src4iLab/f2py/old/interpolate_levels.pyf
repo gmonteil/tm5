@@ -1,0 +1,280 @@
+!    -*- f90 -*-
+! Note: the context of this file is case sensitive.
+
+python module tm5_utils ! in
+    interface  ! in :satexp_utils
+
+        module redistrib_flux
+
+            subroutine extrapolate3D(num_yrs_exist, num_yrs_predict, time_dim, lat_dim, lon_dim, ip_array, yrs_predict, op_array)
+                integer,optional,intent(in),check(shape(ip_array,0)==num_yrs_exist),depend(ip_array) :: num_yrs_exist=shape(ip_array,0)
+                integer,optional,intent(in),check(shape(yrs_predict,0)==num_yrs_predict),depend(yrs_predict) :: num_yrs_predict=shape(yrs_predict,0)
+                integer,optional,intent(in),check(shape(ip_array,1)==time_dim),depend(ip_array) :: time_dim=shape(ip_array,1)
+                integer,optional,intent(in),check(shape(ip_array,2)==lat_dim),depend(ip_array) :: lat_dim=shape(ip_array,2)
+                integer,optional,intent(in),check(shape(ip_array,3)==lon_dim),depend(ip_array) :: lon_dim=shape(ip_array,3)
+                double precision,dimension(num_yrs_exist,time_dim,lat_dim,lon_dim),intent(in) :: ip_array
+                integer,dimension(num_yrs_predict),intent(in) :: yrs_predict
+                double precision,dimension(num_yrs_predict,time_dim,lat_dim,lon_dim),check(shape(op_array,0)==num_yrs_predict),depend(num_yrs_predict),intent(out) :: op_array
+            end subroutine extrapolate3D
+
+            subroutine regrid_fluxes(jm_ip, im_ip, jm_op, im_op, ip_lats, ip_lons, op_lats, op_lons, ip_flux, per_area, op_flux)
+                integer,optional,intent(in),check((len(ip_lats)-1)==jm_ip),depend(ip_lats) :: jm_ip=(len(ip_lats)-1)
+                integer,optional,intent(in),check((len(ip_lons)-1)==im_ip),depend(ip_lons) :: im_ip=(len(ip_lons)-1)
+                integer,optional,intent(in),check((len(op_lats)-1)==jm_op),depend(op_lats) :: jm_op=(len(op_lats)-1)
+                integer,optional,intent(in),check((len(op_lons)-1)==im_op),depend(op_lons) :: im_op=(len(op_lons)-1)
+                double precision,dimension(jm_ip+1),intent(in) :: ip_lats
+                double precision,dimension(im_ip+1),intent(in) :: ip_lons
+                double precision,dimension(jm_op+1),intent(in) :: op_lats
+                double precision,dimension(im_op+1),intent(in) :: op_lons
+                double precision,dimension(jm_ip,im_ip),intent(in),depend(jm_ip,im_ip) :: ip_flux
+                logical, intent(in) :: per_area
+                double precision dimension(jm_op,im_op),intent(out),depend(jm_op,im_op) :: op_flux
+            end subroutine regrid_fluxes
+
+            subroutine regrid_flux_submul(jm_ip, im_ip, jm_op, im_op, ip_lats, ip_lons, op_lats, op_lons, ip_flux, per_area, op_flux)
+                integer,optional,intent(in),check((len(ip_lats)-1)==jm_ip),depend(ip_lats) :: jm_ip=(len(ip_lats)-1)
+                integer,optional,intent(in),check((len(ip_lons)-1)==im_ip),depend(ip_lons) :: im_ip=(len(ip_lons)-1)
+                integer,optional,intent(in),check((len(op_lats)-1)==jm_op),depend(op_lats) :: jm_op=(len(op_lats)-1)
+                integer,optional,intent(in),check((len(op_lons)-1)==im_op),depend(op_lons) :: im_op=(len(op_lons)-1)
+                double precision,dimension(jm_ip+1),intent(in) :: ip_lats
+                double precision,dimension(im_ip+1),intent(in) :: ip_lons
+                double precision,dimension(jm_op+1),intent(in) :: op_lats
+                double precision,dimension(im_op+1),intent(in) :: op_lons
+                double precision,dimension(jm_ip,im_ip),intent(in),depend(jm_ip,im_ip) :: ip_flux
+                logical, intent(in) :: per_area
+                double precision dimension(jm_op,im_op),intent(out),depend(jm_op,im_op) :: op_flux
+            end subroutine regrid_flux_submul
+
+            subroutine regrid_fluxes_from_grid(jm_ip, im_ip, jm_op, im_op, ip_lats, ip_lons, op_lats, op_lons, ip_flux, per_area, op_flux)
+                integer,optional,intent(in),check((len(ip_lats)-1)==jm_ip),depend(ip_lats) :: jm_ip=(len(ip_lats)-1)
+                integer,optional,intent(in),check((len(ip_lons)-1)==im_ip),depend(ip_lons) :: im_ip=(len(ip_lons)-1)
+                integer,optional,intent(in),check((len(op_lats)-1)==jm_op),depend(op_lats) :: jm_op=(len(op_lats)-1)
+                integer,optional,intent(in),check((len(op_lons)-1)==im_op),depend(op_lons) :: im_op=(len(op_lons)-1)
+                double precision,dimension(jm_ip+1),intent(in) :: ip_lats
+                double precision,dimension(im_ip+1),intent(in) :: ip_lons
+                double precision,dimension(jm_op+1),intent(in) :: op_lats
+                double precision,dimension(im_op+1),intent(in) :: op_lons
+                double precision,dimension(jm_ip,im_ip),intent(in),depend(jm_ip,im_ip) :: ip_flux
+                logical, intent(in) :: per_area
+                double precision dimension(jm_op,im_op),intent(out),depend(jm_op,im_op) :: op_flux
+            end subroutine regrid_fluxes_from_grid
+
+            subroutine regrid_flux_series(jm_ip, im_ip, jm_op, im_op, timesteps, ip_lats, ip_lons, op_lats, op_lons, ip_flux, per_area, op_flux, flux_totals)
+                integer,optional,intent(in),check((len(ip_lats)-1)==jm_ip),depend(ip_lats) :: jm_ip=(len(ip_lats)-1)
+                integer,optional,intent(in),check((len(ip_lons)-1)==im_ip),depend(ip_lons) :: im_ip=(len(ip_lons)-1)
+                integer,optional,intent(in),check((len(op_lats)-1)==jm_op),depend(op_lats) :: jm_op=(len(op_lats)-1)
+                integer,optional,intent(in),check((len(op_lons)-1)==im_op),depend(op_lons) :: im_op=(len(op_lons)-1)
+                integer,optional,intent(in),check(shape(ip_flux,0)==timesteps),depend(ip_flux) :: timesteps=shape(ip_flux,0)
+                logical, intent(in) :: per_area
+                double precision,dimension(jm_ip+1),intent(in) :: ip_lats
+                double precision,dimension(im_ip+1),intent(in) :: ip_lons
+                double precision,dimension(jm_op+1),intent(in) :: op_lats
+                double precision,dimension(im_op+1),intent(in) :: op_lons
+                double precision,dimension(timesteps,jm_ip,im_ip),intent(in),depend(jm_ip,im_ip) :: ip_flux
+                double precision,dimension(timesteps,jm_op,im_op),intent(out),depend(timesteps,jm_op,im_op) :: op_flux
+                double precision,dimension(timesteps,2),intent(out),depend(timesteps) :: flux_totals
+            end subroutine regrid_flux_series
+
+        end module redistrib_flux
+
+        module precon ! in :satexp_utils:interpolate_levels.F90
+
+            subroutine xc_to_x(n_state, nt, n_hor, G_state, Temp_L, Hor_L, x_c, ipos, num_threads, x)
+                integer,optional,intent(in),check(len(G_state)==n_state),depend(G_state) :: n_state=len(G_state)
+                integer,optional,intent(in),check(shape(Temp_L,0)==nt),depend(Temp_L) :: nt=shape(Temp_L,0)
+                integer,optional,intent(in),check(shape(Hor_L,0)==n_hor),depend(Hor_L) :: n_hor=shape(Hor_L,0)
+                double precision,dimension(n_state),intent(in) :: G_state
+                double precision,dimension(nt,nt),intent(in) :: Temp_L
+                double precision,dimension(n_hor,n_hor),intent(in) :: Hor_L
+                double precision,dimension(n_state),intent(in) :: x_c
+                integer,intent(in) :: ipos
+                integer,intent(in) :: num_threads
+                double precision,dimension(n_state),intent(out) :: x
+            end subroutine xc_to_x
+
+            subroutine g_to_gc(n_state, nt, n_hor, G_state, Temp_Lt, Hor_Lt, g, ipos, num_threads, g_c)
+                integer,optional,intent(in),check(len(G_state)==n_state),depend(G_state) :: n_state=len(G_state)
+                integer,optional,intent(in),check(shape(Temp_Lt,0)==nt),depend(Temp_Lt) :: nt=shape(Temp_Lt,0)
+                integer,optional,intent(in),check(shape(Hor_Lt,0)==n_hor),depend(Hor_Lt) :: n_hor=shape(Hor_Lt,0)
+                double precision,dimension(n_state),intent(in) :: G_state
+                double precision,dimension(nt,nt),intent(in) :: Temp_Lt
+                double precision,dimension(n_hor,n_hor),intent(in) :: Hor_Lt
+                double precision,dimension(n_state),intent(in) :: g
+                integer,intent(in) :: ipos
+                integer,intent(in) :: num_threads
+                double precision,dimension(n_state),intent(out) :: g_c
+            end subroutine g_to_gc
+
+            subroutine mult_M(n_block, nt, n_hor, G_state, G_mask, Temp_L, Hor_L, v_in, num_threads, v_out)
+                integer,optional,intent(in),check(len(G_state)==n_block),depend(G_state)    :: n_block=len(G_state)
+                integer,optional,intent(in),check(shape(Temp_L,0)==nt),depend(Temp_L)       :: nt=shape(Temp_L,0)
+                integer,optional,intent(in),check(shape(Hor_L,0)==n_hor),depend(Hor_L)      :: n_hor=shape(Hor_L,0)
+                double precision,dimension(n_block),intent(in)                              :: G_state
+                logical,dimension(n_block),intent(in)                                       :: G_mask
+                double precision,dimension(nt,nt),intent(in)                                :: Temp_L
+                double precision,dimension(n_hor,n_hor),intent(in)                          :: Hor_L
+                double precision,dimension(n_block),intent(in)                              :: v_in
+                integer, intent(in)                                                         :: num_threads
+                double precision,dimension(n_block),intent(out)                             :: v_out
+            end subroutine mult_M
+
+            subroutine mult_MT(n_block, nt, n_hor, G_state, G_mask, Temp_L, Hor_L, v_in, num_threads, v_out)
+                integer,optional,intent(in),check(len(G_state)==n_block),depend(G_state)    :: n_block=len(G_state)
+                integer,optional,intent(in),check(shape(Temp_L,0)==nt),depend(Temp_L)       :: nt=shape(Temp_L,0)
+                integer,optional,intent(in),check(shape(Hor_L,0)==n_hor),depend(Hor_L)      :: n_hor=shape(Hor_L,0)
+                double precision,dimension(n_block),intent(in)                              :: G_state
+                logical,dimension(n_block),intent(in)                                       :: G_mask
+                double precision,dimension(nt,nt),intent(in)                                :: Temp_L
+                double precision,dimension(n_hor,n_hor),intent(in)                          :: Hor_L
+                double precision,dimension(n_block),intent(in)                              :: v_in
+                integer, intent(in)                                                         :: num_threads
+                double precision,dimension(n_block),intent(out)                             :: v_out
+            end subroutine mult_MT
+
+        end module precon
+
+        module indexing ! in :satexp_utils:interpolate_levels.F90
+
+            subroutine findUnique(len_source, src_lat, src_lon, tolerance, uniq_lat, uniq_lon, frequency, n_uniq) ! in :satexp_utils:interpolate_levels.F90:interpolate_fields
+                integer optional,intent(in),check(len(src_lat)==len_source),depend(src_lat) :: len_source=len(src_lat)
+                real dimension(len_source),intent(in) :: src_lat, src_lon
+                real,intent(in) :: tolerance
+                real dimension(len_source),intent(out) :: uniq_lat, uniq_lon
+                integer dimension(len_source),intent(out) :: frequency
+                integer,intent(out) :: n_uniq
+            end subroutine findUnique
+
+            subroutine findIndex(len_source, len_seek, source_array, seek_array, tolerance, indices_array) ! in :satexp_utils:interpolate_levels.F90:interpolate_fields
+                integer optional,intent(in),check(len(source_array)==len_source),depend(source_array) :: len_source=len(source_array)
+                integer optional,intent(in),check(len(seek_array)==len_seek),depend(seek_array) :: len_seek=len(seek_array)
+                integer(8) dimension(len_source),intent(in) :: source_array
+                integer(8) dimension(len_seek),intent(in) :: seek_array
+                integer,intent(in) :: tolerance
+                integer dimension(len_seek),intent(out),depend(len_seek) :: indices_array
+            end subroutine findIndex
+
+        end module indexing
+
+        module interpolate_fields ! in :satexp_utils:interpolate_levels.F90
+
+            subroutine movingAverage(num_records,times,in_errors,locations,corr_time, corr_length,out_errors,num_samples) ! in :satexp_utils:interpolate_levels.F90:interpolate_fields
+                integer optional,intent(in),check(len(times)==num_records),depend(times) :: num_records=len(times)
+                double precision dimension(num_records),intent(in) :: times
+                double precision dimension(num_records),intent(in) :: in_errors
+                double precision dimension(num_records,2),intent(in) :: locations
+                double precision,intent(in) :: corr_time, corr_length
+                double precision dimension(num_records),intent(out),depend(num_records) :: out_errors
+                integer dimension(num_records),intent(out),depend(num_records) :: num_samples
+            end subroutine movingAverage
+
+            subroutine dailyaverage(tm,lm_in,lats,lons,isobars,in_mixing,out_mixing,out_ps) ! in :satexp_utils:interpolate_levels.F90:interpolate_fields
+                integer optional,intent(in),check(shape(isobars,0)==tm),depend(isobars) :: tm=shape(isobars,0)
+                integer optional,intent(in),check((shape(isobars,1)-1)==lm_in),depend(isobars) :: lm_in=(shape(isobars,1)-1)
+                integer optional,intent(in),check(shape(isobars,2)==lats),depend(isobars) :: lats=shape(isobars,2)
+                integer optional,intent(in),check(shape(isobars,3)==lons),depend(isobars) :: lons=shape(isobars,3)
+                double precision dimension(tm,lm_in + 1,lats,lons),intent(in) :: isobars
+                double precision dimension(tm,lm_in,lats,lons),intent(in),depend(tm,lm_in,lats,lons) :: in_mixing
+                double precision dimension(25,lats,lons),intent(out),depend(lats,lons) :: out_mixing
+                double precision dimension(26,lats,lons),intent(out),depend(lats,lons) :: out_ps
+            end subroutine dailyaverage
+
+            subroutine columnaverage(tm,lm,nlevs,ndays,mixing_ratio,isobars,averaging_kernel,averaging_kernel_pres,prior_mixing,prior_pres,doy_array,total_column) ! in :satexp_utils:interpolate_levels.F90:interpolate_fields
+                integer optional,intent(in),check(shape(mixing_ratio,0)==tm),depend(mixing_ratio) :: tm=shape(mixing_ratio,0)
+                integer optional,intent(in),check(shape(averaging_kernel,1)==lm),depend(averaging_kernel) :: lm=shape(averaging_kernel,1)
+                integer optional,intent(in),check(shape(mixing_ratio,1)==nlevs),depend(mixing_ratio) :: nlevs=shape(mixing_ratio,1)
+                integer optional,intent(in),check(shape(prior_mixing,0)==ndays),depend(prior_mixing) :: ndays=shape(prior_mixing,0)
+                double precision dimension(tm,nlevs),intent(in) :: mixing_ratio
+                double precision dimension(tm,nlevs + 1),intent(in),depend(tm,nlevs) :: isobars
+                double precision dimension(tm,lm),intent(in),depend(tm) :: averaging_kernel
+                double precision dimension(lm + 1),intent(in),depend(lm) :: averaging_kernel_pres
+                double precision dimension(ndays,lm),intent(in),depend(lm) :: prior_mixing
+                double precision dimension(ndays,lm + 1),intent(in),depend(ndays,lm) :: prior_pres
+                integer dimension(tm),intent(in),depend(tm) :: doy_array
+                double precision dimension(tm),intent(out),depend(tm) :: total_column
+            end subroutine columnaverage
+
+            subroutine takecolumn(lm,nlevs,mixing_ratio,isobars,averaging_kernel,averaging_kernel_pres,prior_mixing,prior_pres,total_column) ! in :satexp_utils:interpolate_levels.F90:interpolate_fields
+                integer optional,intent(in),check(shape(averaging_kernel,0)==lm),depend(averaging_kernel) :: lm=shape(averaging_kernel,0)
+                integer optional,intent(in),check(shape(mixing_ratio,0)==nlevs),depend(mixing_ratio) :: nlevs=shape(mixing_ratio,0)
+                double precision dimension(nlevs),intent(in) :: mixing_ratio
+                double precision dimension(nlevs + 1),intent(in),depend(nlevs) :: isobars
+                double precision dimension(lm),intent(in) :: averaging_kernel
+                double precision dimension(lm + 1),intent(in),depend(lm) :: averaging_kernel_pres
+                double precision dimension(lm),intent(in),depend(lm) :: prior_mixing
+                double precision dimension(lm + 1),intent(in),depend(lm) :: prior_pres
+                double precision,intent(out) :: total_column
+            end subroutine takecolumn
+
+            subroutine regriddailyfield(tm,lm_in,lats,lons,isobars,in_mixing,out_mixing,out_ps) ! in :satexp_utils:interpolate_levels.F90:interpolate_fields
+                integer optional,intent(in),check(shape(isobars,0)==tm),depend(isobars) :: tm=shape(isobars,0)
+                integer optional,intent(in),check((shape(isobars,1)-1)==lm_in),depend(isobars) :: lm_in=(shape(isobars,1)-1)
+                integer optional,intent(in),check(shape(isobars,2)==lats),depend(isobars) :: lats=shape(isobars,2)
+                integer optional,intent(in),check(shape(isobars,3)==lons),depend(isobars) :: lons=shape(isobars,3)
+                double precision dimension(tm,lm_in + 1,lats,lons),intent(in) :: isobars
+                double precision dimension(tm,lm_in,lats,lons),intent(in),depend(tm,lm_in,lats,lons) :: in_mixing
+                double precision dimension(tm,25,lats,lons),intent(out),depend(tm,lats,lons) :: out_mixing
+                double precision dimension(tm,26,lats,lons),intent(out),depend(tm,lats,lons) :: out_ps
+            end subroutine regriddailyfield
+
+            subroutine rebin_3d(lm_in,lats,lons,lm_out,in_levels,in_mixing,out_levels,out_mixing) ! in :satexp_utils:interpolate_levels.F90:interpolate_fields
+                integer optional,intent(in),check(shape(in_levels,0)==lm_in),depend(in_levels) :: lm_in=shape(in_levels,0)
+                integer optional,intent(in),check(shape(in_levels,1)==lats),depend(in_levels) :: lats=shape(in_levels,1)
+                integer optional,intent(in),check(shape(in_levels,2)==lons),depend(in_levels) :: lons=shape(in_levels,2)
+                integer optional,intent(in),check(shape(out_levels,0)==lm_out),depend(out_levels) :: lm_out=shape(out_levels,0)
+                double precision dimension(lm_in,lats,lons),intent(in) :: in_levels
+                double precision dimension(lm_in - 1,lats,lons),intent(in),depend(lm_in,lats,lons) :: in_mixing
+                double precision dimension(lm_out,lats,lons),intent(in),depend(lats,lons) :: out_levels
+                double precision dimension(lm_out + 1,lats,lons),intent(out),depend(lm_out,lats,lons) :: out_mixing
+            end subroutine rebin_3d
+
+            subroutine rebin_2d(lm_in,time_in,lm_out,in_levels,in_mixing,out_levels,out_mixing) ! in :satexp_utils:interpolate_levels.F90:interpolate_fields
+                integer optional,intent(in),check(shape(in_levels,1)==lm_in),depend(in_levels) :: lm_in=shape(in_levels,1)
+                integer optional,intent(in),check(shape(in_levels,0)==time_in),depend(in_levels) :: time_in=shape(in_levels,0)
+                integer optional,intent(in),check(shape(out_levels,1)==lm_out),depend(out_levels) :: lm_out=shape(out_levels,1)
+                double precision dimension(time_in,lm_in),intent(in) :: in_levels
+                double precision dimension(time_in,lm_in - 1),intent(in),depend(time_in,lm_in) :: in_mixing
+                double precision dimension(time_in,lm_out),intent(in),depend(time_in) :: out_levels
+                double precision dimension(time_in,lm_out + 1),intent(out),depend(time_in,lm_out) :: out_mixing
+            end subroutine rebin_2d
+
+            subroutine rebin(in_levels,out_levels,in_x_grid,in_y_vals,out_x_grid,out_y_vals) ! in :satexp_utils:interpolate_levels.F90:interpolate_fields
+                integer optional,intent(in),check(len(in_x_grid)>=in_levels),depend(in_x_grid) :: in_levels=len(in_x_grid)
+                integer optional,intent(in),check(len(out_x_grid)>=out_levels),depend(out_x_grid) :: out_levels=len(out_x_grid)
+                double precision dimension(in_levels),intent(in) :: in_x_grid
+                double precision dimension(in_levels - 1),intent(in),depend(in_levels) :: in_y_vals
+                double precision dimension(out_levels),intent(in) :: out_x_grid
+                double precision dimension(out_levels + 1),intent(out),depend(out_levels) :: out_y_vals
+            end subroutine rebin
+
+            subroutine inv_rebin(in_levels,out_levels,in_x_grid,in_y_vals,out_x_grid,out_y_vals,distrib_matrix) ! in :satexp_utils:interpolate_levels.F90:interpolate_fields
+                integer optional,intent(in),check(len(in_x_grid)>=in_levels),depend(in_x_grid) :: in_levels=len(in_x_grid)
+                integer optional,intent(in),check(len(out_x_grid)>=out_levels),depend(out_x_grid) :: out_levels=len(out_x_grid)
+                double precision dimension(in_levels),intent(in) :: in_x_grid
+                double precision dimension(in_levels - 1),intent(in),depend(in_levels) :: in_y_vals
+                double precision dimension(out_levels),intent(in) :: out_x_grid
+                double precision dimension(out_levels + 1),intent(out),depend(out_levels) :: out_y_vals
+                double precision dimension(out_levels + 1, in_levels - 1),intent(out),depend(out_levels,in_levels) :: distrib_matrix
+            end subroutine inv_rebin
+
+        end module interpolate_fields
+
+        module sat_utils
+
+            subroutine errorInflation(num_records,times,in_errors,locations,corr_time,corr_length,bin_choice,err_floor,out_errors,num_samples)
+                integer optional,intent(in),check(len(times)==num_records),depend(times) :: num_records=len(times)
+                double precision dimension(num_records),intent(in) :: times
+                double precision dimension(num_records),intent(in) :: in_errors
+                double precision dimension(num_records,2),intent(in) :: locations
+                double precision,intent(in) :: corr_time, corr_length, err_floor
+                character(len=1),intent(in) :: bin_choice
+                double precision dimension(num_records),intent(out),depend(num_records) :: out_errors
+                integer dimension(num_records),intent(out),depend(num_records) :: num_samples
+            end subroutine movingAverage
+
+        end module sat_utils
+
+    end interface
+end python module tm5_utils
+
+! This file was auto-generated with f2py (version:2).
+! See http://cens.ioc.ee/projects/f2py2e/

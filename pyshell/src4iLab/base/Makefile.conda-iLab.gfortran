@@ -1,0 +1,62 @@
+MINICONDA_HOME = /home/michael/sw/miniconda3
+TM5_CONDA = $(MINICONDA_HOME)/envs/tm5
+nfconfig = $(TM5_CONDA)/bin/nf-config
+H5PATH = $(TM5_CONDA)
+
+FC = $(shell ${nfconfig} --fc)
+F77 = ${FC}
+LINKER = ${FC}
+
+#-- MVO-NOTE::debug options applied here probably work for gfortran only
+ifeq ($(DBG),1)
+  FFLAGS_TM5 = -cpp -fPIC -ffree-line-length-none -m64 -frecord-marker=4 -fdefault-real-8 -Og -g -fcheck=all,no-array-temps -fbacktrace -ffpe-trap=invalid,zero,overflow
+else
+  FFLAGS_TM5 = -cpp -fPIC -O2 -ffree-line-length-none -m64 -frecord-marker=4 -fbounds-check -fdefault-real-8
+endif
+FFLAGS_NC = $(shell ${nfconfig} --fflags)
+FFLAGS_H5 = -I${H5PATH}/include
+FFLAGS_UD = -I$(MINICONDA_HOME)/opt/udunits-1.12.11/include
+FFLAGS_BLAS = 
+FFLAG_OPENMP = -fopenmp
+
+ifeq ($(DBG),1)
+  LDFLAGS_TM5 = -g
+else
+  LDFLAGS_TM5 =
+endif
+LDFLAGS_NC = $(shell ${nfconfig} --flibs) -Wl,-R$(shell ${nfconfig} --prefix)/lib64/
+LDFLAGS_H5 = -L${H5PATH}/lib64/ -lhdf5_fortran
+#LDFLAGS_UD = -L/opt/udunits-1.12.11/lib -ludunits
+LDFLAGS_UD  = -L$(MINICONDA_HOME)/opt/udunits-1.12.11/lib -ludunits
+LDFLAGS_BLAS = -L$(TM5_CONDA)/lib -lblas -llapack
+LDFLAGS_OPENMP = -lgomp
+LDFLAGS_iLab = -lrt -pthread -lresolv
+#-- MVO::on ilabpower libselinux is required when linking
+#        (on ilabdesk this was not necessary, had not checked why!)
+LDFLAGS_iLab = -L/usr/lib64 -lrt -pthread -lresolv -lselinux -lpcre
+
+
+FFLAGS = ${FFLAGS_TM5} ${FFLAGS_H5} ${FFLAGS_UD} ${FFLAGS_NC} ${FFLAGS_BLAS} ${FFLAG_OPENMP}
+FFLAGS_MDF = ${FFLAGS_TM5} ${FFLAGS_NC} 
+
+#-- MVO::NOTE: ordering of linker options appeared to be important,
+#              took quite a while to get the linking properly done.
+LIBS = ${LDFLAGS_TM5} ${LDFLAGS_H5} ${LDFLAGS_UD} ${LDFLAGS_NC} ${LDFLAGS_BLAS} ${LDFLAGS_iLab} ${LDFLAGS_OPENMP}
+
+# how to form object files from F90 source:
+%.o: %.F90
+	$(FC) -c -o $@ $< $(FFLAGS)
+	@echo ' '
+
+# how to form object files from f90 source:
+%.o: %.f90
+	$(FC) -c -o $@ $< $(FFLAGS)
+	@echo ' '
+
+# compilation of mdf fails on some machine if optim flags are enabled ..
+mdf.o: mdf.F90
+	$(FC) -c -o $@ $< $(FFLAGS_MDF)
+	@echo ' '
+
+# dependencies
+

@@ -1,0 +1,1 @@
+f2py --fcompiler=gfortran -c interpolate_levels.pyf --f90flags='-ffree-line-length-0 -fopenmp' -liomp5 interpolate_levels.F90 
