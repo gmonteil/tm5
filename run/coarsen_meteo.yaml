@@ -1,21 +1,28 @@
 donkey :
   container : /data/users/guillaume/Projects/TM5/images/tm5-intel-ubuntu20_v2.simg
   makedepf90 : ${.container} makedepf90
-  build_cmd: ${.container} make -C ${build.directory} tm5.x
+  build_cmd : ${.container} make -C ${build.directory} tm5.x
+  run_cmd : singularity run -B /data -B /scratch ${.container} ${run.paths.output}/tm5.x 
   makefile : Makefile.singularity.ifort 
   paths :
     output : output
     build : build
     meteo : /data/projects/TM5/meteo
     meteo_out : /scratch/users/guillaume/TM5/meteo_out
+    cf_table : ../data/cf-standard-name-table.v60.xml
 
 
 run :
+  start : 1 jan 2018
+  end : 3 jan 2018
   paths :
     output : ${host.paths.output}
+    meteo : ${host.paths.meteo}
+    cf_table : ${host.paths.cf_table}
   meteo :
     coarsened : no
   regions : [glb600x400]
+  run_cmd : ${host.run_cmd}
 
 
 meteo :
@@ -50,3 +57,11 @@ build :
   makefile : ${host.makefile} 
   makedepf90 : ${host.makedepf90}
   build_cmd: ${host.build_cmd} 
+
+
+regions :
+  glb600x400 :
+    name : glb600x400
+    lons : [-180, 180, 6]
+    lats : [-90, 90, 4]
+    levels : tropo25

@@ -21,10 +21,12 @@ Re-implementation of whatever was in main.py, because I forgot how up to date th
 """
 
 class TM5:
-    def __init__(self, dconf : str | DictConfig) -> None:
+    def __init__(self, dconf : str | DictConfig, host : str | None) -> None:
         # Load the config file
         if isinstance(dconf, str):
             dconf = OmegaConf.load(dconf)
+        if host is not None :
+            dconf['host'] = dconf[host]
         self.dconf = dconf
         self.settings = TM5Settings()
         self.tm5exec = Path(self.dconf.run.paths.output) / 'tm5.x'
