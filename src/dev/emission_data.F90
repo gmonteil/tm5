@@ -29,7 +29,7 @@ module Emission_Data
 
     private
 
-    public  ::  optim_emis_type
+!    public  ::  optim_emis_type
     public  ::  tracers_em_info
     public  ::  T_Tracers_info, ntracet, t_tracer_info
     public  ::  ref_emissions, ref_emissions_apri, adj_emissions
@@ -110,7 +110,7 @@ module Emission_Data
     ! --- var --------------------------------------
 
     type(T_tracers_info), allocatable      :: tracers_em_info(:)     ! contains information on all tracers
-    integer                                :: optim_emis_type
+!    integer                                :: optim_emis_type
     type(T_fields_5D), allocatable         :: ref_emissions(:)       ! () reference emission field ; used for linearization
     type(T_fieldS_5D), allocatable, target :: ref_emissions_apri(:)  ! (n_cat) reference emission field (a priori)
 
@@ -227,17 +227,17 @@ contains
         end do ! region
 
         ! which optim type ?
-        call ReadRc( rcF, 'var4d.optim_emis.type', optim_emis_type, status )
-        IF_NOTOK_RETURN(status=1)
+!        call ReadRc( rcF, 'var4d.optim_emis.type', optim_emis_type, status )
+!        IF_NOTOK_RETURN(status=1)
 
         ! Type of emission optimization
-        select case ( optim_emis_type )
-        case ( 1, 2, 3 )
-            write (gol,'(a,": Type of emissions optimization is: ",i1)') rname, optim_emis_type; call goPr
-        case default
-            write(gol,'(a,": Wrong emission optimization type: ", i3)') rname, optim_emis_type; call goErr
-            TRACEBACK; status=1; return
-        end select
+!        select case ( optim_emis_type )
+!        case ( 1, 2, 3 )
+!            write (gol,'(a,": Type of emissions optimization is: ",i1)') rname, optim_emis_type; call goPr
+!        case default
+!            write(gol,'(a,": Wrong emission optimization type: ", i3)') rname, optim_emis_type; call goErr
+!            TRACEBACK; status=1; return
+!        end select
 
         ! emission arrays:
         allocate( ref_emissions(nregions) )  ! reference emission field

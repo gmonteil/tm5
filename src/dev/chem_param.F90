@@ -94,6 +94,8 @@ module chem_param
         character(len=500) :: rcval
 
         call readrc(rcf, 'tracers.number', ntrace, status, default=1)
+        if (ntrace == 0) return
+        
         call readrc(rcf, 'tracers.names', rcval, status)
 
         allocate(names(ntrace))
