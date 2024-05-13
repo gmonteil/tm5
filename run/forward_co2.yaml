@@ -1,0 +1,28 @@
+run :
+  paths :
+    output : output
+
+
+build :
+  directory : build
+  paths :
+    src :
+      - ../src/base
+      - ../src/proj/macros/tmm_tm5
+      - ../src/proj/levels/ml137
+      - ../src/proj/levels/ml137/tropo25a
+      - ../src/proj/linalg/mkl
+      - ../src/proj/openmp_speedups
+      - ../src/proj/tracer/CO2
+      - ../src/proj/era5_met
+      - ../src/proj/output
+      - ../src/proj/regions/glb6x4
+      - ../src/dev
+    remove__ : True
+  macros : 
+    mdf.inc : [with_go, with_netcdf4]
+    tm5.inc : [slopes, without_wet_deposition, without_dry_deposition, without_photolysis, without_chemistry]
+  makefile : Makefile.singularity.ifort 
+  makedepf90 : ${.container} makedepf90
+  build_cmd: ${.container} make -C ${.directory} tm5.x
+  container : /home/guillaume/tm5-intel-ubuntu20.simg

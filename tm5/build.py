@@ -9,31 +9,50 @@ import tempfile
 from omegaconf import OmegaConf
 from tm5.run import run_tm5
 from loguru import logger
+import subprocess
+from tm5 import debug
+from tm5.system import runcmd
 
 
-def build_tm5(conf: DictConfig, clean : bool = False) -> Path:
+@debug.trace_call
+def build_tm5(dconf: DictConfig, clean : bool = False) -> Path:
+    """
+    Compile TM5, based on the settings passed through the "conf" argument (i.e. the main yaml file). The yaml file should have a "build" section with the following structure: 
+
+    build :
+        directory : path where the source code will be copied and built
+        paths :
+            src : a list of the paths containing source code. The files will be copied to the build directory (`build.directory`). If a file with the same name is present in several directories in the `build.paths.src` list, then the latest one in the list will overwrite the previous ones.
+            remove__ : fortran files named following the pattern <name>__<suffix>.F90 will be renamed in <name>.F90 if this option is set to True (it should probably be!)
+        macros : each key should be the name of a *.inc file, and the key values should be the macros that this file defined (e.g. mdf.inc : with_netcdf4 with_go`)
+        makefile : name of the makefile to be used
+        build_cmd : command to use for building the model (can be within a container!)
+        makedepf90 : path to the makedepf90 executable (can be within a container!)
+
+    """
     # Make build directory (and parents, if needed)
-    Path(conf.build.directory).mkdir(exist_ok=True, parents=True)
+    Path(dconf.build.directory).mkdir(exist_ok=True, parents=True)
 
     if clean :
-        [_.unlink() for _ in Path(conf.build.directory).glob('*.o')]
-        [_.unlink() for _ in Path(conf.build.directory).glob('*.mod')]
+        [_.unlink() for _ in Path(dconf.build.directory).glob('*.o')]
+        [_.unlink() for _ in Path(dconf.build.directory).glob('*.mod')]
 
     # Copy/Generate source files
-    files = copy_files(conf.build)
-    mfiles = gen_macros(conf.build)
+    files = copy_files(dconf)
+    mfiles = gen_macros(dconf)
 
     # Remove any source file that would no longer be needed
-    cleanup(Path(conf.build.directory), list(files) + mfiles)
+    cleanup(Path(dconf.build.directory), list(files) + mfiles)
 
     # Create the makefile
-    makefile = gen_makefile(conf.build, conf.machine.get('host', None))
+    makefile = gen_makefile(dconf)#.build, dconf.machine.get('host', None))
 
     # Build TM5
-    return make_tm5(makefile, conf.build, conf.machine.get('host', None))
+    return make_tm5(dconf) # makefile, dconf.build, dconf.machine.get('host', None))
 
 
-def copy_files(params : DictConfig) -> Dict[str, Path]:
+@debug.trace_call
+def copy_files(dconf : DictConfig) -> Dict[str, Path]:
     """
     Compile TM5
     - copy the source files in the build directory
@@ -44,13 +63,13 @@ def copy_files(params : DictConfig) -> Dict[str, Path]:
     """
 
     # Ensure that the build directory exists
-    build_dir = Path(params.directory)
+    build_dir = Path(dconf.build.directory)
     logger.info(f'TM5 will be built in {build_dir}')
     build_dir.mkdir(exist_ok=True)
 
     # Make a list of all source files to be used:
     files = dict()
-    for proj in params.paths.src:
+    for proj in dconf.build.paths.src:
         for file in Path(proj).iterdir():
             if file.is_file():
                 files[file.name] = file
@@ -60,7 +79,7 @@ def copy_files(params : DictConfig) -> Dict[str, Path]:
         dest = build_dir / filename
 
         # Remove the part after '__'? (default True)
-        if params.paths.get("remove__", True):
+        if dconf.build.paths.get("remove__", True):
             if '__' in filename :
                 dest = build_dir / (filename.split('__')[0] + '.' + filename.split('.')[-1])
                 files[dest.name] = filename
@@ -75,14 +94,15 @@ def copy_files(params : DictConfig) -> Dict[str, Path]:
     return files
 
 
-def gen_macros(params: DictConfig) -> List[str]:
+@debug.trace_call
+def gen_macros(dconf: DictConfig) -> List[str]:
     """
     Generate files (*.inc files or sourcecode) that cannot be simply copied from source directories
     """
 
     # include files:
     fnames = []
-    for fname, keys in params.macros.items():
+    for fname, keys in dconf.build.macros.items():
 
         # Write the info to a temporary file
         tmpfile = ...
@@ -92,7 +112,7 @@ def gen_macros(params: DictConfig) -> List[str]:
                 fid.write(f'#define {key}\n')
 
         # Copy the file to its final path only if it differs from the existing one:
-        dest = Path(params.directory) / fname
+        dest = Path(dconf.build.directory) / fname
         if not dest.exists():
             shutil.move(fid.name, dest)
         elif not filecmp.cmp(dest, fid.name):
@@ -103,6 +123,7 @@ def gen_macros(params: DictConfig) -> List[str]:
     return fnames
 
 
+@debug.trace_call
 def cleanup(build_dir: Path, files: List[str]):
     """
     Remove files from the build directory that :
@@ -119,14 +140,15 @@ def cleanup(build_dir: Path, files: List[str]):
             f.unlink()
 
 
-def gen_makefile(config: DictConfig, host : DictConfig = None) -> Path:
+@debug.trace_call
+def gen_makefile(dconf: DictConfig) -> Path:
     """
     Create the Makefile_deps file and link to the correct makefile depending on make settings
     """
 
-    # Choose the correct Makefile
-    buildpath = Path(config.directory)
-    makefile_source = buildpath / f'Makefile.{config.make.platform}.{config.make.compiler}'
+ #   # Choose the correct Makefile
+    buildpath = Path(dconf.build.directory)
+    makefile_source = buildpath / dconf.build.makefile
     makefile_dest = buildpath / 'Makefile'
     shutil.copy(makefile_source, makefile_dest)
 
@@ -134,20 +156,24 @@ def gen_makefile(config: DictConfig, host : DictConfig = None) -> Path:
     # Temporarily move to the build directory for that
     curdir = os.getcwd()
     os.chdir(buildpath)
-    command = ['makedepf90', '-o', 'tm5.x'] + list(Path().glob('*.[Ff]*'))# + ['>>', 'Makefile']
-    with open(makefile_dest.name, 'a') as fid:
-        run_tm5(command, settings=host, stdout=fid) # , stdout=fid)
-        # subprocess.run(command, stdout=fid)
+
+    command = dconf.build.makedepf90.split() + ['-o', 'tm5.x'] + list(Path().glob('*.[Ff]*'))
+    with open(makefile_dest.name, 'a') as fid:  
+        subprocess.run(command, stdout=fid)
+
     os.chdir(curdir)
 
     return makefile_dest
 
 
-def make_tm5(makefile : Path, settings : Dict, host : DictConfig = None) -> Path:
+@debug.trace_call
+def make_tm5(dconf: DictConfig) -> Path: #makefile : Path, settings : Dict, host : DictConfig = None) -> Path:
     # Remove the existing executable, to ensure that the script stops if the complilation fails
-    (makefile.parent / 'tm5.x').unlink(missing_ok=True)
-    run_tm5(f'make -C {makefile.parent} {makefile.name} tm5.x'.split(), settings=host)
-    return makefile.parent / 'tm5.x'
+    executable = Path(dconf.build.directory) / 'tm5.x'
+    executable.unlink(missing_ok=True)
+    command = dconf.build.build_cmd.split()
+    runcmd(command)
+    return executable
 
 
 if __name__ == '__main__':
