@@ -24,7 +24,7 @@ run :
     diffusion : ${host.paths.diffusion}
   meteo :
     coarsened : no
-  regions : [glb600x400]
+  regions : [glb600x400, eur300x200]
   run_cmd : ${host.run_cmd}
 
 
@@ -51,7 +51,7 @@ build :
       - ../src/proj/tracer/CO2
       - ../src/proj/era5_met
       - ../src/proj/output
-      - ../src/proj/regions/glb6x4
+      - ../src/proj/regions/eur3x2
       - ../src/dev
     remove__ : True
   macros : 
@@ -68,3 +68,10 @@ regions :
     lons : [-180, 180, 6]
     lats : [-90, 90, 4]
     levels : tropo25
+
+  eur300x200 :
+    name : eur300x200
+    levels : tropo25
+    lons : [-36, 54, 3]
+    lats : [22, 74, 2]
+    parent : glb600x400
