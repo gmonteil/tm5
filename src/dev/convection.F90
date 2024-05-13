@@ -323,7 +323,10 @@ contains
     imr=im(region) ; jmr=jm(region) ; lmr=lm(region)
 
     !WP! only PE's with nonzero ntracet
-    if ( ntracetloc == 0 ) return
+    if ( ntracetloc == 0 ) then
+      call Go_Timer_End(itim_convdiff, status)
+      return
+    endif
 
     m => m_dat(region)%data
     rm => mass_dat(region)%rm_t

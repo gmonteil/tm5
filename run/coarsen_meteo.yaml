@@ -9,7 +9,8 @@ donkey :
     build : build
     meteo : /data/projects/TM5/meteo
     meteo_out : /scratch/users/guillaume/TM5/meteo_out
-    cf_table : ../data/cf-standard-name-table.v60.xml
+    udunits : /opt/etc/udunits.dat
+    diffusion : /scratch/users/guillaume/TM5/diffusion
 
 
 run :
@@ -18,7 +19,9 @@ run :
   paths :
     output : ${host.paths.output}
     meteo : ${host.paths.meteo}
-    cf_table : ${host.paths.cf_table}
+    cf_table : ../data/cf-standard-name-table.xml
+    udunits : ${host.paths.udunits}
+    diffusion : ${host.paths.diffusion}
   meteo :
     coarsened : no
   regions : [glb600x400]

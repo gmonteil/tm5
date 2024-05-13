@@ -1090,7 +1090,12 @@ contains
     !WP! make sure parents are on same domain
     call Par_Check_Domain( region, 'c', which_par )
 
-    if ( which_par == 'tracer' .and. ntracetloc == 0 ) return
+    if ( which_par == 'tracer' .and. ntracetloc == 0 ) then
+      ! GM, 13 may 2024: if returning without doing anything is allowed here, then
+      ! the timer should be ended
+      call Go_Timer_End(itim_put_xedges, status)
+      return
+    endif
     if ( which_par == 'levels' .and. lmloc == 0 ) return
 
     ichild = 0

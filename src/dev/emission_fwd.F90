@@ -11,7 +11,7 @@ module emission_fwd
     use os_specs,       only : DUMMY_STR_LEN
     use go,             only : readrc, tdate, goerr, gol, gopr
     use global_data,    only : rcf
-    use emission_data,  only : tracers_em_info, ref_emissions_apri
+    use emission_data,  only : tracers_em_info, ref_emissions_apri, source_apply
     use datetime,       only : time_window, get_num_days, tau2date
     use production,     only : production_fwd
 
@@ -75,6 +75,8 @@ contains
         character(len=*), parameter     :: rname = mname//'/emission_fwd_setup'
 
         status = 0
+
+        if (.not. source_apply) return
 
         ! Check that we are using the slope scheme
         if (trim(adv_scheme) /= 'slope') then

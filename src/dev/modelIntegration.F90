@@ -17,6 +17,7 @@ module modelIntegration
 
   use GO, only : gol, goPr, goErr
   use Grid, only : TllRegion
+  use emission_data, only : source_apply
 
   implicit none
 
@@ -52,7 +53,7 @@ module modelIntegration
   integer ::  itim_update_parent
 
   logical    ::  chemistry_apply
-  logical    ::  source_apply
+!  logical    ::  source_apply
 !  logical    ::  convec_apply
 !  logical    ::  vdiff_apply
 

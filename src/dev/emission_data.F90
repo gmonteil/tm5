@@ -34,10 +34,12 @@ module Emission_Data
     public  ::  T_Tracers_info, ntracet, t_tracer_info
     public  ::  ref_emissions, ref_emissions_apri, adj_emissions
     public  ::  Emission_Data_Init, Emission_Data_Done, update_parent_emissions
+    public  ::  source_apply
 
     ! --- const ------------------------------------
 
     character(len=*), parameter        :: mname = 'Emission_Data'
+    logical                            :: source_apply
 
 
     ! --- types ------------------------------------

@@ -102,6 +102,8 @@ class TM5:
         self.settings['tmm.output.*.sfc.const'] = 'F' # Except constant surface fields
         self.settings['tmm.output.glb100x100.sfc.const'] = 'F'
 
+        self.settings['diffusion.dir'] = Path(self.dconf.run.paths.diffusion) / 'dkg'
+
         # Constant 1x1 fields (oro and lsm):
         self.settings['tmm.sourcekey.*.sfc.const'] = 'tm5-nc:mdir=ec/ea/an0tr1/sfc/glb100x100;tres=_00p01;namesep=/'
 
@@ -134,7 +136,7 @@ class TM5:
         - var4d.horcor.min_eigval
         - var4d.optim_emis.type
         """
-        self.settings['var4d.optim_emis.type'] = '1'
+#        self.settings['var4d.optim_emis.type'] = '1'
         self.settings['var4d.horcor.min_eigval'] = '0.0001'
         self.settings['correlation.inputdir'] = 'not-defined'
 
@@ -285,7 +287,11 @@ class TM5:
         information from the "tm5.units" module ==> new chemical species need to be implemented there first!
         """
 
-        tracers = self.dconf.run.tracers
+        tracers = self.dconf.run.get('tracers', None)
+        if tracers is None:
+            self.settings['tracers.number'] = 0
+            return
+        
         self.settings['tracers.number'] = len(tracers)
         self.settings['tracers.names'] = ','.join([_ for _ in tracers])
         for tr in tracers :
@@ -303,7 +309,7 @@ class TM5:
         Setup system-specific settings (paths, etc.). For now the following rc-keys are set:
         - udunits_path
         """
-        self.settings['udunits_path'] = Path(self.dconf.machine.paths.udunits).absolute()
+        self.settings['udunits_path'] = Path(self.dconf.run.paths.udunits).absolute()
 
     # Internal methods
 
