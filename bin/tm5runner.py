@@ -41,8 +41,14 @@ if args.trange!=None:
     #-- load original yaml file
     dconf = OmegaConf.load(yamlfile_org)
     #-- override settings
-    dconf.run.start = tstart.strftime('%Y-%m-%d')
-    dconf.run.end   = tend.strftime('%Y-%m-%d')
+    if tstart.hour==0:
+        dconf.run.start = tstart.strftime('%Y-%m-%d')
+    else:
+        dconf.run.start = tstart.strftime('%Y-%m-%dT%H')
+    if tend.hour==0:
+        dconf.run.end   = tend.strftime('%Y-%m-%d')
+    else:
+        dconf.run.end   = tend.strftime('%Y-%m-%dT%H')
     #--
     bname = os.path.splitext(yamlfile_org)[0]
     yamlfile = f"{bname}_{tstart.strftime('%Y%m%d')}-{tend.strftime('%Y%m%d')}.yaml"
