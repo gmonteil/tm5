@@ -27,6 +27,9 @@ parser.add_argument('--trange',
                     nargs=2,
                     metavar=('yyyy-mm-dd_start', 'yyyy-mm-dd_end'),
                     help="""temporal range of simulation (overrides settings in yaml file), start/end of simulation period to be provided in format yyyy-mm-dd.""")
+parser.add_argument('--ndyn',
+                    type=int,
+                    help="""length of time-step [s] of TM5 ('ndyn'), note that cfl.outputstep will be set to the same value.""")
 #-- parse command line
 args = parser.parse_args(sys.argv[1:])
 
@@ -69,6 +72,7 @@ else:
 #
 tm = TM5(yamlfile, machine='ilab')
 
+
 if args.run_mode=='only_dump':
     logger.info(f"dumping TM5 configuration only")
     print(f"{tm5.dconf}")
@@ -110,9 +114,11 @@ if args.run_mode in [None, 'only_prepforward', 'only_forward']:
         # print(f"-->{tm5exec_built}<--   ==>{tm5exec_built.absolute()}<==")
         os.symlink(tm5exec_built.absolute(), tm5exe)
     dry_run = args.run_mode=='only_prepforward'
+    ndyn = None if args.ndyn==None else str(args.ndyn)
     #-- for now taking default values selected by Guillaume,
     #   but potentially only do a "dry run"
     #   (i.e. preparing all inputs for the run but eventually only dump the command that would
     #    be executed.)
     #-- MVO-ADDED-20240104: allow to set zero initial concentrations (and bypass any input files)
-    tm.forward(iniconc=args.iniconc, dry_run=dry_run)
+    #-- MVO-ADDED-20240529: allow overriding 'ndyn' (which is applied to cfl.outputstep, too)
+    tm.forward(iniconc=args.iniconc, dry_run=dry_run, ndyn=ndyn)
