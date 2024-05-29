@@ -24,7 +24,6 @@ class TM5:
         # Copy the section of the yaml file given by the "machine" keyword arguments to the actual "machine" section.
         # If the "machine" keyword argument is not provided, this does nothing (i.e. it copies "machine" section to "machine" section)
         self.dconf['machine'] = self.dconf[machine]
-
         self.configfile = dconf
         self.settings = TM5Settings()
         self.tm5exec = Path(self.dconf.run.paths.output) / 'tm5.x'
@@ -73,9 +72,11 @@ class TM5:
         rcf = self.settings.write(Path(self.dconf.run.paths.output) / 'forward.rc')
         run_tm5(f'{str(self.tm5exec.absolute())} {str(rcf)}', settings=self.dconf.machine.host)
 
-    def forward(self, emission_file : str = None, setup_emis: bool = True, setup_obs: bool = True,
-                iniconc: str = None,
-                dry_run:bool = False):
+    def forward(self, emission_file : str = None,
+                setup_emis: bool = True, setup_obs: bool = True,
+                iniconc : str = None,
+                dry_run : bool = False,
+                ndyn    : str = None):
         """
         Do a forward run, bypassing totally the pyshell
         """
@@ -102,6 +103,12 @@ class TM5:
         self.setup_optim()
         self.setup_tracers()
         self.setup_system()
+        if ndyn!=None:
+            ndyn_org = self.settings['ndyn']
+            msg = f"explicitly overrding default ndyn={ndyn_org} by ndyn={ndyn} on user request."
+            logger.info(msg)
+            self.settings['ndyn'] = ndyn
+            self.settings['cfl.outputstep'] = ndyn
         rcf = self.settings.write(Path(self.dconf.run.paths.output) / 'forward.rc')
         if dry_run:
             print(f"TM5 command -->{str(self.tm5exec.absolute())} {str(rcf)}'<--")
