@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import sys
 import xarray as xr
 import numpy as np
 from pandas import Timestamp, date_range, DatetimeIndex
@@ -78,7 +79,6 @@ def load_preprocessed_emis(
     msg = f"reading emissions from file pattern -->{file_pattern}<--"
     logger.info(msg)
     data = xr.open_mfdataset(file_pattern)
-
     
     if categ.get('climatology', False):
         logger.warning(f"Treating files {file_pattern} as a climatological field")
@@ -271,17 +271,19 @@ def prepare_emissions(dconf : DictConfig, filename : Union[str, Path]) -> Path:
                     # Load the emissions
                     emcat = load_preprocessed_emis(cat, tracer.species, reg, slice(start, end))
 
-                    # # Split baseline and anomalies in all cases, to ensure that the emissions are at the requested frequency
-                    # emcat, anoms = split_baseline_anomalies(emcat, start, end, cat.optim_freq)
-                    #-- MVO::separate the two parts
-                    #        - resampling to target frequency
-                    #        - generation of daily emission anomalies
-                    emcat = emcat.resample(time=cat.optim_freq).mean()
-                    emcat['time'] = date_range(start, end, freq=cat.optim_freq, inclusive='left')
+                    #-- MVO::currently reverted back for CO2 and it's adjoint
+                    # Split baseline and anomalies in all cases, to ensure that the emissions are at the requested frequency
+                    emcat, anoms = split_baseline_anomalies(emcat, start, end, cat.optim_freq)
+                    # #-- MVO::separate the two parts
+                    # #        - resampling to target frequency
+                    # #        - generation of daily emission anomalies
+                    # emcat = emcat.resample(time=cat.optim_freq).mean()
+                    # emcat['time'] = date_range(start, end, freq=cat.optim_freq, inclusive='left')
 
                     # Calculate and write dailycycle if needed
                     if cat.get('dailycycle', False):
-                        anoms = split_daily_anomalies(emcat, start, end)
+                        #-- MVO:: TO BE ACTIVATED IN CASE WE SPLIT AS DESCRIBED ABOVE
+                        # anoms = split_daily_anomalies(emcat, start, end)
                         # Write the anomalies for the category
                         for day, anom in anoms.items():
                             fname = day.strftime(tracer.dailycycle.filename_format)
