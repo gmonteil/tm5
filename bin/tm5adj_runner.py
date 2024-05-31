@@ -430,6 +430,10 @@ def create_satellite_departure(site_tag : str,
 #-- parse command line
 args = parser.parse_args(sys.argv[1:])
 
+
+msg = f"running command ***{' '.join(sys.argv)}***"
+logger.info(msg)
+
 forward_outdir = args.forward_outdir
 
 #

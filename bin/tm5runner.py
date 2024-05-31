@@ -34,6 +34,9 @@ parser.add_argument('--ndyn',
 args = parser.parse_args(sys.argv[1:])
 
 
+msg = f"running command ***{' '.join(sys.argv)}***"
+logger.info(msg)
+
 if args.trange!=None:
     tstart, tend = args.trange
     msg = f"overriding simulation period to {tstart} -- {tend}"
