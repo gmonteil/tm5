@@ -53,7 +53,11 @@ parser.add_argument('--station_file',
                     help="""csv file providing station coordinates (default: %(default)s).""")
 parser.add_argument('--tpulse',
                     default='2018-01-01T23:00:00',
-                    help="""time-point of pulse (any pandas Timestamp compliant format accepted, default: %(default)s).""")
+                    help="""time-point of pulse asn LST (any pandas Timestamp compliant format accepted, default: %(default)s).""")
+parser.add_argument('--adj_trange',
+                    nargs=2,
+                    metavar=('yyyy-mm-dd_start', 'yyyy-mm-dd_end'),
+                    help="""temporal range of adjoint run. These must be specified such that adjoint start is after *after* the adjoint end.""")
 parser.add_argument('--mode',
                     choices=['point','satellite'],
                     default='point',
@@ -436,10 +440,19 @@ site_tag = f"{args.site}-{site_info['name']}"
 lat, lon, alt = site_info['lat'], site_info['lon'], site_info['alt']
 
 #
-#-- time point of backward pulse
+#-- time point of backward pulse LST
 #
-tpulse = pd.Timestamp(args.tpulse)
-
+tpulse     = pd.Timestamp(args.tpulse)
+#
+#-- time point of backward pulse UTC,
+#   rounded to full hour
+#
+tpulse_utc = tpulse - pd.Timedelta(hours=lon/15.) #-- time of pulse [UTC]
+msg = f"time-of-pulse {tpulse}[LST] yields {tpulse_utc} [UTC]"
+logger.info(msg)
+tpulse_utc = tpulse_utc.round(freq='H')
+msg = f"time-of-pulse, rounded to full hour {tpulse_utc} [UTC]"
+logger.info(msg)
 
 if args.rcfile==None:
     #
@@ -458,13 +471,33 @@ if args.rcfile==None:
             k,v = tokens
             rc_dct[k] = v
     #
-    #--
+    #-- temporal range of adjoint run
     #
-    adj_tstart = pd.Timestamp(rc_dct['jobstep.timerange.end'])
-    adj_tend   = pd.Timestamp(rc_dct['jobstep.timerange.start'])
-    assert adj_tend<=tpulse<=adj_tstart, \
+    fwd_tstart = pd.Timestamp(rc_dct['jobstep.timerange.start'])
+    fwd_tend   = pd.Timestamp(rc_dct['jobstep.timerange.end'])
+    if args.adj_trange!=None:
+        adj_tstart = pd.Timestamp(args.adj_trange[0])
+        adj_tend   = pd.Timestamp(args.adj_trange[1])
+        assert adj_tstart>adj_tend
+        assert adj_tstart<=fwd_tend
+        assert adj_tend>=fwd_tstart
+        rc_dct['jobstep.timerange.start'] = adj_tend.strftime('%Y-%m-%d %H:%M:%S')
+        rc_dct['jobstep.timerange.end']   = adj_tstart.strftime('%Y-%m-%d %H:%M:%S')
+    else:
+        adj_tstart = fwd_tend
+        adj_tend   = fwd_tstart
+        #-- now using 1 hour
+        if tpulse_utc - pd.Timedelta(days=1) >= fwd_tstart:
+            adj_tend = tpulse_utc - pd.Timedelta(days=1)
+            rc_dct['jobstep.timerange.start'] = adj_tend.strftime('%Y-%m-%d %H:%M:%S')
+    #
+    #-- consistencty for time of pulse
+    #
+    assert adj_tend<=tpulse_utc<=adj_tstart, \
         f"selected timepoint of backward pulse {args.timepoint} not in temporal range of rcfile {adj_rcfile}"
 
+    assert adj_tstart==pd.Timestamp(adj_tstart.strftime('%Y-%m-%d')), \
+        f"adjoint TM5 run must start at H:M:S 00:00:00 but have adj_tend={adj_tend}"
     #
     #-- swith to run mode 2 (for adjoint)
     #
@@ -487,7 +520,7 @@ if args.rcfile==None:
     else:
         adj_tag = f"{args.mode}-{args.sat_interpolation}"
     
-    adj_rcfile = f"{forward_outdir}/adjoint_{site_tag}_{adj_tag}_{tpulse.strftime('%Y%m%dT%H')}.rc"
+    adj_rcfile = f"{forward_outdir}/adjoint_{site_tag}_{adj_tag}_{tpulse.strftime('%Y%m%dT%H')}-LST.rc"
     if args.mode=='point':
         rc_dct['adjoint.input.point']     = 'T'
         rc_dct['adjoint.input.satellite'] = 'F'
@@ -513,10 +546,6 @@ else:
     copy_file(Path(args.rcfile), Path(adj_rcfile))
 
 
-#
-#-- fixed to 25 level simulations ('tropo25')
-#
-nlevel = 25
 
 
 #
@@ -524,12 +553,16 @@ nlevel = 25
 #
 if args.mode=='point':
     ptoutdir = Path(f'{args.forward_outdir}/point')
-    create_point_departure(site_tag, lat, lon, alt, tpulse, ptoutdir)
+    create_point_departure(site_tag, lat, lon, alt, tpulse_utc, ptoutdir)
 elif args.mode=='satellite':
     if args.level_weights=='uniform':
         #
         #-- initial approach: uniform over levels
         #
+        #
+        #-- fixed to 25 level simulations ('tropo25')
+        #
+        nlevel = 25
         departures = np.full(nlevel, 1/nlevel)
         departure_tag = 'uniform-level-weights'
         logger.info(f"created uniform departures over levels")
@@ -537,18 +570,18 @@ elif args.mode=='satellite':
         #
         #-- example output for mixing ration: mix/2018/06/mix20180601.nc4
         #
-        mixoutdir = Path(f"{args.forward_outdir}/mix/{tpulse.year}/{tpulse.month:02d}")
-        mixfile = mixoutdir / f"mix{tpulse.strftime('%Y%m%d')}.nc4"
+        mixoutdir = Path(f"{args.forward_outdir}/mix/{tpulse_utc.year}/{tpulse_utc.month:02d}")
+        mixfile = mixoutdir / f"mix{tpulse_utc.strftime('%Y%m%d')}.nc4"
         if mixfile.exists():
             msg = f"derive level-dependent departures from file ***{mixfile}***"
             logger.info(msg)
-            departures = load_pressurelevel_weights( mixfile, lat, lon, tpulse)
+            departures = load_pressurelevel_weights( mixfile, lat, lon, tpulse_utc)
             departure_tag = 'pressure-level-weights'
         else:
             msg = f"required input for computing pressure level weights is missing ==>{mixfile}<=="
             raise RuntimeError(msg)
     satoutdir = Path(f"{args.forward_outdir}/satellite")
-    create_satellite_departure(site_tag, lat, lon, alt, tpulse, departures, departure_tag, satoutdir)
+    create_satellite_departure(site_tag, lat, lon, alt, tpulse_utc, departures, departure_tag, satoutdir)
 #
 #-- TM5 command line
 #
@@ -584,7 +617,7 @@ else:
 if args.adj_resdir!=None:
     adj_resdir = Path(args.adj_resdir)
 else:
-    adj_resdir = Path(args.forward_outdir) / f"adjrun_{args.site}_{tpulse.strftime('%Y%m%dT%H%M%S')}"
+    adj_resdir = Path(args.forward_outdir) / f"adjrun_{args.site}_{tpulse_utc.strftime('%Y%m%dT%H%M%S')}"
     adj_resdir.mkdir(parents=True, exist_ok=True)
 for src in [adj_emis_file, adj_sav_file, adj_tprof_file]:
     if src.exists():
