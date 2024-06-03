@@ -410,7 +410,7 @@ def create_satellite_departure(site_tag : str,
     #-- currently we fix to split_period='m'
     #-- filemame in TM5
     #
-    default_outname = outdir / f"sat-track_departures_{timepoint.strftime('%Y%m')}.nc4"
+    default_outname = outdir / f"sat-track_departures_{timepoint.strftime('%Y%m')UTC}.nc4"
     try:
         default_outname.unlink()
     except FileNotFoundError as e:
@@ -526,7 +526,7 @@ if args.rcfile==None:
     else:
         adj_tag = f"{args.mode}-{args.sat_interpolation}"
     
-    adj_rcfile = f"{forward_outdir}/adjoint_{site_tag}_{adj_tag}_{tpulse.strftime('%Y%m%dT%H')}-LST.rc"
+    adj_rcfile = f"{forward_outdir}/adjoint_{site_tag}_{adj_tag}_{tpulse_utc.strftime('%Y%m%dT%H')}-UTC.rc"
     if args.mode=='point':
         rc_dct['adjoint.input.point']     = 'T'
         rc_dct['adjoint.input.satellite'] = 'F'
@@ -589,6 +589,8 @@ elif args.mode=='satellite':
             raise RuntimeError(msg)
     satoutdir = Path(f"{args.forward_outdir}/satellite")
     create_satellite_departure(site_tag, lat, lon, alt, tpulse_utc, departures, departure_tag, satoutdir)
+
+
 #
 #-- TM5 command line
 #
