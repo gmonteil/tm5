@@ -53,7 +53,7 @@ parser.add_argument('--station_file',
                     help="""csv file providing station coordinates (default: %(default)s).""")
 parser.add_argument('--tpulse',
                     required=True,
-                    help="""time-point of pulse UTC (any pandas Timestamp compliant format accepted, default: %(default)s).""")
+                    help="""time-point of pulse UTC (any pandas Timestamp compliant format accepted, !!!MANDATORY!!!).""")
 parser.add_argument('--adj_trange',
                     nargs=2,
                     metavar=('yyyy-mm-dd_start', 'yyyy-mm-dd_end'),
