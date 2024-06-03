@@ -408,9 +408,9 @@ def create_satellite_departure(site_tag : str,
 
     #
     #-- currently we fix to split_period='m'
-    #-- filemame in TM5
+    #-- filemame in TM5 !!!DO NOT CHANGE!!!
     #
-    default_outname = outdir / f"sat-track_departures_{timepoint.strftime('%Y%m')}UTC.nc4"
+    default_outname = outdir / f"sat-track_departures_{timepoint.strftime('%Y%m')}.nc4"
     try:
         default_outname.unlink()
     except FileNotFoundError as e:
