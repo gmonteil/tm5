@@ -44,9 +44,8 @@ _stafile_lst = [f"{_TM5DIR}/stationlist.verify2020.txt", f"{_TM5DIR}/co2m-statio
 
 #-- create parser
 parser = ArgumentParser(description='build and run TM5 atmosphere tracer model')
-parser.add_argument('--site',
-                    default='so',
-                    help="""observational site which is listed in station file (default: %(default)s).""")
+parser.add_argument('site',
+                    help="""observational station/site for the adjoint run (must be present in station table).""")
 parser.add_argument('--station_file',
                     choices=_stafile_lst,
                     default=_stafile_lst[1],
@@ -107,32 +106,49 @@ def copy_file(source, destination):
 def load_site( filepath : str, site_id : str ):
     """
     """
-    header_c1 = ['ID', 'LAT', 'LON', 'ALT', 'TP', 'STATIONNAME']
+    #-- /srv/tm5/stationlist.verify2020.txt
+    header_c1 = ['ID', 'LAT', 'LON', 'ALT', 'TP', 'STATIONNAME']      
+    #-- /srv/tm5/co2m-stationlist_site_20231116_for-tm5.txt
     header_c2 = ['NUM','ID', 'LAT', 'LON', 'ALT', 'TP', 'STATIONNAME']
     site_dct = {}
-    #-- the format is not well suitable for reading it with pandas...
-    with open(filepath) as fp:
-        for iline,line in enumerate(fp):
-            tokens = line.split()
-            if iline==0:
-                assert tokens==header_c1 or tokens==header_c2, \
-                    f"unexpected headers -->{tokens}<--"
-            else:
-                #-- running index at front of further lines
-                inum = int(tokens[0])
-                cur_id = tokens[1]
-                if cur_id.lower() != site_id.lower():
-                    continue
-                else:
-                    logger.info(f"selected site -->{site_id}<-- detected at inum={inum} (=={tokens}==)")
-                    #-- getting coordinates and altitude plus station name
-                    site_dct['lat'] = float(tokens[2])
-                    site_dct['lon'] = float(tokens[3])
-                    site_dct['alt'] = float(tokens[4])
-                    site_dct['name'] = tokens[6].lower()
+
     #
-    if len(site_dct)==0:
+    #-- MVO::2024-06-07
+    #
+    # we only now discovered that the names in the CO2M station list are not unambiguous
+    # and for the processing of the active sites we are now passing
+    # 'siteXXX' as site name, where 'XXX' is the (1-based) index of the
+    # site in Dietrich's complete CO2M station table.
+    # The station file used here '/srv/tm5/co2m-stationlist_site_20231116_for-tm5.txt'
+    # contains all these sites and the first column ('NUM') just contains the 'num_id' from
+    # Dietrich's table
+    site_num = None
+    if site_id.startswith('site'):
+        site_num = int(site_id[4:]) #-- the 1-based index in Dietrichs table
+        msg = f"detected site_id={site_id} with numerical identifier {site_num}"
+        logger.info(msg)
+    #-- the format is not well suitable for reading it with pandas...
+    df = pd.read_csv(filepath, delim_whitespace=True, engine='python')
+    if site_num!=None:
+        cnd_site = df.loc[:,'NUM']==site_num
+        df_site = df.loc[cnd_site,:]
+    else:
+        cnd_site = df.loc[:,'ID']==site_id.lower()
+        df_site = df.loc[cnd_site,:]
+    #
+    if len(df_site)==0:
         raise RuntimeError(f"selected site {site_id} not found in station file -->{filepath}<--")
+    elif len(df_site)!=1:
+        raise RuntimeError(f"selected site {site_id} with multiple occurrences in station file -->{filepath}<--")
+    else:
+        df_site = df_site.reset_index()
+
+    #--
+    site_dct['lon']  = df_site.loc[0, 'LON']
+    site_dct['lat']  = df_site.loc[0, 'LAT']
+    site_dct['alt']  = df_site.loc[0, 'ALT']
+    site_dct['name'] = df_site.loc[0, 'STATIONNAME']
+
     return site_dct
 # ---end-of-load_site
 
@@ -441,7 +457,10 @@ forward_outdir = args.forward_outdir
 #
 site_info = load_site(args.station_file, args.site)
 site_tag = f"{args.site}-{site_info['name']}"
-lat, lon, alt = site_info['lat'], site_info['lon'], site_info['alt']
+lat, lon, alt, name = site_info['lat'], site_info['lon'], site_info['alt'], site_info['name']
+msg = f"requested site -->{args.site}<-- ({name}) yields lat/lon/alt = {lat}/{lon}/{alt}"
+logger.info(msg)
+sys.exit(0)
 
 #
 #-- time point of backward pulse LST
