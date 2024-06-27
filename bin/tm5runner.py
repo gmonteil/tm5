@@ -29,7 +29,7 @@ parser.add_argument('--trange',
                     help="""temporal range of simulation (overrides settings in yaml file), start/end of simulation period to be provided in format yyyy-mm-dd.""")
 parser.add_argument('--ndyn',
                     type=int,
-                    help="""length of time-step [s] of TM5 ('ndyn'), note that cfl.outputstep will be set to the same value.""")
+                    help="""overriding ndyn default from yaml, length of time-step [s] of TM5 ('ndyn'), note that cfl.outputstep will be set to the same value.""")
 #-- parse command line
 args = parser.parse_args(sys.argv[1:])
 
