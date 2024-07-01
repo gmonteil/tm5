@@ -13,10 +13,12 @@ import sys
 
 parser = ArgumentParser()
 parser.add_argument('-b', '--build', action='store_true', default=False, help='Use this option to compile the code')
+parser.add_argument('--host', default='donkey', choices=['donkey', 'ilab_conda'],
+                    help="""selected host environment (default: %(default)s).""")
 args = parser.parse_args(sys.argv[1:])
 
 # 1. Build the model
-tm = tm5.TM5('coarsen_meteo.yaml', host='donkey')
+tm = tm5.TM5('coarsen_meteo.yaml', host=args.host)
 if args.build :
     tm.build()
 
