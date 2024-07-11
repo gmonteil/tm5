@@ -377,7 +377,11 @@ contains
 !    czeta_blh = 1.0  ! no scaling of TM5 blh
 
     !    limits=.true.
-    limits=.false.
+#ifdef with_limits
+    limits = .true.
+#else
+    limits = .false.
+#endif
 
     nstep=0    ! initialize counter of model steps
 
