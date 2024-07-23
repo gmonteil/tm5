@@ -3,6 +3,7 @@
 """
 G. Monteil, 15 May 2024: Simplified run script to compute meteo on a coarsened grid 
 """
+import os
 
 from omegaconf import OmegaConf
 from pathlib import Path
@@ -13,10 +14,11 @@ import sys
 
 parser = ArgumentParser()
 parser.add_argument('-b', '--build', action='store_true', default=False, help='Use this option to compile the code')
+parser.add_argument('-m', '--host', default=os.environ['TM5_HOST'])
 args = parser.parse_args(sys.argv[1:])
 
 # 1. Build the model
-tm = tm5.TM5('coarsen_meteo.yaml', host='donkey')
+tm = tm5.TM5('coarsen_meteo.yaml', host=args.host)
 if args.build :
     tm.build()
 

@@ -1,3 +1,9 @@
+# Create a conda environment + set the required env variable(s)
+environment:
+    conda create -n tm5 python=3.11
+    conda install -c conda-forge makedepf90
+    conda install -c conda-forge xesmf
+    conda conda env config vars set TM5_HOST=laptop
 
 tm5:
 	# Actual TM5 container

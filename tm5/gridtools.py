@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from numpy.typing import NDArray
 from types import SimpleNamespace
 from typing import List
+import xarray as xr
+import xesmf
 
 
 @dataclass
@@ -155,6 +157,18 @@ class RectiLinearGrid:
 
         lonb = linspace(west, east, self.nlon + nsteps_east + nsteps_east + 1)
         return RectiLinearGrid(lonb=lonb, latb=self.latb, radius_earth=self.radius_earth, cyclic=False, dlon=self.dlon, dlat=self.dlat)
+
+    @property
+    def xr_coordinates(self) -> xr.Dataset:
+        return xr.Dataset(
+            {
+                "lat": (["lat"], self.latc, {"units": "degrees_north"}),
+                "lon": (["lon"], self.lonc, {"units": "degrees_east"}),
+            }
+        )
+
+    def regridder(self, other, method : str = 'conservative') -> xesmf.Regridder:
+        return xesmf.Regridder(self.xr_coordinates, other.xr_coordinates, method)
 
 
 @dataclass

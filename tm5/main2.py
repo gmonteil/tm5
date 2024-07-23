@@ -8,7 +8,7 @@ from tm5.build import build_tm5
 from tm5.meteo import Meteo
 from tm5 import inicond
 from tm5.units import units_registry as ureg
-from tm5.settings import TM5Settings
+from tm5.settings import TM5Settings, load_config
 from tm5 import species as chem
 from pathlib import Path
 from pandas import Timestamp, Timedelta
@@ -23,11 +23,7 @@ Re-implementation of whatever was in main.py, because I forgot how up to date th
 class TM5:
     def __init__(self, dconf : str | DictConfig, host : str | None) -> None:
         # Load the config file
-        if isinstance(dconf, str):
-            dconf = OmegaConf.load(dconf)
-        if host is not None :
-            dconf['host'] = dconf[host]
-        self.dconf = dconf
+        self.dconf = load_config(dconf, host)
         self.settings = TM5Settings()
         self.tm5exec = Path(self.dconf.run.paths.output) / 'tm5.x'
         self.meteo = Meteo(**self.dconf.meteo)
@@ -67,27 +63,35 @@ class TM5:
         self.settings['my.meteo.source.dir'] = Path(self.dconf.run.paths.meteo).absolute()
         self.settings['tmm.dir'] = Path(self.dconf.run.paths.meteo).absolute()
 
-        write_meteo = 'F'
+
+        # Three cases:
+        # - use fine meteo; write coarse meteo
+        # - use fine meteo
+        # - use coarse meteo
+
+        write_meteo = self.dconf.meteo.output
         if not self.dconf.meteo.coarsened or coarsen:
             self.meteo.coarsened = False
             self.dconf.meteo.coarsened = True
-            write_meteo = 'T'
             # All fields are read from glb100x100
             self.settings[f'tmm.sourcekey.*.ml'] = f'tm5-nc:mdir=ec/ea/h06h18tr3/ml137/glb100x100/<yyyy>/<mm>;tres=_00p03;namesep=/'
             self.settings[f'tmm.sourcekey.*.sfc.fc'] = f'tm5-nc:mdir=ec/ea/h06h18tr1/sfc/glb100x100/<yyyy>/<mm>;tres=_00p01;namesep=/'
             self.settings[f'tmm.sourcekey.*.sfc.an'] = f'tm5-nc:mdir=ec/ea/an0tr1/sfc/glb100x100/<yyyy>/<mm>;tres=_00p01;namesep=/'
-
-            self.settings['tmm.output.dir'] = str(Path(self.dconf.meteo.output_path).absolute())
-            Path(self.dconf.meteo.output_path).mkdir(exist_ok=True, parents=True)
-            self.settings['cf-standard-name-table'] = Path(self.dconf.run.paths.cf_table).absolute()
-
             for region in self.dconf.regions:
                 levels = self.dconf.regions[region].levels
-                self.settings[f'tmm.destkey.{region}.ml'] = f'tm5-nc:mdir=ec/ea/h06h18tr3/{levels}/{region}/<yyyy>/<mm>;tres=_00p03;namesep=/'
-                self.settings[f'tmm.destkey.{region}.sfc.fc'] = f'tm5-nc:mdir=ec/ea/h06h18tr1/sfc/{region}/<yyyy>/<mm>;tres=_00p01;namesep=/'
-                self.settings[f'tmm.destkey.{region}.sfc.an'] = f'tm5-nc:mdir=ec/ea/an0tr1/sfc/{region}/<yyyy>/<mm>;tres=_00p01;namesep=/'
+
+            if write_meteo:
+                self.settings['tmm.output.dir'] = str(Path(self.dconf.meteo.output_path).absolute())
+                Path(self.dconf.meteo.output_path).mkdir(exist_ok=True, parents=True)
+                self.settings['cf-standard-name-table'] = Path(self.dconf.run.paths.cf_table).absolute()
+
+                for region in self.dconf.regions:
+                    self.settings[f'tmm.destkey.{region}.ml'] = f'tm5-nc:mdir=ec/ea/h06h18tr3/{levels}/{region}/<yyyy>/<mm>;tres=_00p03;namesep=/'
+                    self.settings[f'tmm.destkey.{region}.sfc.fc'] = f'tm5-nc:mdir=ec/ea/h06h18tr1/sfc/{region}/<yyyy>/<mm>;tres=_00p01;namesep=/'
+                    self.settings[f'tmm.destkey.{region}.sfc.an'] = f'tm5-nc:mdir=ec/ea/an0tr1/sfc/{region}/<yyyy>/<mm>;tres=_00p01;namesep=/'
             self.settings['ndyn'] = '900'
             self.settings['cfl.outputstep'] = '900'
+
         else :
             for region in self.dconf.run.regions :
                 levels = self.dconf.regions[region].levels
@@ -95,7 +99,7 @@ class TM5:
                 self.settings[f'tmm.sourcekey.{region}.sfc.fc'] = f'tm5-nc:mdir=ec/ea/h06h18tr1/sfc/{region}/<yyyy>/<mm>;tres=_00p01;namesep=/'
                 self.settings[f'tmm.sourcekey.{region}.sfc.an'] = f'tm5-nc:mdir=ec/ea/an0tr1/sfc/{region}/<yyyy>/<mm>;tres=_00p01;namesep=/'
 
-        self.settings['my.levs'] = self.dconf.regions[region].levels
+        self.settings['my.levs'] = levels
         self.settings['cfl.outputstep'] = self.settings['ndyn'] 
         self.settings['tmm.output'] = write_meteo       # write meteo?
         self.settings['tmm.output.*.*'] = write_meteo   # by default write all fields
@@ -226,6 +230,25 @@ class TM5:
         self.settings['output.point.interpolation'] = {'linear': 3, 'gridbox': 1, 'slopes': 2}[self.dconf.observations.point.interpolation]
         return tm5.observations.prepare_point_obs(self.dconf.output.point)
 
+    def setup_emissions2(self):
+        """
+        This will set the following rc-keys:
+        - emissions.{tracer}.{region}.ncats
+        - emissions.{tracer}.{region}.categories
+        - emissions.{tracer}.prefix
+        """
+        for tr in self.dconf.run.tracers :
+            self.settings[f'emissions.{tr}.prefix'] = self.dconf.emissions[tr].prefix
+            for region in self.dconf.run.regions:
+                catlist = []
+                for catname, cat in self.dconf.emissions[tr].categories.items():
+                    # By default, the category is in all the regions, unless a "regions" subkey is definbed
+                    if region in cat.get('regions', [region]):
+                        catlist.append(catname)
+                self.settings[f'emissions.{tr}.{region}.ncats'] = len(catlist)
+                self.settings[f'emissions.{tr}.{region}.categories'] = ', '.join(catlist)
+
+
     def setup_emissions(self, skip_file_creation: bool = False, filename : str = None):
         """
         This will create the emission file and dailycycle files as well as setup the following rc-keys:
@@ -296,8 +319,17 @@ class TM5:
         self.settings['tracers.names'] = ','.join([_ for _ in tracers])
         for tr in tracers :
             spec = self.dconf.tracers[tr].species
-            emis_unit = self.dconf.tracers[tr].get('flux_unit', chem.species[spec].unit_emis)
-            mix_unit = self.dconf.tracers[tr].get('mix_unit', chem.species[spec].unit_mix)
+            tracer = chem.species.get(spec, None)
+
+            # If the species is not present in the "tm5.species" module, then flux_unit and mix_unit MUST be defined
+            # otherwise they are just optional
+            if tracer is not None:
+                emis_unit = self.dconf.tracers[tr].get('flux_unit', tracer.unit_emis)
+                mix_unit = self.dconf.tracers[tr].get('mix_unit', tracer.unit_mix)
+            else :
+                emis_unit = self.dconf.tracers[tr].flux_unit
+                mix_unit = self.dconf.tracers[tr].mix_unit
+
             self.settings[f'tracers.{tr}.molar_mass'] = 1 / ureg.Quantity(f'g{spec}').to('mol').m
             self.settings[f'tracers.{tr}.mixrat_unit_value'] = ureg.Quantity('mol / mol').to(mix_unit).m
             self.settings[f'tracers.{tr}.mixrat_unit_name'] = str(mix_unit)

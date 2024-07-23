@@ -6,6 +6,14 @@ from loguru import logger
 """
 Default TM5 settings (rc keys)
 """
+from omegaconf import OmegaConf, DictConfig
+
+def load_config(dconf: str | DictConfig, host: str | None = None) -> DictConfig:
+    if isinstance(dconf, str):
+        dconf = OmegaConf.load(dconf)
+    if host is not None :
+        dconf['host'] = dconf[host]
+    return dconf
 
 
 defaults = {

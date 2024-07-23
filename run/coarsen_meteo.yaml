@@ -13,6 +13,21 @@ donkey :
     diffusion : /scratch/users/guillaume/TM5/diffusion
 
 
+laptop :
+  container : /data/TM5/tm5-intel-ubuntu20_v2.simg
+  makedepf90 : makedepf90
+  build_cmd : singularity run -B /run/media/guillaume -B /data ${.container} make -C ${build.directory} tm5.x
+  run_cmd : singularity run -B /run/media/guillaume -B /data ${.container} ${run.paths.output}/tm5.x
+  makefile : Makefile.singularity.ifort
+  paths :
+    output : /data/TM5/output
+    build : /data/TM5/build
+    meteo : /run/media/guillaume/EXT4TB/TM5/meteo
+    meteo_out : /data/TM5/meteo_out
+    udunits : /opt/etc/udunits.dat  # included in the container!
+    diffusion : /data/TM5/diffusion
+
+
 run :
   start : 1 jan 2018
   end : 3 jan 2018
