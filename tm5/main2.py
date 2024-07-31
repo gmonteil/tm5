@@ -335,6 +335,13 @@ class TM5:
             self.settings[f'tracers.{tr}.mixrat_unit_name'] = str(mix_unit)
             self.settings[f'tracers.{tr}.emis_unit_value'] = ureg.Quantity(f'kg{spec}').to(emis_unit).m
             self.settings[f'tracers.{tr}.emis_unit_name'] = str(emis_unit)
+            self.settings[f'tracers.{tr}.species'] = spec.lower()
+            apply_chem = self.dconf.tracers[tr].get('chemistry', False)
+            if apply_chem:
+                self.settings[f'tracers.{tr}.chemistry'] = 'T'
+                self.settings['proces.chemistry'] = 'T'
+            else :
+                self.settings[f'tracers.{tr}.chemistry'] = 'F'
 
     def setup_system(self) -> None:
         """

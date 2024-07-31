@@ -4,9 +4,11 @@
 
 module chem_param
 
-    use binas, only         : xmair, Avog, grav, amu
-    use global_types, only  : emis_data
-    use global_data, only   : ntracet
+    use binas,          only : xmair, Avog, grav, amu
+    use global_types,   only : emis_data
+    use global_data,    only : ntracet
+    use os_specs,       only : MAX_FILENAME_LEN
+    use toolbox,        only : zfarr
 
     implicit none
 
@@ -82,6 +84,30 @@ module chem_param
     ! deposition parameters:
     integer, parameter   :: ndep = 0
 
+    integer, parameter  :: ntlow = 160
+    integer, parameter  :: nthigh = 330
+    integer, parameter  :: ntemp = nthigh - ntlow
+
+    type react_t
+        character(len=MAX_FILENAME_LEN) :: file         ! path to the file storing the reactive species concentration
+        real, dimension(ntemp)          :: rate         ! reaction rate as function of temperature
+        character(len=20)               :: domain       ! domain of application of the reaction: total, tropo or strato
+        real, dimension(2)              :: parameters   ! reaction parameters
+        character(len=50)               :: name         ! reaction name (as in the rc-file)
+
+        contains
+            procedure init => init_reaction
+    end type react_t
+
+    type tracer_t
+        character(len=tracer_name_len)  :: species      ! Name of the chemical species
+        logical                         :: has_chem     ! Turn on or off chemistry for that tracer
+        integer                         :: nreact
+        type(react_t), dimension(:), allocatable :: reactions
+    end type tracer_t
+
+    type(tracer_t), dimension(:), allocatable   :: tracers
+
     contains
 
     subroutine init_chem
@@ -90,7 +116,7 @@ module chem_param
         use go, only : readrc
 
         integer :: status
-        integer :: itrac
+        integer :: itrac, ireac, nreac
         character(len=500) :: rcval
 
         call readrc(rcf, 'tracers.number', ntrace, status, default=1)
@@ -103,6 +129,8 @@ module chem_param
         allocate(mixrat_unit(ntrace), mixrat_unit_name(ntrace))
         allocate(emis_unit(ntrace), emis_unit_name(ntrace))
         allocate(fscale(ntrace))
+
+        allocate(tracers(ntrace))
 
         ntracet = ntrace
         ntrace_chem = ntrace - ntracet
@@ -121,6 +149,31 @@ module chem_param
             ! The unit names can be arbitrary (no check on that ...)
             call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.emis_unit_value', emis_unit(itrac), status)
             call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.emis_unit_name', emis_unit_name(itrac), status)
+
+            ! Initialize the "tracers" object
+            call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.chemistry', tracers(itrac)%has_chem, status)
+            call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.species', tracers(itrac)%species, status)
+
+            if (tracers(itrac)%has_chem) then
+
+                ! Number of reactions
+                call readrc(rcf, 'tracers.' //trim(names(itrac)) // '.nreac', nreac, 0, status)
+                tracers(itrac)%nreact = nreac
+
+                ! Reaction names
+                call readrc(rcf, 'tracers.' //trim(names(itrac)) //'.reaction_names', reacnames, status)
+
+                ! Read reaction parameters
+                allocate(tracers(itrac)%reactions(nreac))
+                do ireac = 1, nreac
+                    tracers(itrac)%reactions(ireac)%name = reacnames(ireac)
+                    call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.' // trim(reacnames(ireac)) // '.file', tracers(itrac)%reactions(ireac)%file)
+                    call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.' // trim(reacnames(ireac)) // '.domain', tracers(itrac)%reactions(ireac)%domain)
+                    call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.' // trim(reacnames(ireac)) // '.rate', tracers(itrac)%reactions(ireac)%parameters)
+
+                    call tracer(itrac)%reactions(ireac)%init
+                end do
+            end if
         end do
 
         !   fscale(ntrace): scaling factor for conversion of mixing ratios
@@ -129,5 +182,15 @@ module chem_param
         fscale = xmair / ra(:) * mixrat_unit(:)
 
     end subroutine init_chem
+
+    subroutine init_reaction(self)
+        class (react_t), intent(inout)  :: self
+        integer                         :: itemp
+        real                            :: ztrec
+        do itemp = ntlow, nthigh
+            ztrec = 1. / real(ntlow)
+            self%rate(itemp) = zfarr(self%parameters(1), self%parameters(2), ztrec)
+        end do
+    end subroutine init_reaction
 
 end module chem_param
