@@ -12,6 +12,7 @@ from loguru import logger
 import subprocess
 from tm5 import debug
 from tm5.system import runcmd
+from subprocess import CalledProcessError
 
 
 @debug.trace_call
@@ -173,6 +174,9 @@ def make_tm5(dconf: DictConfig) -> Path: #makefile : Path, settings : Dict, host
     executable.unlink(missing_ok=True)
     command = dconf.build.build_cmd.split()
     runcmd(command)
+    if not executable.exists():
+        logger.error('TM5 build failed. Exiting ...')
+        raise RuntimeError("TM5 build failed. Exiting ...")
     return executable
 
 
