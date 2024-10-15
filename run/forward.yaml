@@ -1,0 +1,173 @@
+laptop :
+  container : /data/TM5/tm5-intel-ubuntu20_v2.simg
+  makedepf90 : makedepf90
+  build_cmd : singularity run -B /run/media/guillaume -B /data ${.container} make -C ${build.directory} tm5.x
+  run_cmd : singularity run -B /run/media/guillaume -B /data ${.container} ${run.paths.output}/tm5.x
+  makefile : Makefile.singularity.ifort
+  paths :
+    output : /data/TM5/output
+    build : /data/TM5/build
+    meteo : /run/media/guillaume/EXT4TB/TM5/meteo
+    meteo_out : /data/TM5/meteo_out
+    udunits : /opt/etc/udunits.dat  # included in the container!
+    diffusion : /data/TM5/diffusion
+    emissions : /data/TM5/emissions
+
+
+cosmos:
+  container : /home/gmonteil/tm5-intel-ubuntu20.simg
+  makedepf90 : makedepf90
+  build_cmd : singularity run -B /lunarc ${.container} make -C ${build.directory} tm5.x
+  run_cmd : singularity run -B /lunarc ${.container} ${run.paths.output}/tm5.x
+  makefile : Makefile.singularity.ifort
+  paths :
+    output : /home/gmonteil/data/iLab/TM5/output
+    build : /home/gmonteil/data/iLab/TM5/build
+    meteo : /home/gmonteil/data/TM5/meteo
+    meteo_out : /home/gmonteil/data/TM5/meteo_out
+    udunits : /opt/etc/udunits.dat  # included in the container!
+    diffusion : /home/gmonteil/data/TM5/diffusion
+    emissions : /home/gmonteil/data/TM5/emissions
+    chemistry :
+      ch4_spivakovksy : /home/gmonteil/data/TM5/OH_troposphere-Spivakovsky-2000-ml60-glb100x100.v2.nc
+
+
+
+run :
+  start : 1 jan 2021
+  end : 3 jan 2021
+  paths :
+    output : ${host.paths.output}
+    meteo : ${host.paths.meteo}
+    cf_table : ../data/cf-standard-name-table.xml
+    udunits : ${host.paths.udunits}
+    diffusion : ${host.paths.diffusion}
+    emissions : ${host.paths.emissions}
+  meteo :
+    coarsened : no
+    write : no
+  regions : [glb600x400]
+  run_cmd : ${host.run_cmd}
+  tracers : [CH4]
+
+
+species :
+  ch4 :
+    species : CH4
+    reactions:
+      oh :
+        file : ${host.paths.chemistry.ch4_spivakovksy}
+        rate : [2.45e-12, -1775]
+        domain : tropo
+#      ohstrat :
+#        file : /path/to/ohstrat
+#        rate : ${..oh.rate}
+#        domain : strato
+#      cl :
+#        file : /path/to/clfile
+#        rate : [7.3e-12, -1280]
+#        domain : strato
+#      o1d :
+#        file : /path/to/o1dfile
+#        rate : [1.5e-10, 0]
+#        domain : strato
+    flux_unit : TgCH4
+    mix_unit : ppb
+    chemistry : yes
+
+
+tracers :
+  CH4 : ${species.ch4}
+#    species : ${species.ch4}
+#    flux_unit : TgCH4
+#    mix_unit : ppb
+#    chemistry : yes
+
+
+emissions:
+  CH4:
+    prefix : ${run.paths.emissions}/ch4emis
+    categories :
+      wetlands :
+        path : /data/TM5/input/ch4/emissions/cal_lpj_ch4_wetland_forTM5_2021.nc
+        field : ch4_wetland
+        regions : ${run.regions}
+      fossil :
+        path : /data/TM5/input/ch4/emissions/fossil/EDGARv8.0_CH4-TOTALS_daily_2021.nc
+        field : fossil
+        regions : ${run.regions}
+
+
+initial_condition:
+  type : zero
+
+
+#  start: ${run.start}
+#  end: ${run.end}
+#  tracers: ${run.tracers}
+#  dailycycle_folder: ${machine.paths.output}/dailycycle
+#  CO2:
+#    dailycycle:
+#      filename_format: ${...dailycycle_folder}/%Y/%m/co2_dailycycle.%Y%m%d.nc4
+#      type: 1
+#    species: CO2
+#    emission_desc: only-edgarv8
+#    emission_categories:
+#      fossil:
+#        pattern: ${run.paths.emissions}/fossil/EDGARv8.0_CH4-TOTALS_daily_????.nc
+#        optim_freq: D
+#        field: fossil
+#  regions:
+#    glb100x100: ${regions.glb100x100}
+
+
+meteo :
+  levels : tropo25
+  path : ${host.paths.meteo}
+  archive : swestore:TM5/meteo/
+  coarsened : ${run.meteo.coarsened}
+  output    : ${run.meteo.write}
+  regions : ${run.regions}
+  output_path : ${host.paths.meteo_out}
+
+
+build :
+  directory : ${host.paths.build}
+  paths :
+    src :
+      - ../src/base
+      - ../src/proj/macros/tmm_tm5
+      - ../src/proj/levels/ml137
+      - ../src/proj/levels/ml137/tropo25a
+      - ../src/proj/linalg/mkl
+      - ../src/proj/openmp_speedups
+#      - ../src/proj/tracer/CO2
+      - ../src/proj/era5_met
+      - ../src/proj/output
+      - ../src/proj/regions/glb6x4
+      - ../src/dev
+      - ../src/emissions  # attempt to replace the pyshell emissions by a simpler implementation, without daily cycles
+      - ../src/chemistry  # attempt at a tracer-agnostic chemistry module
+    remove__ : True
+  macros : 
+    mdf.inc : [with_go, with_netcdf4]
+    tm5.inc : [slopes, without_wet_deposition, without_dry_deposition, without_photolysis]
+    #tm5.inc : [slopes, without_wet_deposition, without_dry_deposition, without_photolysis, without_chemistry]
+  makefile : ${host.makefile}
+  makedepf90 : ${host.makedepf90}
+  build_cmd: ${host.build_cmd}
+
+
+regions :
+  glb600x400 :
+    name : glb600x400
+    lons : [-180, 180, 6]
+    lats : [-90, 90, 4]
+    levels : tropo25
+
+  eur300x200 :
+    name : eur300x200
+    levels : tropo25
+    lons : [-36, 54, 3]
+    lats : [22, 74, 2]
+    parent : glb600x400
