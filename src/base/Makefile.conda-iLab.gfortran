@@ -1,5 +1,5 @@
 MINICONDA_HOME = /home/michael/sw/miniconda3
-TM5_CONDA = $(MINICONDA_HOME)/envs/tm5
+TM5_CONDA = $(MINICONDA_HOME)/envs/tm5-ilab
 nfconfig = $(TM5_CONDA)/bin/nf-config
 H5PATH = $(TM5_CONDA)
 

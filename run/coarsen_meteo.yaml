@@ -12,6 +12,19 @@ donkey :
     udunits : /opt/etc/udunits.dat
     diffusion : /scratch/users/guillaume/TM5/diffusion
 
+ilab_conda :
+  makedepf90 : makedepf90
+  build_cmd : make -C ${build.directory} tm5.x
+  run_cmd : ${run.paths.output}/tm5.x 
+  makefile : Makefile.conda-iLab.gfortran
+  paths :
+    output : output
+    build : build
+    meteo :     /srv/tm5/input/meteo
+    meteo_out : /srv/tm5/output/meteo
+    udunits :   /home/michael/sw/miniconda3/opt/udunits-1.12.11/etc/udunits.dat  # udunit v1.x needed by TM5
+    diffusion : /srv/tm5/tm5new_diffusion
+
 
 laptop :
   container : /data/TM5/tm5-intel-ubuntu20_v2.simg
