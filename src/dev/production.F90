@@ -49,7 +49,7 @@ contains
         type(t_production_data), pointer    :: prod
         integer                             :: status
 
-        rname = mname // 'production_init'
+        rname = mname // '/production_init'
 
         allocate(production_data(ntracet))
 

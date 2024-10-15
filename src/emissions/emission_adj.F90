@@ -49,7 +49,6 @@ contains
 
   subroutine Emission_Adj_Init( status )
 
-    use Emission_Adj_CO2,   only : Init_adjemis_CO2 => Emission_Adj_Init
     use dims,               only : nregions
     use Emission_Data,      only : tracers_em_info
     use chem_param,         only : ntracet
@@ -87,8 +86,6 @@ contains
   end subroutine Emission_Adj_Init
 
   subroutine Emission_Adj_Done( status )
-
-    use Emission_Adj_CO2,   only : Done_adjemis_CO2 => Emission_Adj_Done
 
     use Emission_Data,  only : tracers_em_info, update_parent_emissions
     use dims,           only : revert, nregions, region_name, im, jm
@@ -151,7 +148,7 @@ contains
 !    end do
 !    deallocate( adj_emissions )
 
-    call Done_adjemis_CO2(status)
+!    call Done_adjemis_CO2(status)
     IF_NOTOK_RETURN(status=1)
 
   end subroutine Emission_Adj_Done
@@ -255,7 +252,6 @@ contains
 
   subroutine Emission_Adj_Apply( region, tr, status )
 
-    use Emission_Adj_CO2,   only : Apply_adjemis_CO2 => Emission_Adj_Apply
     use Go,                 only : TDate
 
     integer, intent(in)              :: region
@@ -264,7 +260,6 @@ contains
 
     character(len=*), parameter      :: rname = mname//'/Emission_Adj_Apply'
 
-    call Apply_adjemis_CO2(region, tr, status)
     IF_NOTOK_RETURN(status=1)
 
   end subroutine Emission_Adj_Apply

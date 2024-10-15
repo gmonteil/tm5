@@ -248,7 +248,6 @@ class TM5:
                 self.settings[f'emissions.{tr}.{region}.ncats'] = len(catlist)
                 self.settings[f'emissions.{tr}.{region}.categories'] = ', '.join(catlist)
 
-
     def setup_emissions(self, skip_file_creation: bool = False, filename : str = None):
         """
         This will create the emission file and dailycycle files as well as setup the following rc-keys:
@@ -340,7 +339,14 @@ class TM5:
             if apply_chem:
                 self.settings[f'tracers.{tr}.chemistry'] = 'T'
                 self.settings['proces.chemistry'] = 'T'
-            else :
+                reactions = self.dconf.tracers[tr].reactions
+                self.settings[f'tracers.{tr}.nreac'] = len(reactions)
+                self.settings[f'tracers.{tr}.reaction_names'] = list(reactions.keys())
+                for reacname, reac in reactions.items():
+                    self.settings[f'tracers.{tr}.{reacname}.file'] = reac.file
+                    self.settings[f'tracers.{tr}.{reacname}.domain'] = reac.domain
+                    self.settings[f'tracers.{tr}.{reacname}.rate'] = reac.rate
+            else:
                 self.settings[f'tracers.{tr}.chemistry'] = 'F'
 
     def setup_system(self) -> None:

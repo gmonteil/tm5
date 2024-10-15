@@ -82,7 +82,7 @@ module meteo
   !public  ::  entu_dat, entd_dat, detu_dat, detd_dat
   !public  ::  oro_dat
   !public  ::  lsmask_dat
-  !public  ::  pclim_dat
+  public  ::  pclim_dat
   !public  ::  sr_ecm_dat, sr_ols_dat
   !public  ::  u10m_dat, v10m_dat
   !public  ::  sshf_dat, slhf_dat

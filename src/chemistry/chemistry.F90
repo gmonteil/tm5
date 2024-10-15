@@ -9,12 +9,14 @@ module chemistry
     use go,             only : TDate, readrc
     use global_data,    only : rcf
     use chem_param,     only : ntracet, tracers, tracer_t, react_t, ntlow
-    use dims,           only : im, jm, lm
+    use dims,           only : im, jm, lm, isr, ier, jsr, jer
 
     implicit none
 
     public :: chemistry_init, chemistry_step, chemistry_done, read_chemistry_fields
     private
+
+    character(len=*), parameter   ::  mname = 'chemistry'
 
     contains
 
@@ -26,14 +28,17 @@ module chemistry
 
 
         subroutine chemistry_step(region, period, status)
+
+            use global_data, only   : mass_dat
+
             integer, intent(in)                     :: region
             type(TDate), dimension(2), intent(in)   :: period
             integer, intent(out)                    :: status
             integer     :: itr
+            real, dimension(:, :, :), pointer       :: rm, rxm, rym, rzm
+            real, dimension(:, :, :), allocatable   :: loss
 
             do itr = 1, ntracet
-                print*, tracers(itr)%species
-                print*, tracers(itr)%has_chem
                 if (tracers(itr)%has_chem) then
 
                     rm => mass_dat(region)%rm_t(:, :, :, itr)
@@ -41,18 +46,18 @@ module chemistry
                     rym => mass_dat(region)%rym_t(:, :, :, itr)
                     rzm => mass_dat(region)%rzm_t(:, :, :, itr)
 
-                    loss_rate = get_loss_rate(region, period, itr)
+                    loss = get_loss(region, period, tracers(itr))
 
-                    rm = rm - loss_rate * dtime
-                    rxm = rxm * (1 - loss_rate * dtime)
-                    rym = rym * (1 - loss_rate * dtime)
-                    rzm = rzm * (1 - loss_rate * dtime)
+                    rm = rm - loss
+                    rxm = rxm * (1 - loss)
+                    rym = rym * (1 - loss)
+                    rzm = rzm * (1 - loss)
 
                     nullify(rm, rxm, rym, rzm)
                 end if
             end do
 
-            status = 10
+            status = 0
         end subroutine chemistry_step
 
 
@@ -69,28 +74,29 @@ module chemistry
         end subroutine read_chemistry_fields
 
 
-        function get_loss_rate(region, period, tracer) result(loss_rate)
-            ! Get the total tracer loss rate (i.e. sum of reaction rate * mass * dtime) for a given tracer
+        function get_loss(region, period, tracer) result(loss)
+            use go, only : rtotal, operator(-)
 
-            use go,     only : rtotal
+            ! Get the total tracer loss (i.e. sum of reaction rate * mass * dtime) for a given tracer
 
             Type(TDate), dimension(2), intent(in)   :: period
             integer, intent(in)                     :: region
             type(tracer_t), intent(in)              :: tracer
-            real, dimension(:, :, :), allocatable   :: loss_rate
+            real, dimension(:, :, :), allocatable   :: loss
             real, dimension(:, :, :), allocatable   :: conc     ! concentration of the species the tracer reacts with
             integer                                 :: ireac
-            real                                    :: rtotal
+            real                                    :: dtime
+            real, dimension(:, :, :), allocatable   :: rrate
 
-            allocate(loss_rate(im(region), jm(region), lm(region)))
+            allocate(loss(im(region), jm(region), lm(region)))
 
             ! time step for this region
             dtime = abs(rtotal(period(2) - period(1), 'sec'))
 
-            do ireac = 1, tracer%nreac
+            do ireac = 1, tracer%nreact
 
                 ! Get the mass of the species the tracer reacts with
-                conc = get_conc_field(tracer%reactions(ireac), period)
+                conc = get_conc_field(tracer%reactions(ireac), period, region)
 
                 ! Calculate the reaction rate
                 rrate = get_rrate_field(tracer%reactions(ireac), region)
@@ -99,17 +105,17 @@ module chemistry
                 call apply_l_domain(rrate, tracer%reactions(ireac), region)
 
                 ! Calculate the loss rate
-                loss_rate = loss_rate + rrate * conc * dtime
+                loss = loss + rrate * conc * dtime
             end do
 
-        end function get_loss_rate
+        end function get_loss
 
 
         function get_rrate_field(reaction, region) result(field3d)
             ! Return the actual reaction rate in each grid cell (which is a function of temperature)
             ! The reaction rate will be set to 0 outside the current region (so chemistry is computed only once)
 
-            use global_data,    only : meteo_dat
+            use meteodata,  only : temper_dat
 
             type(react_t), intent(in)               :: reaction
             integer, intent(in)                     :: region
@@ -119,11 +125,11 @@ module chemistry
             allocate(field3d(im(region), jm(region), lm(region)))
             field3d = 0.
 
-            do ilon = 1, im(region)
-                do ilat = 1, jm(region)
-                    do ilev = 1, lm(region)
-                        itemp = nint(meteo_dat(region)%T(ilon, ilat, ilev) - real(ntlow))
-                        field3d(ilon, ilat, ilev) = reaction%rate(itemp)
+            do ilev = 1, lm(region)
+                do ilat = jsr(region), jer(region)
+                    do ilon = isr(region), ier(region)
+!                        itemp = nint(temper_dat(region)%data(ilon, ilat, ilev) - real(ntlow))
+                        field3d(ilon, ilat, ilev) = reaction%rate(int(temper_dat(region)%data(ilon, ilat, ilev)))
                     end do
                 end do
             end do
@@ -131,19 +137,27 @@ module chemistry
         end function get_rrate_field
 
 
-        subroutine apply_l_domain(field, reaction, region, status)
+        subroutine apply_l_domain(field, reaction, region)
 
-            use tm5_geometry,   only : lli
-            use dims,           only : im, jm, lm
+            ! domain :
+            ! total  = total atmosphere
+            ! tropo  = troposphere only
+            ! strato = stratosphere only
+            ! set loss rates outside specified domain to zero
+
+            use tm5_geometry,   only : lli, levi
             use global_data,    only : region_dat
+            use meteo,          only : pclim_dat    ! pressure climatology
+            use go,             only : gol, goerr
 
             real, dimension(:, :, :), intent(inout)     :: field
             type(react_t), intent(in)                   :: reaction
             integer, intent(in)                         :: region
-            integer, intent(in)                         :: status
+            integer                                     :: status
             integer                                     :: ilon, ilat, ilev
             real                                        :: lat
-            real                                        :: pres_tropopause
+            real                                        :: pres, pres_tropopause
+            character(len=*), parameter                 :: rname = mname//'/Apply_L_Domain'
 
             do ilat = 1, jm(region)
                 ! current latitude:
@@ -175,26 +189,66 @@ module chemistry
                             case ('strato')
                                 if (pres >= pres_tropopause) field(ilon, ilat, ilev) = 0
                             case default
-                                write (gol,'("unsuported domain :",a)') trim(domain); call goErr
+                                write (gol,'("unsuported domain :",a)') trim(reaction%domain); call goErr
                                 TRACEBACK; status=1; return
                         end select
                     end do
                 end do
             end do
 
-            status = 0
-
         end subroutine apply_l_domain
 
 
-        function get_conc_field(filename, period) result(field3d)
+        function get_conc_field(reaction, period, region) result(field3d)
+
+            use meteo,          only : pclim_dat
+            use file_netcdf
+            use grid_type_ll,   only : init_grid => init, tllgridinfo
+            use grid_type_hyb,  only : init_levels => init, tlevelinfo
+            use grid_3d,        only : fill3d
+            use go,             only : gol, goerr
+            use tm5_geometry,   only : lli, levi
+
             ! Return the concentration field of a reactive species (in units of ...), during the requested time interval
-            character(len=*), intent(in)            :: filename
-            type(TDate), intent(in)                 :: period
-            real, dimension(:, :, :), allocatable   :: field3d
+            type(react_t), intent(in)                   :: reaction
+            type(TDate), dimension(2), intent(in)       :: period
+            integer, intent(in)                         :: region
+            real, dimension(:, :, :), allocatable       :: field3d
+            real(4), dimension(:, :, :, :), allocatable :: tmp
+            real, dimension(:, :, :, :), allocatable    :: field4d
+            character(len=*), parameter                 :: rname = mname//'/get_conc_field'
+            type(tllgridinfo)   :: lli_in
+            type(tlevelinfo)    :: levi_in
+            integer             :: ncf
+            integer             :: status
 
             allocate(field3d(im(region), jm(region), lm(region)))
             field3d = 0.
+
+            ! GM, 14 oct 2024:
+            ! Code adapted from https://sourceforge.net/p/tm5/cy3_4dvar/ci/d13c-ch4/tree/proj/tracer/d13CH4/src/import_chemistry_fields.F90#l232
+            ! works well for the Spivakovski fields, but only for these, since the vertical coordinates need to follow that of TM5
+
+            ! Spivakovski tropospheric OH in cm ** -3
+            ! MACC OH in molec . cm ** -3
+            ! Lrate(i,j,l) = rrates(kCH4OH, itemp(i,j,l) * OHconc(i,j,l))
+
+            ncf = nc_open(reaction%file, 'r', status)
+            IF_NOTOK_RETURN(status=1)
+            field4d = nc_read_var(ncf, 'field', status)
+            IF_NOTOK_RETURN(status=1)
+            !field4d = tmp
+
+            ! Create coordinates for the OH field
+            call init_grid(lli_in, -179.5, 1.0, 360, -89.5, 1.0, 180, status)
+            IF_NOTOK_RETURN(status=1)
+            call init_levels(levi_in, 'tm60', status)
+            IF_NOTOK_RETURN(status=1)
+            call fill3d( &
+                    lli(region), levi, 'n', pclim_dat(region)%data(:, :, 1), &
+                    field3d, lli_in, levi_in, field4d(:, :, :, period(1)%month), 'mass-aver', status)
+            IF_NOTOK_RETURN(status=1)
+            deallocate(field4d)
 
         end function get_conc_field
 
