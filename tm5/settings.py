@@ -6,7 +6,7 @@ from loguru import logger
 """
 Default TM5 settings (rc keys)
 """
-from omegaconf import OmegaConf, DictConfig
+from omegaconf import OmegaConf, DictConfig, ListConfig
 
 def load_config(dconf: str | DictConfig, host: str | None = None) -> DictConfig:
     if isinstance(dconf, str):
@@ -118,6 +118,8 @@ class TM5Settings(dict):
         filename.parent.mkdir(exist_ok=True, parents=True)
         with open(filename, 'w') as fid :
             for k, v in self.items():
+                if isinstance(v, ListConfig | list):
+                    v = ', '.join([str(vv) for vv in v])
                 fid.write(f'{k} : {str(v)}\n')
         return filename
 
