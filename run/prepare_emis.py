@@ -11,6 +11,7 @@ from pathlib import Path
 
 def coarsen_file(path_or_pattern : str, reg : TM5Grids, start : Timestamp, end : Timestamp) -> xr.Dataset:
     # Open the source file(s). It should be on a global 1x1 resolution (for now ...)
+    print(path_or_pattern)
     ds = xr.open_mfdataset(path_or_pattern)
 
     # Define a regridder
@@ -52,4 +53,4 @@ for region in conf.run.regions :
         # group the datasets in daily emission files for that region and tracer:
         for day in date_range(start, end, freq='D'):
             destfile = f'{tracer.prefix}.{trname}.{region}.{day:%Y%m%d}.nc'
-            xr.Dataset({k:datasets[k].sel(time=day) for k in datasets}).to_netcdf(destfile)
+            xr.Dataset({k:datasets[k].sel(time=day).transpose() for k in datasets}).to_netcdf(destfile)

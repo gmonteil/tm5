@@ -194,7 +194,7 @@ contains
         fid = nc_open(trim(fname), 'r', status)
         IF_NOTOK_RETURN(status=1)
 
-        allocate(emis(tracer%n_cat, jm(ireg), im(ireg)))
+        allocate(emis(tracer%n_cat, im(ireg), jm(ireg)))
 
         emis(:, :, :) = 0
 

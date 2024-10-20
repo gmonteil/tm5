@@ -68,7 +68,7 @@ module chemistry
 
         subroutine chemistry_done(status)
             integer, intent(out)    :: status
-            status = 10
+            status = 0
         end subroutine chemistry_done
 
 

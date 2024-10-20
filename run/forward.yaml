@@ -28,6 +28,7 @@ cosmos:
     udunits : /opt/etc/udunits.dat  # included in the container!
     diffusion : /home/gmonteil/data/TM5/diffusion
     emissions : /home/gmonteil/data/TM5/emissions
+    emissions_archive : /home/gmonteil/data/TM5/emissions/CH4/
     chemistry :
       ch4_spivakovksy : /home/gmonteil/data/TM5/OH_troposphere-Spivakovsky-2000-ml60-glb100x100.v2.nc
 
@@ -89,11 +90,11 @@ emissions:
     prefix : ${run.paths.emissions}/ch4emis
     categories :
       wetlands :
-        path : /data/TM5/input/ch4/emissions/cal_lpj_ch4_wetland_forTM5_2021.nc
+        path : ${host.paths.emissions_archive}/cal_lpj_ch4_wetland_forTM5_2021.nc
         field : ch4_wetland
         regions : ${run.regions}
       fossil :
-        path : /data/TM5/input/ch4/emissions/fossil/EDGARv8.0_CH4-TOTALS_daily_2021.nc
+        path : ${host.paths.emissions_archive}/fossil/EDGARv8.0_CH4-TOTALS_daily_2021.nc
         field : fossil
         regions : ${run.regions}
 
