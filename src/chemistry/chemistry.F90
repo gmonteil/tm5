@@ -30,6 +30,7 @@ module chemistry
         subroutine chemistry_step(region, period, status)
 
             use global_data, only   : mass_dat
+            use dims,                    only : isr, ier, jsr, jer
 
             integer, intent(in)                     :: region
             type(TDate), dimension(2), intent(in)   :: period
@@ -37,14 +38,18 @@ module chemistry
             integer     :: itr
             real, dimension(:, :, :), pointer       :: rm, rxm, rym, rzm
             real, dimension(:, :, :), allocatable   :: loss
+            integer     :: is, ie, js, je
+
+            is = isr(region) ; ie = ier(region)
+            js = jsr(region) ; je = jer(region)
 
             do itr = 1, ntracet
                 if (tracers(itr)%has_chem) then
 
-                    rm => mass_dat(region)%rm_t(:, :, :, itr)
-                    rxm => mass_dat(region)%rxm_t(:, :, :, itr)
-                    rym => mass_dat(region)%rym_t(:, :, :, itr)
-                    rzm => mass_dat(region)%rzm_t(:, :, :, itr)
+                    rm => mass_dat(region)%rm_t(is:ie, js:je, :, itr)
+                    rxm => mass_dat(region)%rxm_t(is:ie, js:je, :, itr)
+                    rym => mass_dat(region)%rym_t(is:ie, js:je, :, itr)
+                    rzm => mass_dat(region)%rzm_t(is:ie, js:je, :, itr)
 
                     loss = get_loss(region, period, tracers(itr))
 
@@ -92,6 +97,8 @@ module chemistry
 
             ! time step for this region
             dtime = abs(rtotal(period(2) - period(1), 'sec'))
+
+            loss = 0
 
             do ireac = 1, tracer%nreact
 
