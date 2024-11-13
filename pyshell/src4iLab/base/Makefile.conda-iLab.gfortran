@@ -34,7 +34,10 @@ LDFLAGS_iLab = -lrt -pthread -lresolv
 #-- MVO::on ilabpower libselinux is required when linking
 #        (on ilabdesk this was not necessary, had not checked why!)
 LDFLAGS_iLab = -L/usr/lib64 -lrt -pthread -lresolv -lselinux -lpcre
-
+#-- MVO-20241113::experienced linkage-errors when trying to re-run one experiment,
+#                 not clear whether this is related to the OS update from Leap15.5 to Leap15.6...
+#                 after some trials the flags below seem to work (interestingly these had been used as such already before...)
+LDFLAGS_iLab = -lrt -pthread -lresolv
 
 FFLAGS = ${FFLAGS_TM5} ${FFLAGS_H5} ${FFLAGS_UD} ${FFLAGS_NC} ${FFLAGS_BLAS} ${FFLAG_OPENMP}
 FFLAGS_MDF = ${FFLAGS_TM5} ${FFLAGS_NC} 
