@@ -82,7 +82,7 @@ contains
             status = 1
         end if
 #ifndef slopes
-        write (gol,'("adv_scheme "slopes" while macro slopes not defined")'); call goErr
+        write (gol,'("adv_scheme **slopes** while macro slopes not defined")'); call goErr
         status = 1
 #endif
 
