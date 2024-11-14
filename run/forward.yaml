@@ -1,17 +1,23 @@
 laptop :
-  container : /data/TM5/tm5-intel-ubuntu20_v2.simg
+  data: /run/media/guillaume/EXT4TB
+  container : ${.data}/TM5/tm5-intel-ubuntu20_v2.simg
   makedepf90 : makedepf90
-  build_cmd : singularity run -B /run/media/guillaume -B /data ${.container} make -C ${build.directory} tm5.x
-  run_cmd : singularity run -B /run/media/guillaume -B /data ${.container} ${run.paths.output}/tm5.x
+  build_cmd : singularity run -B /run ${.container} make -C ${build.directory} tm5.x
+  #build_cmd : singularity run -B /run/media/guillaume -B /data ${.container} make -C ${build.directory} tm5.x
+  run_cmd : singularity run -B /run ${.container} ${run.paths.output}/tm5.x
+  #run_cmd : singularity run -B /run/media/guillaume -B /data ${.container} ${run.paths.output}/tm5.x
   makefile : Makefile.singularity.ifort
   paths :
-    output : /data/TM5/output
-    build : /data/TM5/build
-    meteo : /run/media/guillaume/EXT4TB/TM5/meteo
-    meteo_out : /data/TM5/meteo_out
+    output : ${..data}/TM5/output
+    build : ${..data}/TM5/build
+    meteo : ${..data}/TM5/meteo
+    meteo_out : ${..data}/TM5/meteo_out
     udunits : /opt/etc/udunits.dat  # included in the container!
-    diffusion : /data/TM5/diffusion
-    emissions : /data/TM5/emissions
+    diffusion : ${..data}/TM5/diffusion
+    emissions : ${..data}/TM5/emissions
+    data : ${..data}/TM5 
+    chemistry :
+      ch4_spivakovksy : ${...data}/TM5/OH_troposphere-Spivakovsky-2000-ml60-glb100x100.v2.nc
 
 
 cosmos:
@@ -31,7 +37,7 @@ cosmos:
     emissions_archive : /home/gmonteil/data/TM5/emissions/CH4/
     chemistry :
       ch4_spivakovksy : /home/gmonteil/data/TM5/OH_troposphere-Spivakovsky-2000-ml60-glb100x100.v2.nc
-
+    data : /home/gmonteil/data/TM5
 
 
 run :
@@ -42,14 +48,23 @@ run :
     meteo : ${host.paths.meteo}
     cf_table : ../data/cf-standard-name-table.xml
     udunits : ${host.paths.udunits}
-    diffusion : ${host.paths.diffusion}
+    diffusion : ${host.paths.diffusion}/${run.levels}
     emissions : ${host.paths.emissions}
   meteo :
-    coarsened : no
+    coarsened : yes
     write : no
-  regions : [glb600x400]
+  regions : ${zoom_configuration.${.zoom}}
   run_cmd : ${host.run_cmd}
   tracers : [CH4]
+  zoom : glb600x400
+  levels : tropo34
+
+
+zoom_configuration: 
+  glb100x100: [glb100x100]
+  glb300x200: [glb300x200]
+  glb600x400: [glb600x400]
+  eur300x200: [glb600x400, eur300x200]
 
 
 species :
@@ -129,7 +144,8 @@ meteo :
   coarsened : ${run.meteo.coarsened}
   output    : ${run.meteo.write}
   regions : ${run.regions}
-  output_path : ${host.paths.meteo_out}
+  #output_path : ${host.paths.meteo_out}
+  output_path : ${.output}
 
 
 build :
@@ -139,7 +155,8 @@ build :
       - ../src/base
       - ../src/proj/macros/tmm_tm5
       - ../src/proj/levels/ml137
-      - ../src/proj/levels/ml137/tropo25a
+      - ../src/proj/levels/ml137/${run.levels}a
+      #- ../src/proj/levels/ml137/tropo25a
       - ../src/proj/linalg/mkl
       - ../src/proj/openmp_speedups
 #      - ../src/proj/tracer/CO2
@@ -164,11 +181,20 @@ regions :
     name : glb600x400
     lons : [-180, 180, 6]
     lats : [-90, 90, 4]
-    levels : tropo25
+    levels : ${run.levels}
 
   eur300x200 :
     name : eur300x200
-    levels : tropo25
+    levels : ${run.levels}
     lons : [-36, 54, 3]
     lats : [22, 74, 2]
     parent : glb600x400
+
+
+output :
+  stations: 
+    filename: ${host.paths.data}/stationlist.ch4.fitic.txt
+    meteo: False
+  point:
+    interpolation: 'linear'
+    

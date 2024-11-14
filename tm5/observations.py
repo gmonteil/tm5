@@ -5,6 +5,39 @@ import xarray as xr
 from pandas import DatetimeIndex, Timestamp
 from loguru import logger
 from numpy import int16, float64, int32
+from dataclasses import dataclass
+from omegaconf import DictConfig
+from pandas import DataFrame, concat
+from typing import Tuple
+from tqdm import tqdm
+
+
+def read_obspack_file(filename: str) -> Tuple[DataFrame, DataFrame]:
+    ds = xr.open_dataset(filename)
+    data = ds[['longitude', 'latitude', 'altitude', 'elevation', 'intake_height', 'time', 'start_time', 'value', 'value_unc']].to_dataframe()
+    metadata = {k:ds.attrs.get(k) for k in ['site_code', 'site_name', 'site_latitude', 'site_elevation', 'site_elevation_unit', 'site_utc2lst', 'dataset_name', 'dataset_globalview_prefix', 'dataset_parameter', 'dataset_project', 'dataset_platform', 'dataset_selection', 'dataset_selection_tag', 'dataset_calibration_scale', 'dataset_start_date', 'dataset_stop_date', 'dataset_data_frequency', 'dataset_data_frequency_unit', 'dataset_intake_ht', 'dataset_intake_ht_unit', 'dataset_usage_url', 'dataset_usage_description', 'dataset_contribution', 'obspack_name']}
+    metadata['filename'] = Path(filename).name
+    return SimpleNamespace(data=data, metadata=metadata)
+
+
+@dataclass
+class PointObs:
+    dconf : DictConfig
+    observations : DataFrame | None = None
+    metadata : DataFrame | None = None
+
+    @classmethod
+    def from_obspack(self) -> "PointObs":
+        data, metadata = [], []
+        for file in Path(self.dconf.observations.obspack.folder).glob('*.nc'):
+            dat, mdat = read_obspack_file(file)
+            data.append(dat)
+            metadata.append(mdat)
+        self.observations = concat(data)
+        self.metadata = condat(metadata)
+
+    def write(self, filename:str) -> str:
+        raise NotImplementedError
 
 
 def prepare_point_obs(dconf) -> Path:

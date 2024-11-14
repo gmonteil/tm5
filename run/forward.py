@@ -11,9 +11,11 @@ from argparse import ArgumentParser
 import sys
 from pathlib import Path
 from tm5.system import runcmd
+from loguru import logger
 
 parser = ArgumentParser()
 parser.add_argument('-b', '--build', action='store_true', default=False, help='Use this option to compile the code')
+parser.add_argument('--build-only', action='store_true', default=False)
 parser.add_argument('-m', '--host', default=os.environ['TM5_HOST'])
 parser.add_argument('config_file')
 args = parser.parse_args(sys.argv[1:])
@@ -24,6 +26,9 @@ args = parser.parse_args(sys.argv[1:])
 tm = tm5.TM5(args.config_file, host=args.host)
 if args.build :
     tm.build()
+
+if args.build_only:
+    sys.exit()
 
 #=====================================================
 # 2. Setup input files:

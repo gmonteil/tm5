@@ -41,12 +41,12 @@ class TM5:
         Build TM5
         """
         tm5exec = build_tm5(self.dconf, clean = clean)
-        if not self.tm5exec.exists() and not self.tm5exec.is_symlink():
+        if not self.tm5exec.exists():# or not self.tm5exec.is_symlink():
             self.tm5exec.parent.mkdir(parents=True, exist_ok=True)
+            self.tm5exec.unlink(missing_ok=True)
             os.symlink(tm5exec.absolute(), self.tm5exec)
 
     # Main setup methods
-
     def setup_meteo(self, coarsen : bool = False):
         """
         This will set the following (group of) rc keys:
@@ -161,7 +161,7 @@ class TM5:
             return
 
         if stations and 'stations' in self.dconf.output :
-            self.setup_output_stations(self.dconf.output.stations)
+            self.setup_output_stations()
             
         self.setup_output_mix(self.dconf.output.get('mix', None))
 
@@ -222,12 +222,12 @@ class TM5:
         - output.point.{tracer}.minerror
         """
 
-        self.setup_output_point(self.dconf.output.point)
-        self.settings['output.point.errors'] = self.dconf.observations.point.get('errors', '1')
+        self.settings['output.point'] = 'T'
+        self.settings['output.point.input.dir'] = self.dconf.output.point.input_dir
         for tracer in self.dconf.run.tracers:
+            self.settings['output.point.timewindow'] = self.dconf.observations.point[tracer].default_assim_window
             self.settings[f'output.point.{tracer}.minerror'] = self.dconf.observations.point[tracer].minerror
-        self.settings['output.point.timewindow'] = self.dconf.observations.point[tracer].default_assim_window
-        self.settings['output.point.interpolation'] = {'linear': 3, 'gridbox': 1, 'slopes': 2}[self.dconf.observations.point.interpolation]
+        self.setup_output_point(self.dconf.output.point)
         return tm5.observations.prepare_point_obs(self.dconf.output.point)
 
     def setup_emissions2(self):
@@ -358,20 +358,26 @@ class TM5:
 
     # Internal methods
 
-    def setup_output_point(self, dconf):
-        self.settings['output.point'] = 'T'
-        self.settings['output.point.input.dir'] = dconf.input_dir
-        self.settings['output.point.split.period'] = 'a'  # no splitting ...
-        self.settings['output.point.sample.parent'] = dconf.get('sample_parent', 'F')
+    def setup_output_point(self):
+        """
+        Set up the rc-keys needed both by the "user_output_flask" and "user_output_stations" module.
+        In case both are activated, the code is just called twice, which should cause no harm ...
+        """
+        self.settings['output.point.split.period'] = 'a'                                                # no splitting ...
+        self.settings['output.point.sample.parent'] = self.dconf.output.point.get('sample_parent', 'F')
+        self.settings['output.point.errors'] = self.dconf.output.point.get('errors', '1')
+        self.settings['output.point.interpolation'] = {'linear': 3, 'gridbox': 1, 'slopes': 2}[self.dconf.output.point.interpolation]
 
-    def setup_output_stations(self, dconf):
+    def setup_output_stations(self):
+        self.setup_output_point()
         self.settings['output.station.timeseries'] = 'T'
-        self.settings['output.station.timeseries.filename'] = Path(dconf.filename).absolute()
+        self.settings['output.station.timeseries.filename'] = Path(self.dconf.output.stations.filename).absolute()
+        self.settings['output.station.meteo'] = self.dconf.output.stations.get('meteo', False)
+        self.settings['output.station.verbose'] = 'T'
 
     def setup_output_mix(self, dconf: DictConfig | None = None):
         if dconf is None :
-            return
-        
+            return        
         self.settings['output.mix'] = 'T'
         self.settings['output.mix.tstep'] = int(Timedelta(dconf.output_frequency).total_seconds())
         self.settings['output.mix.meteo'] = dconf.get('output_meteo', 'F')
