@@ -11,7 +11,7 @@ module iniconc_module
     use grid_type_ll,   only : init_grid => init, tllgridinfo
     use grid_type_hyb,  only : init_levels => init, tlevelinfo
     use grid_3d,        only : regrid_3d_mix
-    use chem_param,     only : ntracet, names
+    use chem_param,     only : ntracet, names, mixrat_unit
     use tm5_geometry,   only : lli, levi
     use datetime,       only : tau2date
 
@@ -41,13 +41,12 @@ module iniconc_module
                 call readrc(rcf, 'start.' // trim(names(itrac)) // '.type', ftype, status)
                 select case (trim(ftype))
                     case ('cams')
-                        print*, 'cams'
                         call read_iniconc_cams(itrac, trim(names(itrac)), status)
                     case ('constant')
-                        print*, 'cst'
                         call set_constant_iniconc(itrac, trim(names(itrac)), status)
                 end select
                 do region = 1, nregions
+                    mass_dat(region)%rm_t = mass_dat(region)%rm_t / mixrat_unit(itrac)
                     if ( adv_scheme == 'slope' ) then
                         mass_dat(region)%rxm_t(:, :, :, itrac) = 0.0
                         mass_dat(region)%rym_t(:, :, :, itrac) = 0.0
@@ -129,85 +128,6 @@ module iniconc_module
             status = 0
 
         end subroutine read_iniconc_cams
-
-
-        subroutine read_iniconc_cams_(itrac, tracname, status)
-
-            character(len=*), intent(in)    :: tracname
-            integer, intent(in)             :: itrac
-            integer, intent(out)            :: status
-            real, dimension(:, :, :, :), allocatable    :: mixglo1x1
-            integer, dimension(:), allocatable          :: time 
-            real, dimension(:), allocatable             :: hyam, hyab
-            real, dimension(:, :, :), allocatable       :: ps
-            character(len=200)      :: filename
-            integer                 :: itime
-            integer, dimension(6)   :: idate
-            integer                 :: nhours_since_start_of_month
-            integer                 :: region, nlev
-            integer                 :: ncf
-            type(tllgridinfo)       :: lli_in
-            character(len=*), parameter    :: rname = mname//'/read_iniconc_cams'
-            type(tllgridinfo)       :: hor_grid_in
-            type(tlevelinfo)        :: ver_grid_in
-            
-            status = 0
-
-            call readrc(rcf, 'start.' // trim(tracname) // '.filename', filename, status)
-            print*, "reading initial condition from "//trim(filename)
-            IF_NOTOK_RETURN(status=1)
-
-            ! Read the relevant info from the netCDF file
-            ! ncf = nc_open(trim(filename), 'r', status)
-            ! IF_ERROR_RETURN(status=1)
-            ! mixglo1x1 = nc_read_var(ncf, trim(names(itrac)))
-            ! print*, shape(mixglo1x1)
-            ! time = nc_read_var(ncf, 'time')
-            ! print*, shape(time)
-            ! hyam = nc_read_var(ncf, 'hyam')
-            ! print*, shape(hyam)
-            ! hyab = nc_read_var(ncf, 'hyab')
-            ! print*, shape(hyab)
-            ! ps = nc_read_var(ncf, 'ps')
-            ! print*, shape(ps)
-            ! call nc_close(ncf)
-
-            print*, 'file is read'
-
-            ! Select the proper time index:
-            call tau2date(itaur(1), idate)
-            nhours_since_start_of_month = (idate(3) - 1) * 24 + idate(4)
-            itime = minloc(time, 1, time - time(0) >= nhours_since_start_of_month)
-
-            print*, 'will use time index', itime
-
-            ! Get the number of levels of the input data
-            nlev = size(hyam) - 1
-
-            print*, 'number of vertical levels in file:', nlev
-
-            ! Create a set of coordinates for the input field:
-            call init_grid(hor_grid_in, -179.5, 1.0, 360, -89.5, 1.0, 180, status)
-            IF_NOTOK_RETURN(status=1)
-            call init_levels(ver_grid_in, nlev, hyam, hyab, status)
-            IF_NOTOK_RETURN(status=1)
-
-            print*, 'grids initialized'
-
-            ! Propagate the global 1x1 field to the regions
-            do region = 1, nregions
-
-                print*, 'region', region
-                call regrid_3d_mix( &
-                    hor_grid_in, lli(region), ver_grid_in, levi, &
-                    ps(itime, :, :), mixglo1x1(itime, :, :, :), &
-                    mass_dat(region)%rm_t(1:im(region), 1:jm(region), 1:lm(region), itrac), &
-                    status, .true. &
-                )
-            enddo
-
-        end subroutine read_iniconc_cams_
-
 
         subroutine set_constant_iniconc(itrac, tracname, status)
 
