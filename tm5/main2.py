@@ -187,6 +187,7 @@ class TM5:
         if ini is None :
             ini = self.dconf.initial_condition.type
 
+        # NOTE: all options below should eventually be implemented within the "fitic" one, as it's the only multi-tracer option
         match ini:
             case 'zero':
                 self.settings['istart'] = '1'
@@ -210,9 +211,21 @@ class TM5:
                     self.dconf.regions,
                     filename
                 )
+            case 'fitic':
+                self.settings['istart'] = '4'
+                for tracer in self.dconf.run.tracers:
+                    match self.dconf.initial_condition[tracer].type.lower():
+                        case 'cams':
+                            self.settings[f'start.{tracer}.filename'] = self.start.strftime(self.dconf.initial_condition[tracer].filename)
+                            self.settings[f'start.{tracer}.type'] = 'cams' 
+                        case 'zero':
+                            self.settings[f'start.{tracer}.type'] = 'constant'
+                            self.settings[f'start.{tracer}.mix_ratio'] = 0.
             case other :
                 logger.error("initial condition settings not understood")
                 raise Exception
+            
+            
 
     def setup_observations(self) -> Path:
         """

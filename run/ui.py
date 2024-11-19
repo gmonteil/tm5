@@ -71,21 +71,34 @@ class Stage1(param.Parameterized):
         # Configuration widgets
         self.region_selector = pn.widgets.Select(name='Region', options=list(self.dconf.zoom_configuration), value=self.dconf.run.zoom)
         self.meteo_selector = pn.Row("use coarsened meteo:", pn.widgets.Switch(name='Meteo', value=self.dconf.meteo.coarsened, align='center'))
-        self.meteo_write = pn.Row("write coarsened meteo:", pn.widgets.Switch(value=self.dconf.meteo.output, align='center'), visible=True)
+        self.meteo_write = pn.Row("write coarsened meteo:", pn.widgets.Switch(value=self.dconf.meteo.output, align='center'), visible=not self.dconf.meteo.coarsened)
 
         # define some global widgets
         self.editor = pn.widgets.CodeEditor(language='yaml', sizing_mode='stretch_both', visible=False)
         self.editor_button = pn.widgets.Button(name='Show/hide advanced settings editor')
 
-        self.terminal = pn.widgets.Terminal(options={"cursorBlink": True}, height=800, sizing_mode='stretch_width')
+        self.terminal = pn.widgets.Terminal(options={"cursorBlink": True}, height=800, sizing_mode='stretch_width', write_to_console=True)
         self.rcfile = pn.pane.Markdown()
-
+        
         # Main widgets layout:
         self.settings_widgets = pn.Column(
+            pn.pane.Markdown("# General TM5 settings"),
             self.region_selector,
             pn.Row(self.meteo_selector, self.meteo_write),
+            pn.pane.Markdown("# Tracer settings"),
         )
 
+        # Tracer-specific widgets
+        self.tracer_widgets = {}
+        for tracer in self.dconf.run.tracers:
+            self.tracer_widgets[tracer] = {}
+            self.tracer_widgets[tracer]['iniconc'] = pn.widgets.RadioBoxGroup(value=self.dconf.initial_condition[tracer].type, name='Initial Condition', options=['CAMS', 'zero'], inline=True, align='center')
+            trwidgets = pn.Column(
+                pn.pane.Markdown(f'## {tracer}'),
+                pn.Row(pn.pane.Markdown("Initial condition:"), self.tracer_widgets[tracer]['iniconc'])
+            )
+            self.settings_widgets.append(trwidgets)
+        
         # Tabs, for extra content
         self.tabs = pn.Tabs(('settings', pn.Column(self.settings_widgets, self.editor_button, self.editor)), dynamic=True)
 
@@ -96,6 +109,9 @@ class Stage1(param.Parameterized):
         pn.bind(self.update_key, key='meteo.output', value=self.meteo_write[1], watch=True)
         pn.bind(self.switch_widget_visibility, widget='editor', value=self.editor_button, watch=True)
         pn.bind(self.update_editor, value=self.editor_button, watch=True)
+
+        for tracer in self.dconf.run.tracers:
+            pn.bind(self.update_key, key=f'initial_condition.{tracer}.type', value=self.tracer_widgets[tracer]['iniconc'], watch=True)
 
     @param.output(('output_path', param.String))
     def output(self):
@@ -112,7 +128,7 @@ class Stage1(param.Parameterized):
         button_kill = pn.widgets.Button(name='Kill process', button_type='danger')
 
         # Define the interactions
-        button_save.on_click(self.show_rcfile)
+        button_save.on_click(self.write_yaml)
         button_build.on_click(self.build_tm5)
         button_run.on_click(self.run_tm5)
         button_kill.on_click(self.kill_tm5)
@@ -134,19 +150,15 @@ class Stage1(param.Parameterized):
         self.param._set_name('')
         return pn.Column(self.param.yaml_file, self.view,)
     
-    def show_rcfile(self, event: bool):
-        if not event: return
-        self.write_yaml()
-        logger.info('show_rcfile')
-
-    def write_yaml(self) -> str:
+    def write_yaml(self, event: bool = False) -> str:
         """
         Write the content of the text editor to a yaml file (either provided as an argument, or, by default, to a temporary file), and return the path to that file
         """
+        if not event: return
         logger.debug(f"Write yaml file to {self.tmpconf}")
-        self.rcfile.param.update(object = read_rcfile(self.tmpconf, self.host))
         with open(self.tmpconf, 'w') as fid:
             fid.writelines(OmegaConf.to_yaml(self.dconf, resolve=False))
+        self.rcfile.param.update(object = read_rcfile(self.tmpconf, self.host))
         if len(self.tabs) == 1:
             self.tabs.append(('TM5 rc-file', self.rcfile))
         return str(self.tmpconf)
@@ -178,10 +190,14 @@ class Stage1(param.Parameterized):
         self.editor.param.update(value = OmegaConf.to_yaml(self.dconf))
 
     def build_tm5(self, event: bool):
-        if event: self.terminal.subprocess.run('python', 'forward.py', '-b', '-m', self.host, self.write_yaml())
+        if event: 
+            cfgfile = self.write_yaml(True)
+            self.terminal.subprocess.run('python', 'forward.py', '-b', '--build-only', '-m', self.host, cfgfile)
 
     def run_tm5(self, event: bool):
-        if event: self.terminal.subprocess.run('python', 'forward.py', '-m', self.host, self.write_yaml())
+        if event: 
+            cfgfile = self.write_yaml(True)
+            self.terminal.subprocess.run('python', 'forward.py', '-m', self.host, cfgfile)
 
     def kill_tm5(self, event: bool):
         if event: self.terminal.subprocess.kill()

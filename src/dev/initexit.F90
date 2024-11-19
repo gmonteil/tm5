@@ -964,6 +964,7 @@ contains
     use io_save,             only : readnetcdf, save_filename
     use restart,             only : Restart_Read
     use os_specs,            only : MAX_FILENAME_LEN
+    use iniconc_module,      only : read_iniconc_fitic
 
     ! --- in/out ---------------------------------
 
@@ -1047,6 +1048,10 @@ contains
 
           !call Restart_Read( status, tracer_mass=.true., tendencies=.true. , air_mass=.true.) ! For cy3/chemistry code
           call Restart_Read( status, surface_pressure=.true., pressure=.true., tracer_mass=.true., air_mass=.true.)
+          IF_NOTOK_RETURN(status=1)
+
+        case(4)
+          call read_iniconc_fitic(status)
           IF_NOTOK_RETURN(status=1)
 
         !====================================

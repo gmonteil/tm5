@@ -38,6 +38,8 @@ cosmos:
     chemistry :
       ch4_spivakovksy : /home/gmonteil/data/TM5/OH_troposphere-Spivakovsky-2000-ml60-glb100x100.v2.nc
     data : /home/gmonteil/data/TM5
+    initial_condition: 
+      CH4: /lunarc/nobackup/projects/ghg_inv/michael/CAMS/ch4
 
 
 run :
@@ -115,7 +117,11 @@ emissions:
 
 
 initial_condition:
-  type : zero
+  type : fitic    # will use the dedicated iniconc F90 module. Do not change
+  CH4:
+    type : CAMS
+    mix : 0
+    filename : ${host.paths.initial_condition.CH4}/cams73_latest_ch4_conc_surface_inst_%Y%m.nc
 
 
 #  start: ${run.start}
