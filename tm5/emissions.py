@@ -161,6 +161,7 @@ def load_preprocessed_emis(
         area = data[area].values
     if emis_glo1x1.units==('mol m-2 s-1'): #-- MVO::at least correct for Carbontracker inputs
         factor = ureg.Quantity('mol').to(f'kg{species}').m
+        #-- to be removed later...
         # print(f"MVODEBUG::converting [mol] to kg{species} using factor {factor}")
         msg = f"apply unit conversion of prepared emissions: 'mol m-2 s-1' to kg{species} cl-1 s-1" \
             f" using factor {factor}"
