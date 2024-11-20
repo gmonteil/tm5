@@ -8,6 +8,7 @@ module iniconc_module
     use GO,             only : readrc, gol, goerr
     use global_data,    only : rcf, mass_dat
     use file_netcdf
+    use zoom_tools,     only : update_parent
     use grid_type_ll,   only : init_grid => init, tllgridinfo
     use grid_type_hyb,  only : init_levels => init, tlevelinfo
     use grid_3d,        only : regrid_3d_mix
