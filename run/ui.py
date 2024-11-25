@@ -19,6 +19,8 @@ pn.extension('katex')
 pn.extension('codeeditor')
 pn.extension('terminal')
 pn.extension('floatpanel')
+pn.extension('filedropper')
+pn.extension('tabulator')
 
 
 def generate_editor(dconf: DictConfig):
@@ -65,13 +67,19 @@ class Stage1(param.Parameterized):
         super().__init__()
 
         self.dconf = OmegaConf.load(self.yaml_file)
-
         self.host = os.environ['TM5_HOST']
+        self.dconf['host'] = self.dconf[self.host]
         
         # Configuration widgets
         self.region_selector = pn.widgets.Select(name='Region', options=list(self.dconf.zoom_configuration), value=self.dconf.run.zoom)
         self.meteo_selector = pn.Row("use coarsened meteo:", pn.widgets.Switch(name='Meteo', value=self.dconf.meteo.coarsened, align='center'))
         self.meteo_write = pn.Row("write coarsened meteo:", pn.widgets.Switch(value=self.dconf.meteo.output, align='center'), visible=not self.dconf.meteo.coarsened)
+
+        # widget containers:
+        self.emis_file_selector = {}
+        self.emis_categories = {}
+        self.add_emission_category = {}
+        self.emis_rows = {}
 
         # define some global widgets
         self.editor = pn.widgets.CodeEditor(language='yaml', sizing_mode='stretch_both', visible=False)
@@ -82,22 +90,29 @@ class Stage1(param.Parameterized):
         
         # Main widgets layout:
         self.settings_widgets = pn.Column(
-            pn.pane.Markdown("# General TM5 settings"),
+            pn.pane.Markdown("# General TM5 settings:"),
             self.region_selector,
             pn.Row(self.meteo_selector, self.meteo_write),
-            pn.pane.Markdown("# Tracer settings"),
+            pn.pane.Markdown("# Tracers:"),
         )
 
         # Tracer-specific widgets
         self.tracer_widgets = {}
         for tracer in self.dconf.run.tracers:
             self.tracer_widgets[tracer] = {}
-            self.tracer_widgets[tracer]['iniconc'] = pn.widgets.RadioBoxGroup(value=self.dconf.initial_condition[tracer].type, name='Initial Condition', options=['CAMS', 'zero'], inline=True, align='center')
+
+            # initial condition
+            self.tracer_widgets[tracer]['iniconc'] = pn.widgets.RadioBoxGroup(value=self.dconf.initial_condition[tracer].type, name='Initial Condition', options=['CAMS', 'Zero'], inline=True, align='center')
+
+            # emissions
+            self.tracer_widgets[tracer]['emis'] = self.emis_widgets(tracer)
+            
             trwidgets = pn.Column(
                 pn.pane.Markdown(f'## {tracer}'),
-                pn.Row(pn.pane.Markdown("Initial condition:"), self.tracer_widgets[tracer]['iniconc'])
+                pn.Column("### Initial condition:", self.tracer_widgets[tracer]['iniconc']),
+                self.tracer_widgets[tracer]['emis']
             )
-            self.settings_widgets.append(trwidgets)
+            self.settings_widgets.append(pn.WidgetBox(trwidgets))
         
         # Tabs, for extra content
         self.tabs = pn.Tabs(('settings', pn.Column(self.settings_widgets, self.editor_button, self.editor)), dynamic=True)
@@ -163,15 +178,118 @@ class Stage1(param.Parameterized):
             self.tabs.append(('TM5 rc-file', self.rcfile))
         return str(self.tmpconf)
 
-    # Interactions between the widgets and the "dconf" object
+    # Widget groups
+    def emis_widgets(self, tracer):
+        
+        def add_cat(event: bool = False, catname: str = None, catparam: dict | None = None):
+            """
+            Add a row to the emission selector.
+            Each row contains a category name, filename and field name widgets
+            """
+            if not event: return
 
+            # Create the widgets
+            self.emis_categories[tracer][catname] = pn.widgets.TextInput(name='category name:', value=catname, align='start')
+            self.emis_file_selector[tracer][catname] = pn.widgets.NestedSelect(
+                options = files_available,
+                layout = dict(type=pn.Row),
+                levels=['filename', 'field'],
+                value=catparam
+            )
+            
+            # Create the layout
+            if tracer not in self.emis_rows:
+                self.emis_rows[tracer] = pn.Column()
+                
+            self.emis_rows[tracer].append(
+                pn.Row(
+                    self.emis_categories[tracer][catname], self.emis_file_selector[tracer][catname]
+                )
+            )
+            
+            # Determine the interactivity
+            pn.bind(self.update_key, key=f'tracers.{tracer}.emissions.categories.{catname}.path', value=self.emis_file_selector[tracer][catname]._widgets[0], watch=True)
+            pn.bind(self.update_key, key=f'tracers.{tracer}.emissions.categories.{catname}.field', value=self.emis_file_selector[tracer][catname]._widgets[1], watch=True)
+            pn.bind(self.print_value, value=self.emis_categories[tracer][catname], watch=True)
+            pn.bind(self.rename_key, key=f'tracers.{tracer}.emissions.categories.{catname}', newkey=self.emis_categories[tracer][catname], watch=True, create_value={})
+
+        def calc_stats(event):
+            if not event: return ''
+            df = xr.Dataset()
+            for cat in self.dconf.tracers[tracer].emissions.categories:
+                ds = xr.open_dataset(self.dconf.tracers[tracer].emissions.categories[cat].path)[self.dconf.tracers[tracer].emissions.categories[cat].field]
+                df[cat] = ds.sum(('lat', 'lon')).resample(time='YS').sum()
+            return pn.widgets.Tabulator(df.to_dataframe())
+
+        categories = self.dconf.tracers[tracer].emissions.categories
+        files_available = {}
+        for cat in categories:
+            fname = Path(categories[cat].path)
+            fields = list(xr.open_dataset(fname).data_vars)
+            files_available[str(fname)] = fields 
+        
+        self.emis_file_selector[tracer] = {}
+        self.emis_categories[tracer] = {}
+        self.add_emission_category[tracer] = pn.widgets.Button(name="Add new category")
+
+        # Create widgets:
+        for cat in categories :
+            default_value = {Path(categories[cat].path).name: categories[cat].field}
+            add_cat(True, cat, default_value)
+
+        upload_button = pn.widgets.Button(name='Upload new emission files')
+        upload_file = pn.widgets.FileDropper(visible=upload_button)
+        show_stats = pn.widgets.Button(name='show annual budget')
+        stats = pn.bind(calc_stats, show_stats, watch=True)
+            
+        # Interactivity
+        self.add_emission_category[tracer].on_click(add_cat)
+        
+        return pn.Column('### Emission categories:', self.emis_rows[tracer], pn.Row(self.add_emission_category[tracer], upload_button, show_stats), upload_file, stats, styles=dict(background='WhiteSmoke'))
+        
+
+    # Interactions between the widgets and the "dconf" object
     def update_key(self, key: str, value):
+        """
+        Change the value of a key. This can also be used to create a new key
+        """
         logger.info(f"update value of key {key} to {value}")
         logger.debug(OmegaConf.select(self.dconf, key))
-        OmegaConf.update(self.dconf, key, value)
+        parts = key.rsplit('.', maxsplit=1)
+        if len(parts) == 1 :
+            self.dconf[key] = value
+        else:
+            OmegaConf.select(self.dconf, parts[0])[parts[1]] = value
         logger.debug(OmegaConf.select(self.dconf, key))
         self.n_updates *= -1
-
+        
+    def rename_key(self, key: str, newkey: str, create_value : str | dict | None = None):
+        """
+        Rename an existing key. Since there is no specific way to do it in OmegaConf, we just make a copy of the key under the new name, and delete the previous one.
+        This breaks references to the previous key so should be used with caution.
+        """
+        parts = key.rsplit('.', maxsplit=1)
+        logger.debug(OmegaConf.select(self.dconf, key))
+        if len(parts) == 1 :
+            if key not in self.dconf:
+                return self.update_key(newkey, create_value)
+            logger.info(f'rename key {key} into {newkey}')
+            self.dconf[newkey] = self.dconf.pop(key)
+            logger.debug(OmegaConf.select(self.dconf, newkey))
+            logger.debug(OmegaConf.select(self.dconf, key))
+        else :
+            parent, key = parts
+            if key not in OmegaConf.select(self.dconf, parent):
+                return self.update_key(f'{parent}.{newkey}', create_value)
+            logger.info(f'rename key {parent}.{key} into {parent}.{newkey}')
+            OmegaConf.select(self.dconf, parent)[newkey] = OmegaConf.select(self.dconf, parent)[key]
+            logger.debug(OmegaConf.select(self.dconf, parent)[newkey])
+            logger.debug(OmegaConf.select(self.dconf, parent)[key])
+        self.n_updates *= -1
+        
+    def print_value(self, value):
+        print(value)
+        
     def switch_widget_visibility(self, widget: str, value):
         """
         Invert the visibility of a widget

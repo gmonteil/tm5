@@ -67,6 +67,7 @@ zoom_configuration:
   glb300x200: [glb300x200]
   glb600x400: [glb600x400]
   eur300x200: [glb600x400, eur300x200]
+  Germany_Netherlands_Switzerland : [glb600x400, eur300x200, gns100x100]
 
 
 species :
@@ -92,6 +93,7 @@ species :
     flux_unit : TgCH4
     mix_unit : ppb
     chemistry : yes
+    emissions : ${emissions.CH4}
 
 
 tracers :
@@ -195,6 +197,11 @@ regions :
     lons : [-36, 54, 3]
     lats : [22, 74, 2]
     parent : glb600x400
+    
+  gns100x100:
+    name : gns100x100
+    levels : ${run.levels}
+    parent : glb300x200
 
 
 output :
