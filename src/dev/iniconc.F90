@@ -75,9 +75,11 @@ module iniconc_module
             character(len=200)      :: filename
             integer                 :: ncf
             real(kind=4), dimension(:), allocatable             :: hyai, hybi
-            integer(int16), dimension(:, :, :, :), allocatable  :: mixglo1x1
+            integer(int16), dimension(:, :, :, :), allocatable  :: mixglo1x1_packed
+            real, dimension(:, :, :, :), allocatable            :: mixglo1x1
             real, dimension(:), allocatable                     :: time 
-            integer(int16), dimension(:, :, :), allocatable     :: ps
+            integer(int16), dimension(:, :, :), allocatable     :: ps_packed
+            real, dimension(:,:,:), allocatable                 :: ps
             integer, dimension(6)   :: idate
             integer                 :: nhours_since_start_of_month
             integer                 :: itime
@@ -85,26 +87,61 @@ module iniconc_module
             type(tllgridinfo)       :: hor_grid_in
             type(tlevelinfo)        :: ver_grid_in
             character(len=*), parameter    :: rname = mname//'/read_iniconc_cams'
+            !!MVO, 2024-12-17:
+            ! CAMS initial concentration file uses packed format.
+            ! so the physical data needs to be determined as     
+            ! unpacked_value = packed_value * scale_factor + add_offset
+            type(nc_uni_att) :: attr
+            real :: add_offset
+            real :: scale_factor
+            integer :: mixglo1x1_shape(4) !lon/lat/level/time
+            integer :: ps_shape(3)        !lon/lat/time
+
 
             status = 0
             
             call readrc(rcf, 'start.' // trim(tracname) // '.filename', filename, status)
-            print*, "reading initial condition from "//trim(filename)
+            print*, rname//"::reading initial condition from "//trim(filename)
 
             ! Read the relevant info from the netCDF file
             ncf = nc_open(trim(filename), 'r', status)
-            mixglo1x1 = nc_read_var(ncf, trim(names(itrac)))
+            mixglo1x1_packed = nc_read_var(ncf, trim(names(itrac)))
+            !-- convert packed mixing ratio to physical value
+            !   ***using TM5 provided 'nc_get_attr' routine, cumbersome work...***
+            attr = nc_get_attr(ncf, trim(names(itrac)), 'add_offset', status)
+            add_offset = attr%r4_1d(1)
+            attr = nc_get_attr(ncf, trim(names(itrac)), 'scale_factor', status)
+            scale_factor = attr%r4_1d(1)
+            mixglo1x1_shape = shape(mixglo1x1_packed)
+            allocate ( mixglo1x1(mixglo1x1_shape(1),mixglo1x1_shape(2),mixglo1x1_shape(3),mixglo1x1_shape(4)) )
+            mixglo1x1 = real(mixglo1x1_packed)*scale_factor + add_offset
+            print*, rname//"::converted packed mixing ratio to physical values with "//&
+                 "scale_factor=",scale_factor," and add_offset=",add_offset
             time = nc_read_var(ncf, 'time')
             hyai = nc_read_var(ncf, 'hyai')
             hybi = nc_read_var(ncf, 'hybi')
-            ps = nc_read_var(ncf, 'ps')
+            ps_packed = nc_read_var(ncf, 'ps')
+            !- convert packed surface pressure to physical value
+            attr = nc_get_attr(ncf, 'ps', 'add_offset', status)
+            add_offset = attr%r4_1d(1)
+            attr = nc_get_attr(ncf, 'ps', 'scale_factor', status)
+            scale_factor = attr%r4_1d(1)
+            ps_shape = shape(ps_packed)
+            ps = real(ps_packed*scale_factor+add_offset)
+            print*, rname//"::converted packed surface pressure to physical values with "//&
+                 "scale_factor=",scale_factor," and add_offset=",add_offset
             call nc_close(ncf)
 
             ! Select the proper time index:
             call tau2date(itaur(1), idate)
             nhours_since_start_of_month = (idate(3) - 1) * 24 + idate(4)
             itime = minloc(time, 1, time - time(0) >= nhours_since_start_of_month)
-
+            ! MVO-DEBUG
+            print*, rname//'::mixglo1x1@itime=',itime,&
+                 'min/mean/max=', &
+                 minval(mixglo1x1(:,:,:,itime)), &
+                 sum(mixglo1x1(:,:,:,itime))/size(mixglo1x1(:,:,:,itime)),&
+                 maxval(mixglo1x1(:,:,:,itime))
             ! Get the number of levels of the input data
             nlev = size(hyai) - 1
 
@@ -116,11 +153,10 @@ module iniconc_module
             IF_NOTOK_RETURN(status=1)
 
             ! Propagate the global 1x1 field to the regions
-            ! Same trick than above for converson from short integer to double precision real
             do region = 1, nregions
                 call regrid_3d_mix( &
                     hor_grid_in, lli(region), ver_grid_in, levi, &
-                    ps(itime, :, :) + 0., mixglo1x1(itime, :, :, :) + 0., &
+                    ps(:, :, itime), mixglo1x1(:, :, :, itime), &
                     mass_dat(region)%rm_t(1:im(region), 1:jm(region), 1:lm(region), itrac), &
                     status, .true. &
                 )
