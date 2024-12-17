@@ -260,7 +260,9 @@ class TM5:
                         catlist.append(catname)
                 self.settings[f'emissions.{tr}.{region}.ncats'] = len(catlist)
                 self.settings[f'emissions.{tr}.{region}.categories'] = ', '.join(catlist)
-
+        #-- MVO-added, 2024-12-16:
+        tm5.emissions.prepare_emissions(self.dconf)
+        
     def setup_emissions(self, skip_file_creation: bool = False, filename : str = None):
         """
         This will create the emission file and dailycycle files as well as setup the following rc-keys:
