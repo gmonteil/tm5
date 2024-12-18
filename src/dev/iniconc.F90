@@ -135,7 +135,7 @@ module iniconc_module
             ! Select the proper time index:
             call tau2date(itaur(1), idate)
             nhours_since_start_of_month = (idate(3) - 1) * 24 + idate(4)
-            itime = minloc(time, 1, time - time(0) >= nhours_since_start_of_month)
+            itime = minloc(time, 1, time - time(1) >= nhours_since_start_of_month)
             ! MVO-DEBUG
             print*, rname//'::mixglo1x1@itime=',itime,&
                  'min/mean/max=', &
