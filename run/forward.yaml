@@ -30,7 +30,7 @@ cosmos:
     output : /home/gmonteil/data/iLab/TM5/output
     build : /home/gmonteil/data/iLab/TM5/build
     meteo : /home/gmonteil/data/TM5/meteo
-    meteo_out : /home/gmonteil/data/TM5/meteo_out
+    meteo_out : /home/gmonteil/data/TM5/meteo
     udunits : /opt/etc/udunits.dat  # included in the container!
     diffusion : /home/gmonteil/data/TM5/diffusion
     emissions : /home/gmonteil/data/TM5/emissions
@@ -44,7 +44,7 @@ cosmos:
 
 run :
   start : 1 jan 2021
-  end : 3 jan 2021
+  end : 1 march 2021
   paths :
     output : ${host.paths.output}
     meteo : ${host.paths.meteo}
@@ -152,8 +152,7 @@ meteo :
   coarsened : ${run.meteo.coarsened}
   output    : ${run.meteo.write}
   regions : ${run.regions}
-  #output_path : ${host.paths.meteo_out}
-  output_path : ${.output}
+  output_path : ${host.paths.meteo_out}
 
 
 build :

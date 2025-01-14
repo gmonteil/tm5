@@ -15,6 +15,8 @@ module iniconc_module
     use chem_param,     only : ntracet, names, mixrat_unit
     use tm5_geometry,   only : lli, levi
     use datetime,       only : tau2date
+    use MeteoData,      only : m_dat
+    use chem_param,     only : fscale
 
     implicit none
 
@@ -35,8 +37,6 @@ module iniconc_module
             character(len=*), parameter     :: rname = mname//'/read_iniconc_fitic'
             
             status = 0
-
-            print*, rname
 
             do itrac = 1, ntracet
                 call readrc(rcf, 'start.' // trim(names(itrac)) // '.type', ftype, status)
@@ -87,16 +87,16 @@ module iniconc_module
             type(tllgridinfo)       :: hor_grid_in
             type(tlevelinfo)        :: ver_grid_in
             character(len=*), parameter    :: rname = mname//'/read_iniconc_cams'
+
             !!MVO, 2024-12-17:
             ! CAMS initial concentration file uses packed format.
             ! so the physical data needs to be determined as     
             ! unpacked_value = packed_value * scale_factor + add_offset
-            type(nc_uni_att) :: attr
-            real :: add_offset
-            real :: scale_factor
+!            type(nc_uni_att) :: attr
+            real(kind=4) :: add_offset
+            real(kind=4) :: scale_factor
             integer :: mixglo1x1_shape(4) !lon/lat/level/time
             integer :: ps_shape(3)        !lon/lat/time
-
 
             status = 0
             
@@ -105,29 +105,28 @@ module iniconc_module
 
             ! Read the relevant info from the netCDF file
             ncf = nc_open(trim(filename), 'r', status)
-            mixglo1x1_packed = nc_read_var(ncf, trim(names(itrac)))
+
             !-- convert packed mixing ratio to physical value
-            !   ***using TM5 provided 'nc_get_attr' routine, cumbersome work...***
-            attr = nc_get_attr(ncf, trim(names(itrac)), 'add_offset', status)
-            add_offset = attr%r4_1d(1)
-            attr = nc_get_attr(ncf, trim(names(itrac)), 'scale_factor', status)
-            scale_factor = attr%r4_1d(1)
-            mixglo1x1_shape = shape(mixglo1x1_packed)
-            allocate ( mixglo1x1(mixglo1x1_shape(1),mixglo1x1_shape(2),mixglo1x1_shape(3),mixglo1x1_shape(4)) )
-            mixglo1x1 = real(mixglo1x1_packed)*scale_factor + add_offset
+            mixglo1x1_packed = nc_read_var(ncf, trim(names(itrac)))
+            add_offset = nc_get_attr(ncf, trim(names(itrac)), 'add_offset', status)
+            scale_factor = nc_get_attr(ncf, trim(names(itrac)), 'scale_factor', status)
             print*, rname//"::converted packed mixing ratio to physical values with "//&
-                 "scale_factor=",scale_factor," and add_offset=",add_offset
+                 "scale_factor=", scale_factor, " and add_offset=", add_offset, 'for tracer ' // trim(names(itrac))
+
+            mixglo1x1_shape = shape(mixglo1x1_packed)
+            allocate(mixglo1x1(mixglo1x1_shape(1), mixglo1x1_shape(2), mixglo1x1_shape(3), mixglo1x1_shape(4)))
+            mixglo1x1 = real(mixglo1x1_packed) * scale_factor + add_offset
+            
             time = nc_read_var(ncf, 'time')
             hyai = nc_read_var(ncf, 'hyai')
             hybi = nc_read_var(ncf, 'hybi')
             ps_packed = nc_read_var(ncf, 'ps')
+
             !- convert packed surface pressure to physical value
-            attr = nc_get_attr(ncf, 'ps', 'add_offset', status)
-            add_offset = attr%r4_1d(1)
-            attr = nc_get_attr(ncf, 'ps', 'scale_factor', status)
-            scale_factor = attr%r4_1d(1)
+            add_offset = nc_get_attr(ncf, 'ps', 'add_offset', status)
+            scale_factor = nc_get_attr(ncf, 'ps', 'scale_factor', status)
             ps_shape = shape(ps_packed)
-            ps = real(ps_packed*scale_factor+add_offset)
+            ps = real(ps_packed * scale_factor + add_offset)
             print*, rname//"::converted packed surface pressure to physical values with "//&
                  "scale_factor=",scale_factor," and add_offset=",add_offset
             call nc_close(ncf)
@@ -136,13 +135,15 @@ module iniconc_module
             call tau2date(itaur(1), idate)
             nhours_since_start_of_month = (idate(3) - 1) * 24 + idate(4)
             itime = minloc(time, 1, time - time(1) >= nhours_since_start_of_month)
+
             ! MVO-DEBUG
             print*, rname//'::mixglo1x1@itime=',itime,&
                  'min/mean/max=', &
                  minval(mixglo1x1(:,:,:,itime)), &
                  sum(mixglo1x1(:,:,:,itime))/size(mixglo1x1(:,:,:,itime)),&
                  maxval(mixglo1x1(:,:,:,itime))
-            ! Get the number of levels of the input data
+
+                 ! Get the number of levels of the input data
             nlev = size(hyai) - 1
 
             ! Create a set of coordinates for the input field:
@@ -160,7 +161,10 @@ module iniconc_module
                     mass_dat(region)%rm_t(1:im(region), 1:jm(region), 1:lm(region), itrac), &
                     status, .true. &
                 )
+                mass_dat(region)%rm_t(:, :, :, itrac) = mass_dat(region)%rm_t(:, :, :, itrac) * m_dat(region)%data / fscale(itrac)
+                print*, mass_dat(region)%rm_t(3, 3, 3, itrac)
             enddo
+
 
             status = 0
 
