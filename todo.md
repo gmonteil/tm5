@@ -1,20 +1,35 @@
-- GUI (setup)
+- P1: GUI (setup)
     - [ ] Test on ICOS Jupyter hub 
     - [ ] (re) implement connection with TM5
+    - [ ] implement only configuration with 3 level zoom: globa/Europe/NL+D+CH
+- P4: GUI (extension)
     - [ ] implement possibility to upload self emissions
     - [ ] (re) implement possibility to pass defaults through a YAML file
     - [ ] implement a few default configurations
     - [ ] implement section(s) for observations
-- TM5
+- P3: TM5
+    - [ ] diagnose issue with concentrations decreasing too fast (i.e. sink too strong?)
+    - [ ] -> mv to check preprocessing of emission for climatological files
+    - [ ] -> gm to test 1 month simulation with regional zoom
+    - [ ] -> mv to prepare the met forcing for the zoom configurations
+- P5: TM5 speedup
     - [ ] speedup chemistry
     - [ ] speedup emissions
-    - [ ] diagnose issue with concentrations decreasing too fast (i.e. sink too strong?)
-- GUI (analysis)
+- P6: TM5 analyses, open questions regarding our initial TM5 runs with prior emission fields: to be addressed with long run on COSMOS:
+    - repeat experiment with initial conditon, e.g. from CAMS, so the initial spatial gradient is realistic
+    -> MV, txk to check 
+    - simulated variability of Cabauw appears too small. It is primarily driven by changes in boundary layer height and wind direction
+    -> MV, txk to check effect of vertical resolution
+- P2: GUI (analysis)
     - [ ] plot continuous timeseries at requested stations
     - [ ] plot comparison with observations
     - [ ] automated plot with emissions budget by region and category
     - [ ] Automated observation fit statistics
 - Documentation
     - [ ] properly setup github pages with mkdocs
+    - avoid misuse through implementation of "accepted ranges"
+    - could be overleaf or a shared word document ...
+    - https://lumia.nateko.lu.se/ using a package mkdoc,
+      could be combined with a markedown file on nextcloud ...
 - Advanced GUI (ideas for later ...):
-    - Comparison between two (or more?) simulations
+    - [ ] Comparison between two (or more?) simulations
