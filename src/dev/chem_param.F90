@@ -8,7 +8,7 @@ module chem_param
     use global_types,   only : emis_data
     use global_data,    only : ntracet
     use os_specs,       only : MAX_FILENAME_LEN
-    use go,             only : gol, goerr
+    use go,             only : gol, goerr, T_Time_Window, NewDate
 
     implicit none
 
@@ -94,6 +94,10 @@ module chem_param
         real, dimension(2)              :: parameters   ! reaction parameters
         character(len=50)               :: name         ! reaction name (as in the rc-file)
         real, dimension(ntlow:nthigh)   :: rate = 0     ! reaction rate as function of temperature
+        logical                         :: climatology = .false.
+        character(len=1)                        :: data_timestep
+        type(T_Time_Window)                     :: data_period
+        real, dimension(:, :, :), allocatable   :: data ! in-memory field
 
         !contains
         !    procedure init => init_reaction
@@ -103,11 +107,11 @@ module chem_param
         character(len=tracer_name_len)  :: species      ! Name of the chemical species
         logical                         :: has_chem     ! Turn on or off chemistry for that tracer
         integer                         :: nreact
-        type(react_t), dimension(:), allocatable        :: reactions
+        type(react_t), dimension(:), allocatable    :: reactions
     end type tracer_t
     character(len=20), dimension(:), allocatable    :: reacnames_tmp    ! Temporary array for storing reaction names
 
-    type(tracer_t), dimension(:), allocatable   :: tracers
+    type(tracer_t), dimension(:), allocatable, target   :: tracers
 
     contains
 
@@ -209,6 +213,8 @@ module chem_param
             ztrec = 1. / real(itemp)
             self%rate(itemp) = self%parameters(1) * exp(self%parameters(2) * ztrec)
         end do
+        self%data_period%t1 = NewDate(year=1900, month=1, day=1)
+        self%data_period%t2 = NewDate(year=1900, month=1, day=1)
     end subroutine init_reaction
 
 end module chem_param

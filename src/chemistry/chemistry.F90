@@ -6,7 +6,7 @@
 
 module chemistry
 
-    use go,             only : TDate, readrc
+    use go,             only : TDate, readrc, T_Time_Window, operator(<), NewDate
     use global_data,    only : rcf
     use chem_param,     only : ntracet, tracers, tracer_t, react_t, ntlow
     use dims,           only : im, jm, lm, isr, ier, jsr, jer
@@ -51,7 +51,7 @@ module chemistry
                     rym => mass_dat(region)%rym_t(is:ie, js:je, :, itr)
                     rzm => mass_dat(region)%rzm_t(is:ie, js:je, :, itr)
 
-                    loss = get_loss(region, period, tracers(itr))
+                    call get_loss(region, period, tracers(itr), loss)
 
                     rm = rm - loss
                     rxm = rxm * (1 - loss)
@@ -79,16 +79,15 @@ module chemistry
         end subroutine read_chemistry_fields
 
 
-        function get_loss(region, period, tracer) result(loss)
+        subroutine get_loss(region, period, tracer, loss)
             use go, only : rtotal, operator(-)
 
             ! Get the total tracer loss (i.e. sum of reaction rate * mass * dtime) for a given tracer
 
             Type(TDate), dimension(2), intent(in)   :: period
             integer, intent(in)                     :: region
-            type(tracer_t), intent(in)              :: tracer
-            real, dimension(:, :, :), allocatable   :: loss
-            real, dimension(:, :, :), allocatable   :: conc     ! concentration of the species the tracer reacts with
+            type(tracer_t), intent(inout)           :: tracer
+            real, dimension(:, :, :), allocatable, intent(out)   :: loss
             integer                                 :: ireac
             real                                    :: dtime
             real, dimension(:, :, :), allocatable   :: rrate
@@ -103,7 +102,7 @@ module chemistry
             do ireac = 1, tracer%nreact
 
                 ! Get the mass of the species the tracer reacts with
-                conc = get_conc_field(tracer%reactions(ireac), period, region)
+                call get_conc_field(tracer%reactions(ireac), period, region)
 
                 ! Calculate the reaction rate
                 rrate = get_rrate_field(tracer%reactions(ireac), region)
@@ -112,10 +111,12 @@ module chemistry
                 call apply_l_domain(rrate, tracer%reactions(ireac), region)
 
                 ! Calculate the loss rate
-                loss = loss + rrate * conc * dtime
+!                print*, ireac, minval(rrate), maxval(rrate), dtime
+                loss = loss + rrate * tracer%reactions(ireac)%data * dtime
+
             end do
 
-        end function get_loss
+        end subroutine get_loss
 
 
         function get_rrate_field(reaction, region) result(field3d)
@@ -135,7 +136,7 @@ module chemistry
             do ilev = 1, lm(region)
                 do ilat = jsr(region), jer(region)
                     do ilon = isr(region), ier(region)
-!                        itemp = nint(temper_dat(region)%data(ilon, ilat, ilev) - real(ntlow))
+                        ! itemp = nint(temper_dat(region)%data(ilon, ilat, ilev) - real(ntlow))
                         field3d(ilon, ilat, ilev) = reaction%rate(int(temper_dat(region)%data(ilon, ilat, ilev)))
                     end do
                 end do
@@ -206,7 +207,7 @@ module chemistry
         end subroutine apply_l_domain
 
 
-        function get_conc_field(reaction, period, region) result(field3d)
+        subroutine get_conc_field(reaction, period, region)! result(field3d)
 
             use meteo,          only : pclim_dat
             use file_netcdf
@@ -217,10 +218,9 @@ module chemistry
             use tm5_geometry,   only : lli, levi
 
             ! Return the concentration field of a reactive species (in units of ...), during the requested time interval
-            type(react_t), intent(in)                   :: reaction
+            type(react_t), intent(inout)                :: reaction
             type(TDate), dimension(2), intent(in)       :: period
             integer, intent(in)                         :: region
-            real, dimension(:, :, :), allocatable       :: field3d
             real(4), dimension(:, :, :, :), allocatable :: tmp
             real, dimension(:, :, :, :), allocatable    :: field4d
             character(len=*), parameter                 :: rname = mname//'/get_conc_field'
@@ -228,9 +228,19 @@ module chemistry
             type(tlevelinfo)    :: levi_in
             integer             :: ncf
             integer             :: status
+            
+            ! Check if we need to read new data (i.e. new period). Otherwise return what's already in memory
+            !if (period(1) < reaction%data_period%t1) return
 
-            allocate(field3d(im(region), jm(region), lm(region)))
-            field3d = 0.
+            ! Hard-coded stuff specific to the Spivakovsky OH field. Code below needs to be revised when more
+            ! OH fields are implemented
+            reaction%climatology = .true.
+            reaction%data_timestep = 'm'
+            reaction%data_period = get_new_period(period(1), 'm')
+            if (.not. allocated(reaction%data)) allocate(reaction%data(im(region), jm(region), lm(region)))
+
+            ! If we need to load new data:
+            reaction%data = 0.
 
             ! GM, 14 oct 2024:
             ! Code adapted from https://sourceforge.net/p/tm5/cy3_4dvar/ci/d13c-ch4/tree/proj/tracer/d13CH4/src/import_chemistry_fields.F90#l232
@@ -253,11 +263,33 @@ module chemistry
             IF_NOTOK_RETURN(status=1)
             call fill3d( &
                     lli(region), levi, 'n', pclim_dat(region)%data(:, :, 1), &
-                    field3d, lli_in, levi_in, field4d(:, :, :, period(1)%month), 'mass-aver', status)
+                    reaction%data, lli_in, levi_in, &
+                    field4d(:, :, :, reaction%data_period%t1%month), &
+                    'mass-aver', status)
             IF_NOTOK_RETURN(status=1)
             deallocate(field4d)
 
-        end function get_conc_field
+        end subroutine get_conc_field
+
+        function get_new_period(date, tres) result(new_period)
+            ! Very ad-hoc function to handle the dates in this module. Only the cases that are currently in 
+            ! use are implemented ...
+
+            type(TDate), intent(in)         :: date
+            character(len=1), intent(in)    :: tres
+            type(T_Time_Window)             :: new_period
+
+            select case (tres)
+                case ('m')
+                    new_period%t1 = NewDate(year=date%year, month=date%month, day=1)
+                    if (new_period%t1%month == 12) then
+                        new_period%t2 = NewDate(year=date%year + 1, month=1, day=1)
+                    else
+                        new_period%t2 = NewDate(year=date%year, month=date%month + 1, day=1)
+                    endif
+            end select
+
+        end function get_new_period
 
 
 end module chemistry
