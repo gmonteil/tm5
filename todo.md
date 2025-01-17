@@ -1,0 +1,20 @@
+- GUI (setup)
+    - [ ] Test on ICOS Jupyter hub 
+    - [ ] (re) implement connection with TM5
+    - [ ] implement possibility to upload self emissions
+    - [ ] (re) implement possibility to pass defaults through a YAML file
+    - [ ] implement a few default configurations
+    - [ ] implement section(s) for observations
+- TM5
+    - [ ] speedup chemistry
+    - [ ] speedup emissions
+    - [ ] diagnose issue with concentrations decreasing too fast (i.e. sink too strong?)
+- GUI (analysis)
+    - [ ] plot continuous timeseries at requested stations
+    - [ ] plot comparison with observations
+    - [ ] automated plot with emissions budget by region and category
+    - [ ] Automated observation fit statistics
+- Documentation
+    - [ ] properly setup github pages with mkdocs
+- Advanced GUI (ideas for later ...):
+    - Comparison between two (or more?) simulations
