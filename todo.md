@@ -1,7 +1,9 @@
 # Tasks (by order of priority)
 
 - GUI (setup)
-    - [ ] Test on ICOS Jupyter hub 
+    - [ ] Test on ICOS Jupyter hub and fix problem
+    - [ ] Make conda environment accessible for the FIT-IC group
+    - [ ] Ask inventory compilers to register at Jupyter hub and ask Ute to make them members of fit-ic project
     - [ ] (re) implement connection with TM5
     - [ ] implement only configuration with 3 level zoom: globa/Europe/NL+D+CH
 - GUI (analysis)
