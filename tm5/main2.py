@@ -21,9 +21,15 @@ Re-implementation of whatever was in main.py, because I forgot how up to date th
 """
 
 class TM5:
-    def __init__(self, dconf : str | DictConfig, host : str | None) -> None:
+    def __init__(self, dconf : str | DictConfig, host : str | None,
+                 platform : str | None) -> None:
         # Load the config file
         self.dconf = load_config(dconf, host)
+        if platform!=None and 'platform' in self.dconf.run:
+            if self.dconf.run.platform!=platform:
+                self.dconf.run['platform'] = platform
+                msg = f"overrding dconf.run.platform, {self.dconf.run.platform} by {platform}"
+                logger.info(msg)
         self.settings = TM5Settings()
         self.tm5exec = Path(self.dconf.run.paths.output) / 'tm5.x'
         self.meteo = Meteo(**self.dconf.meteo)
@@ -243,7 +249,7 @@ class TM5:
         self.setup_output_point(self.dconf.output.point)
         return tm5.observations.prepare_point_obs(self.dconf.output.point)
 
-    def setup_emissions2(self):
+    def setup_emissions2(self, skip_emis_gen : bool = False):
         """
         This will set the following rc-keys:
         - emissions.{tracer}.{region}.ncats
@@ -261,7 +267,8 @@ class TM5:
                 self.settings[f'emissions.{tr}.{region}.ncats'] = len(catlist)
                 self.settings[f'emissions.{tr}.{region}.categories'] = ', '.join(catlist)
         #-- MVO-added, 2024-12-16:
-        tm5.emissions.prepare_emissions(self.dconf)
+        if not skip_emis_gen:
+            tm5.emissions.prepare_emissions(self.dconf)
         
     def setup_emissions(self, skip_file_creation: bool = False, filename : str = None):
         """
