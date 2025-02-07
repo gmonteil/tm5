@@ -16,8 +16,7 @@
     - [ ] -> mv to check preprocessing of emission for climatological files
     - [ ] -> gm to test 1 month simulation with regional zoom
     - [x] -> mv to prepare the met forcing for the zoom configurations
-- GUI (extension)
-    - [ ] implement possibility to upload self emissions
+- GUI (extension)    
     - [ ] (re) implement possibility to pass defaults through a YAML file
     - [ ] implement a few default configurations
     - [ ] implement section(s) for observations
