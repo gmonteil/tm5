@@ -15,7 +15,7 @@
     - [ ] diagnose issue with concentrations decreasing too fast (i.e. sink too strong?)
     - [ ] -> mv to check preprocessing of emission for climatological files
     - [ ] -> gm to test 1 month simulation with regional zoom
-    - [ ] -> mv to prepare the met forcing for the zoom configurations
+    - [x] -> mv to prepare the met forcing for the zoom configurations
 - GUI (extension)
     - [ ] implement possibility to upload self emissions
     - [ ] (re) implement possibility to pass defaults through a YAML file
