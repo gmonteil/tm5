@@ -5,7 +5,7 @@
     - [x] Make conda environment accessible for the FIT-IC group
     - [x] Ask inventory compilers to register at Jupyter hub and ask Ute to make them members of fit-ic project
     - [ ] (re) implement connection with TM5
-    - [ ] implement only configuration with 3 level zoom: globa/Europe/NL+D+CH
+    - [ ] implement only configuration with 3 level zoom "avengers-1", i.e global/Europe/NL+D+CH
 - GUI (analysis)
     - [ ] plot continuous timeseries at requested stations
     - [ ] plot comparison with observations
