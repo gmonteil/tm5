@@ -7,7 +7,7 @@
     - [ ] (re) implement connection with TM5
     - [ ] implement only configuration with 3 level zoom "avengers-1", i.e global/Europe/NL+D+CH
 - GUI (analysis)
-    - [ ] plot continuous timeseries at requested stations
+    - [x] plot continuous timeseries at requested stations
     - [ ] plot comparison with observations
     - [ ] automated plot with emissions budget by region and category
     - [ ] Automated observation fit statistics
