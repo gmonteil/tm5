@@ -21,11 +21,17 @@ def coarsen_file(path_or_pattern : str, reg : TM5Grids, start : Timestamp, end :
 
     # Regrid and ensure the result is on a daily time step (for now ...)
     coarse = regridder(ds)
-    # Note: 'reindex' does not operate in-place, need to capture returned field
+    #- MVO-20250220: 'reindex' does not operate in-place, need to capture returned field
     coarse = coarse.reindex(time=date_range(start, end, freq='D')).ffill('time')
 
     # Return ordered the way TM5 wants it!
-    return coarse.transpose('lon', 'lat', 'time')
+    #- MVO-20250220: transposition can in fact be dropped
+    #                if we don't call transpose below in prepare_emissions
+    #  - essentially we can drop transposition at all if we expect
+    #    all input emissions files being prepared with the "canonical"
+    #    ordering of dimensions, i.e. longitude varying fastest,
+    #    followed by latitude, and time...
+    return coarse#.transpose('lon', 'lat', 'time')
 
 
 def prepare_emissions(conf: DictConfig) -> None:
@@ -33,7 +39,7 @@ def prepare_emissions(conf: DictConfig) -> None:
     start = Timestamp(conf.run.start)
     end = Timestamp(conf.run.end)
     
-    for region in conf.run.regions:
+    for iregion,region in enumerate(conf.run.regions):
         
         # Create the region object:
         reg = conf.regions[region]
@@ -51,6 +57,9 @@ def prepare_emissions(conf: DictConfig) -> None:
             Path(tracer.prefix).parent.mkdir(exist_ok=True, parents=True)
 
             # group the datasets in daily emission files for that region and tracer:
-            for day in date_range(start, end, freq='D'):
+            for iday,day in enumerate(date_range(start, end, freq='D')):
                 destfile = f'{tracer.prefix}.{trname}.{region}.{day:%Y%m%d}.nc'
-                xr.Dataset({k:datasets[k].sel(time=day).transpose() for k in datasets}).to_netcdf(destfile)
+                #- MVO-20250220:no longer transpose
+                #               (see also comment in coarsen above)
+                # xr.Dataset({k:datasets[k].sel(time=day).transpose() for k in datasets}).to_netcdf(destfile)
+                xr.Dataset({k:datasets[k].sel(time=day) for k in datasets}).to_netcdf(destfile)
