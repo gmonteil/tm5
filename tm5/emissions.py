@@ -22,7 +22,7 @@ def coarsen_file(path_or_pattern : str, reg : TM5Grids, start : Timestamp, end :
 
     # Regrid and ensure the result is on a daily time step (for now ...)
     coarse = regridder(ds)
-    coarse.reindex(time=date_range(start, end, freq='D')).ffill('time')
+    coarse = coarse.reindex(time=date_range(start, end, freq='D')).ffill('time')
 
     # Return ordered the way TM5 wants it!
     return coarse.transpose('lon', 'lat', 'time')
