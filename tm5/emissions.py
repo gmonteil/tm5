@@ -13,7 +13,6 @@ from pathlib import Path
 
 def coarsen_file(path_or_pattern : str, reg : TM5Grids, start : Timestamp, end : Timestamp) -> xr.Dataset:
     # Open the source file(s). It should be on a global 1x1 resolution (for now ...)
-    print(path_or_pattern)
     ds = xr.open_mfdataset(path_or_pattern)
 
     # Define a regridder
@@ -22,6 +21,7 @@ def coarsen_file(path_or_pattern : str, reg : TM5Grids, start : Timestamp, end :
 
     # Regrid and ensure the result is on a daily time step (for now ...)
     coarse = regridder(ds)
+    # Note: 'reindex' does not operate in-place, need to capture returned field
     coarse = coarse.reindex(time=date_range(start, end, freq='D')).ffill('time')
 
     # Return ordered the way TM5 wants it!
