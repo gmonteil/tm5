@@ -211,4 +211,4 @@ output :
     interpolation: 'linear'
   mix_:
     output_frequency: 1d
-    prefix: mix_
+    prefix: mix

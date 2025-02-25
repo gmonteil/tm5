@@ -9,6 +9,8 @@ from tm5.gridtools import TM5Grids
 import xarray as xr
 from pandas import date_range, Timestamp
 from pathlib import Path
+from loguru import logger
+from tqdm.auto import tqdm
 
 
 def coarsen_file(path_or_pattern : str, reg : TM5Grids, start : Timestamp, end : Timestamp) -> xr.Dataset:
@@ -21,17 +23,10 @@ def coarsen_file(path_or_pattern : str, reg : TM5Grids, start : Timestamp, end :
 
     # Regrid and ensure the result is on a daily time step (for now ...)
     coarse = regridder(ds)
-    #- MVO-20250220: 'reindex' does not operate in-place, need to capture returned field
     coarse = coarse.reindex(time=date_range(start, end, freq='D')).ffill('time')
 
     # Return ordered the way TM5 wants it!
-    #- MVO-20250220: transposition can in fact be dropped
-    #                if we don't call transpose below in prepare_emissions
-    #  - essentially we can drop transposition at all if we expect
-    #    all input emissions files being prepared with the "canonical"
-    #    ordering of dimensions, i.e. longitude varying fastest,
-    #    followed by latitude, and time...
-    return coarse#.transpose('lon', 'lat', 'time')
+    return coarse
 
 
 def prepare_emissions(conf: DictConfig) -> None:
@@ -39,7 +34,7 @@ def prepare_emissions(conf: DictConfig) -> None:
     start = Timestamp(conf.run.start)
     end = Timestamp(conf.run.end)
     
-    for iregion,region in enumerate(conf.run.regions):
+    for region in conf.run.regions:
         
         # Create the region object:
         reg = conf.regions[region]
@@ -56,10 +51,13 @@ def prepare_emissions(conf: DictConfig) -> None:
             # Ensure that the dest path exists!
             Path(tracer.prefix).parent.mkdir(exist_ok=True, parents=True)
 
-            # group the datasets in daily emission files for that region and tracer:
-            for iday,day in enumerate(date_range(start, end, freq='D')):
+            datasets = xr.Dataset(datasets)
+            
+            for day in tqdm(date_range(start, end, freq='D'), desc=f'Writing emission files for {trname} in region {region}'):
                 destfile = f'{tracer.prefix}.{trname}.{region}.{day:%Y%m%d}.nc'
-                #- MVO-20250220:no longer transpose
-                #               (see also comment in coarsen above)
-                # xr.Dataset({k:datasets[k].sel(time=day).transpose() for k in datasets}).to_netcdf(destfile)
-                xr.Dataset({k:datasets[k].sel(time=day) for k in datasets}).to_netcdf(destfile)
+                datasets.sel(time=day).to_netcdf(destfile)
+                
+#            # group the datasets in daily emission files for that region and tracer:
+#            for day in tqdm(date_range(start, end, freq='D'), desc=f'Writing emission files for {trname} in region {region}'):
+#                destfile = f'{tracer.prefix}.{trname}.{region}.{day:%Y%m%d}.nc'
+#                xr.Dataset({k : datasets[k].sel(time=day) for k in datasets}).to_netcdf(destfile)
