@@ -29,16 +29,20 @@ module chemistry
 
         subroutine chemistry_step(region, period, status)
 
-            use global_data, only   : mass_dat
-            use dims,                    only : isr, ier, jsr, jer
+            use global_data,    only : mass_dat
+            use dims,           only : isr, ier, jsr, jer
+            use go,             only : operator(-), rtotal
 
             integer, intent(in)                     :: region
             type(TDate), dimension(2), intent(in)   :: period
             integer, intent(out)                    :: status
             integer     :: itr
             real, dimension(:, :, :), pointer       :: rm, rxm, rym, rzm
-            real, dimension(:, :, :), allocatable   :: loss
+            real, dimension(:, :, :), allocatable   :: loss_rate
             integer     :: is, ie, js, je
+            real        :: dtime
+            
+            dtime = abs(rtotal(period(2) - period(1), 'sec'))
 
             is = isr(region) ; ie = ier(region)
             js = jsr(region) ; je = jer(region)
@@ -51,12 +55,14 @@ module chemistry
                     rym => mass_dat(region)%rym_t(is:ie, js:je, :, itr)
                     rzm => mass_dat(region)%rzm_t(is:ie, js:je, :, itr)
 
-                    call get_loss(region, period, tracers(itr), loss)
+                    call get_total_loss_rate(region, period, tracers(itr), loss_rate)
 
-                    rm = rm - loss
-                    rxm = rxm * (1 - loss)
-                    rym = rym * (1 - loss)
-                    rzm = rzm * (1 - loss)
+                    rm = rm * (1 - loss_rate * dtime)
+#ifdef slopes
+                    rxm = rxm * (1 - loss_rate * dtime)
+                    rym = rym * (1 - loss_rate * dtime)
+                    rzm = rzm * (1 - loss_rate * dtime)
+#endif
 
                     nullify(rm, rxm, rym, rzm)
                 end if
@@ -79,25 +85,19 @@ module chemistry
         end subroutine read_chemistry_fields
 
 
-        subroutine get_loss(region, period, tracer, loss)
-            use go, only : rtotal, operator(-)
-
+        subroutine get_total_loss_rate(region, period, tracer, loss_rate)
             ! Get the total tracer loss (i.e. sum of reaction rate * mass * dtime) for a given tracer
 
             Type(TDate), dimension(2), intent(in)   :: period
             integer, intent(in)                     :: region
             type(tracer_t), intent(inout)           :: tracer
-            real, dimension(:, :, :), allocatable, intent(out)   :: loss
+            real, dimension(:, :, :), allocatable, intent(out)   :: loss_rate
             integer                                 :: ireac
-            real                                    :: dtime
             real, dimension(:, :, :), allocatable   :: rrate
 
-            allocate(loss(im(region), jm(region), lm(region)))
+            allocate(loss_rate(im(region), jm(region), lm(region)))
 
-            ! time step for this region
-            dtime = abs(rtotal(period(2) - period(1), 'sec'))
-
-            loss = 0
+            loss_rate = 0
 
             do ireac = 1, tracer%nreact
 
@@ -111,12 +111,11 @@ module chemistry
                 call apply_l_domain(rrate, tracer%reactions(ireac), region)
 
                 ! Calculate the loss rate
-!                print*, ireac, minval(rrate), maxval(rrate), dtime
-                loss = loss + rrate * tracer%reactions(ireac)%data * dtime
+                loss_rate = loss_rate + rrate * tracer%reactions(ireac)%data
 
             end do
 
-        end subroutine get_loss
+        end subroutine get_total_loss_rate
 
 
         function get_rrate_field(reaction, region) result(field3d)
@@ -230,8 +229,8 @@ module chemistry
             integer             :: status
             
             ! Check if we need to read new data (i.e. new period). Otherwise return what's already in memory
-            !if (period(1) < reaction%data_period%t1) return
-
+            if (period(1) < reaction%data_period%t2) return
+        
             ! Hard-coded stuff specific to the Spivakovsky OH field. Code below needs to be revised when more
             ! OH fields are implemented
             reaction%climatology = .true.

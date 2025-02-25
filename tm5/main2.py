@@ -21,14 +21,13 @@ Re-implementation of whatever was in main.py, because I forgot how up to date th
 """
 
 class TM5:
-    def __init__(self, dconf : str | DictConfig, host : str | None,
-                 platform : str | None) -> None:
+    def __init__(self, dconf : str | DictConfig, host : str | None, platform : str | None = None) -> None:
         # Load the config file
         self.dconf = load_config(dconf, host)
-        if platform!=None and 'platform' in self.dconf.run:
+        if platform != None and 'platform' in self.dconf.run:
             if self.dconf.run.platform!=platform:
                 self.dconf.run['platform'] = platform
-                msg = f"overrding dconf.run.platform, {self.dconf.run.platform} by {platform}"
+                msg = f"overriding dconf.run.platform, {self.dconf.run.platform} by {platform}"
                 logger.info(msg)
         self.settings = TM5Settings()
         self.tm5exec = Path(self.dconf.run.paths.output) / 'tm5.x'
@@ -168,7 +167,7 @@ class TM5:
 
         if stations and 'stations' in self.dconf.output :
             self.setup_output_stations()
-            
+
         self.setup_output_mix(self.dconf.output.get('mix', None))
 
     def setup_run(self, mode='forward'):
@@ -231,8 +230,6 @@ class TM5:
                 logger.error("initial condition settings not understood")
                 raise Exception
             
-            
-
     def setup_observations(self) -> Path:
         """
         Write a (point) observations file for TM5 + setup the relevant rc-keys:
@@ -260,13 +257,14 @@ class TM5:
             self.settings[f'emissions.{tr}.prefix'] = self.dconf.emissions[tr].prefix
             for region in self.dconf.run.regions:
                 catlist = []
-                for catname, cat in self.dconf.emissions[tr].categories.items():
-                    # By default, the category is in all the regions, unless a "regions" subkey is definbed
-                    if region in cat.get('regions', [region]):
-                        catlist.append(catname)
+                if 'categories' in self.dconf.emissions[tr]:
+                    for catname, cat in self.dconf.emissions[tr].categories.items():
+                        # By default, the category is in all the regions, unless a "regions" subkey is definbed
+                        if region in cat.get('regions', [region]):
+                            catlist.append(catname)
                 self.settings[f'emissions.{tr}.{region}.ncats'] = len(catlist)
                 self.settings[f'emissions.{tr}.{region}.categories'] = ', '.join(catlist)
-        #-- MVO-added, 2024-12-16:
+
         if not skip_emis_gen:
             tm5.emissions.prepare_emissions(self.dconf)
         

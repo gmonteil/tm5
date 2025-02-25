@@ -16,6 +16,6 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     python_requires='>=3.9',
-    install_requires=['numpy', 'ipython', 'pandas', 'xarray', 'h5py', 'netcdf4', 'loguru', 'omegaconf', 'mkdocs', 'pint', 'tqdm', 'dask'],
+    install_requires=['numpy', 'ipython', 'pandas', 'xarray', 'h5py', 'netcdf4', 'loguru', 'omegaconf', 'mkdocs', 'pint', 'tqdm', 'dask', 'bottleneck'],
     scripts=['bin/tm5', 'bin/tmpy.py', 'bin/tm5runner.py'],
 )

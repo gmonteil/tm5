@@ -30,7 +30,7 @@ cosmos:
     output : /home/gmonteil/data/iLab/TM5/output
     build : /home/gmonteil/data/iLab/TM5/build
     meteo : /home/gmonteil/data/TM5/meteo
-    meteo_out : /home/gmonteil/data/TM5/meteo
+    meteo_out : /home/gmonteil/data/TM5/meteo_out
     udunits : /opt/etc/udunits.dat  # included in the container!
     diffusion : /home/gmonteil/data/TM5/diffusion
     emissions : /home/gmonteil/data/TM5/emissions
@@ -44,7 +44,7 @@ cosmos:
 
 run :
   start : 1 jan 2021
-  end : 1 march 2021
+  end : 1 jan 2022
   paths :
     output : ${host.paths.output}
     meteo : ${host.paths.meteo}
@@ -107,7 +107,7 @@ tracers :
 emissions:
   CH4:
     prefix : ${run.paths.emissions}/ch4emis
-    categories :
+    categories:
       wetlands :
         path : ${host.paths.emissions_archive}/cal_lpj_ch4_wetland_forTM5_2021.nc
         field : ch4_wetland
@@ -209,4 +209,6 @@ output :
     meteo: False
   point:
     interpolation: 'linear'
-    
+  mix_:
+    output_frequency: 1d
+    prefix: mix_
