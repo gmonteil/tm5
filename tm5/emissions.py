@@ -42,6 +42,10 @@ def prepare_emissions(conf: DictConfig) -> None:
         
         # Regrid the emissions for that region and tracer
         for trname, tracer in conf.emissions.items():
+
+            if 'categories' not in tracer:
+                continue
+            
             datasets = {}
             
             # Do the actual coarsening.

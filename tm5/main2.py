@@ -254,48 +254,19 @@ class TM5:
         - emissions.{tracer}.prefix
         """
         for tr in self.dconf.run.tracers :
-            self.settings[f'emissions.{tr}.prefix'] = self.dconf.emissions[tr].prefix
+            self.settings[f'emissions.{tr}.prefix'] = self.dconf.tracers[tr].emissions.prefix
             for region in self.dconf.run.regions:
                 catlist = []
-                if 'categories' in self.dconf.emissions[tr]:
-                    for catname, cat in self.dconf.emissions[tr].categories.items():
-                        # By default, the category is in all the regions, unless a "regions" subkey is definbed
-                        if region in cat.get('regions', [region]):
-                            catlist.append(catname)
+                for catname, cat in self.dconf.tracers[tr].emissions.get('categories', {}).items():
+                    # By default, the category is in all the regions, unless a "regions" subkey is definbed
+                    if region in cat.get('regions', [region]):
+                        catlist.append(catname)
                 self.settings[f'emissions.{tr}.{region}.ncats'] = len(catlist)
                 self.settings[f'emissions.{tr}.{region}.categories'] = ', '.join(catlist)
 
         if not skip_emis_gen:
             tm5.emissions.prepare_emissions(self.dconf)
         
-    def setup_emissions(self, skip_file_creation: bool = False, filename : str = None):
-        """
-        This will create the emission file and dailycycle files as well as setup the following rc-keys:
-        - PyShell.em.filename
-        - dailycycle.folder
-        - {tracer}.{cat}.dailycycle
-        - {tracer}.dailycycle.type
-        - {tracer}.dailycycle.prefix
-
-        Arguments:
-            skip_file_creation [bool] : set to True to avoid recomputing the emission files if it is already there
-        """
-
-        if not filename :
-            filename = Path(self.dconf.run.paths.output) / 'emissions.nc'
-        self.settings['PyShell.em.filename'] = str(filename)
-        self.settings['dailycycle.folder'] = self.dconf.emissions.dailycycle_folder
-        
-        for trname in self.dconf.emissions.tracers :
-            self.settings[f'{trname}.dailycycle.type'] = self.dconf.emissions[trname].dailycycle.type
-            self.settings[f'{trname}.dailycycle.prefix'] = Path(self.dconf.emissions[trname].dailycycle.filename_format).with_suffix('').with_suffix('').name + '.'
-            for catname in self.dconf.emissions[trname].emission_categories :
-                apply_dailycycle_to_cat = {False:'F', True:'T'}[self.dconf.emissions[trname].emission_categories[catname].get('dailycycle', False)]
-                self.settings[f'{trname}.{catname}.dailycycle'] = apply_dailycycle_to_cat
-            
-        if not skip_file_creation:
-            tm5.emissions.prepare_emissions(self.dconf.emissions, filename = filename)
-
     def setup_optim(self):
         """
         This creates keys that are related to the optimization, and should therefore probably not be in TM5 at all ...
