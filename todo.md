@@ -12,7 +12,7 @@
     - [ ] automated plot with emissions budget by region and category
     - [ ] Automated observation fit statistics
 - TM5
-    - [ ] diagnose issue with concentrations decreasing too fast (i.e. sink too strong?)
+    - [x] diagnose issue with concentrations decreasing too fast (i.e. sink too strong?)
     - [x] -> mv to check preprocessing of emission for climatological files
     - [ ] -> gm to test 1 month simulation with regional zoom
     - [x] -> mv to prepare the met forcing for the zoom configurations
