@@ -25,6 +25,7 @@ def coarsen_file(path_or_pattern : str, reg : TM5Grids, start : Timestamp, end :
     coarse = regridder(ds)
     coarse = coarse.reindex(time=date_range(start, end, freq='D')).ffill('time')
 
+    coarse = coarse.astype('f8')
     # Return ordered the way TM5 wants it!
     return coarse
 
