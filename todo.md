@@ -14,7 +14,7 @@
 - TM5
     - [x] diagnose issue with concentrations decreasing too fast (i.e. sink too strong?)
     - [x] -> mv to check preprocessing of emission for climatological files
-    - [ ] -> gm to test 1 month simulation with regional zoom
+    - [ ] -> mv to test 1 year simulation with regional zoom
     - [x] -> mv to prepare the met forcing for the zoom configurations
 - GUI (extension)    
     - [ ] (re) implement possibility to pass defaults through a YAML file
