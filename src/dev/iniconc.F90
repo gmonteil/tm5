@@ -35,7 +35,6 @@ module iniconc_module
             character(len=10)               :: ftype
             integer                         :: region
             character(len=*), parameter     :: rname = mname//'/read_iniconc_fitic'
-            
             status = 0
 
             do itrac = 1, ntracet
@@ -47,7 +46,14 @@ module iniconc_module
                         call set_constant_iniconc(itrac, trim(names(itrac)), status)
                 end select
                 do region = 1, nregions
-                    mass_dat(region)%rm_t = mass_dat(region)%rm_t / mixrat_unit(itrac)
+                   !-- MVO-2025-03-19: division would depend on tracer,
+                   !   BUT conversion to massTracer has happened already
+                   !   downstream, so here is no conversion required anymore/
+                   !
+                   ! mass_dat(region)%rm_t = mass_dat(region)%rm_t / mixrat_unit(itrac)
+                   !-- should be (but is not required here!)
+                   ! mass_dat(region)%rm_t(:,:,:,itrac) = &
+                   !      mass_dat(region)%rm_t(:,:,:,itrac)
                     if ( adv_scheme == 'slope' ) then
                         mass_dat(region)%rxm_t(:, :, :, itrac) = 0.0
                         mass_dat(region)%rym_t(:, :, :, itrac) = 0.0
@@ -136,12 +142,6 @@ module iniconc_module
             nhours_since_start_of_month = (idate(3) - 1) * 24 + idate(4)
             itime = minloc(time, 1, time - time(1) >= nhours_since_start_of_month)
 
-            ! MVO-DEBUG
-            print*, rname//'::mixglo1x1@itime=',itime,&
-                 'min/mean/max=', &
-                 minval(mixglo1x1(:,:,:,itime)), &
-                 sum(mixglo1x1(:,:,:,itime))/size(mixglo1x1(:,:,:,itime)),&
-                 maxval(mixglo1x1(:,:,:,itime))
 
                  ! Get the number of levels of the input data
             nlev = size(hyai) - 1
@@ -153,16 +153,16 @@ module iniconc_module
             call init_levels(ver_grid_in, nlev, hyai + real(0, 8), hybi + real(0, 8), status)
             IF_NOTOK_RETURN(status=1)
 
-            ! Propagate the global 1x1 field to the regions
+
+           ! Propagate the global 1x1 field to the regions
             do region = 1, nregions
                 call regrid_3d_mix( &
                     hor_grid_in, lli(region), ver_grid_in, levi, &
                     ps(:, :, itime), mixglo1x1(:, :, :, itime), &
                     mass_dat(region)%rm_t(1:im(region), 1:jm(region), 1:lm(region), itrac), &
                     status, .true. &
-                )
+                    )
                 mass_dat(region)%rm_t(:, :, :, itrac) = mass_dat(region)%rm_t(:, :, :, itrac) * m_dat(region)%data / fscale(itrac)
-                print*, mass_dat(region)%rm_t(3, 3, 3, itrac)
             enddo
 
 
@@ -185,7 +185,10 @@ module iniconc_module
             IF_NOTOK_RETURN(status=1)
 
             do region = 1, nregions
-                mass_dat(region)%rm_t(1:im(region), 1:jm(region), 1:lm(region), itrac) = mix
+               !-- MVO, 2025-03-19::make sure we have mass instead
+               !                    of concentration upstream
+               ! mass_dat(region)%rm_t(1:im(region), 1:jm(region), 1:lm(region), itrac) = mix
+               mass_dat(region)%rm_t(1:im(region), 1:jm(region), 1:lm(region), itrac) = mix/fscale(itrac)
             enddo
 
         end subroutine set_constant_iniconc
