@@ -13,7 +13,7 @@ from tm5 import species as chem
 from pathlib import Path
 from pandas import Timestamp, Timedelta
 from loguru import logger
-
+from typing import List
 
 
 """
@@ -21,14 +21,22 @@ Re-implementation of whatever was in main.py, because I forgot how up to date th
 """
 
 class TM5:
-    def __init__(self, dconf : str | DictConfig, host : str | None, platform : str | None = None) -> None:
+    def __init__(self, dconf : str | DictConfig, host : str | None,
+                 platform : str | None = None,
+                 override_trange : List[str] | None = None) -> None:
         # Load the config file
         self.dconf = load_config(dconf, host)
+        # potentially overriding few settings in yaml file
         if platform != None and 'platform' in self.dconf.run:
             if self.dconf.run.platform!=platform:
                 self.dconf.run['platform'] = platform
                 msg = f"overriding dconf.run.platform, {self.dconf.run.platform} by {platform}"
                 logger.info(msg)
+        # potentially override simulation period
+        if override_trange!=None:
+            tstart, tend = override_trange
+            self.dconf.run['start'] = tstart
+            self.dconf.run['end']   = tend
         self.settings = TM5Settings()
         self.tm5exec = Path(self.dconf.run.paths.output) / 'tm5.x'
         self.meteo = Meteo(**self.dconf.meteo)

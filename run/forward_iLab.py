@@ -24,6 +24,10 @@ parser.add_argument('-b', '--build', action='store_true', default=False, help='U
 parser.add_argument('--build-only', action='store_true', default=False)
 parser.add_argument('--rcfile-only', action='store_true', default=False, help="""only create the TM5 rcfile (nor compiling neither running TM5).""")
 parser.add_argument('-m', '--host', default=os.environ['TM5_HOST'])
+parser.add_argument('--trange',
+                    metavar=('tstart','tend'),
+                    nargs=2,
+                    help="""whether to override simulation start/end time specified in the yaml file (strings must be parseable as pandas Timestamp).""")
 parser.add_argument('config_file')
 args = parser.parse_args(sys.argv[1:])
 
@@ -40,7 +44,8 @@ platform = get_hostname()
 #=====================================================
 # 1. Build the model
 #=====================================================
-tm = tm5.TM5(str(yaml_file), host=args.host, platform=platform)
+tm = tm5.TM5(str(yaml_file), host=args.host,
+             platform=platform, override_trange=args.trange)
 
 if args.build or args.build_only and not args.rcfile_only:
     tm.build()
@@ -104,3 +109,4 @@ if args.rcfile_only:
     logger.info(msg)
 else:
     runcmd(run_cmd)
+logger.info(f"regular program termination")
