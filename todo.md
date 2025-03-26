@@ -4,13 +4,16 @@
     - [x] Test on ICOS Jupyter hub and fix problem
     - [x] Make conda environment accessible for the FIT-IC group
     - [x] Ask inventory compilers to register at Jupyter hub and ask Ute to make them members of fit-ic project
-    - [ ] (re) implement connection with TM5
+    - [ ] (re) implement connection with TM5 (work with Zois)
     - [ ] implement only configuration with 3 level zoom "avengers-1", i.e global/Europe/NL+D+CH
+    - [ ] add GUI code to TM5 code on this GIT
+    - [ ] add an "overwrite" field for the emissions
 - GUI (analysis)
     - [x] plot continuous timeseries at requested stations
-    - [ ] plot comparison with observations
+    - [ ] check domain size on plot after change of region
+    - [x] plot comparison with observations
     - [ ] automated plot with emissions budget by region and category
-    - [ ] Automated observation fit statistics
+    - [ ] Automated observation fit statistics (RMSE, maybe as table)
 - TM5
     - [x] diagnose issue with concentrations decreasing too fast (i.e. sink too strong?)
     - [x] -> mv to check preprocessing of emission for climatological files
@@ -19,13 +22,12 @@
 - GUI (extension)    
     - [ ] (re) implement possibility to pass defaults through a YAML file
     - [ ] implement a few default configurations
-    - [ ] implement section(s) for observations
 - TM5 speedup
     - [x] speedup chemistry
-    - [ ] speedup emissions
+    - [ ] speedup reading emissions
 - TM5 analyses, open questions regarding our initial TM5 runs with prior emission fields: to be addressed with long run on COSMOS:
-    - [ ] repeat experiment with initial conditon, e.g. from CAMS, so the initial spatial gradient is realistic -> MV, txk to check 
-    - [ ] simulated variability of Cabauw appears too small. It is primarily driven by changes in boundary layer height and wind direction -> MV, txk to check effect of vertical resolution
+    - [ ] simulated variability of Cabauw appears too small; do forward run with out model setup and posterior emission fields from CAMS inversion -> MV to check for the location of the emissions
+    - [ ] check proper reading of the OH file and see whether that improves the seasonality at SPO -> GM
 - Documentation
     - [ ] properly setup github pages with mkdocs
  
