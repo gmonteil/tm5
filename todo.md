@@ -6,7 +6,7 @@
     - [x] Ask inventory compilers to register at Jupyter hub and ask Ute to make them members of fit-ic project
     - [ ] (re) implement connection with TM5 (work with Zois)
     - [ ] implement only configuration with 3 level zoom "avengers-1", i.e global/Europe/NL+D+CH
-    - [ ] add GUI code to TM5 code on this GIT
+    - [x] add GUI code to TM5 code on this GIT
     - [ ] add an "overwrite" field for the emissions
 - GUI (analysis)
     - [x] plot continuous timeseries at requested stations
@@ -22,6 +22,7 @@
 - GUI (extension)    
     - [ ] (re) implement possibility to pass defaults through a YAML file
     - [ ] implement a few default configurations
+    - [ ] implement a job scheduler so multiple TM runs triggered by different users can happen at the same time
 - TM5 speedup
     - [x] speedup chemistry
     - [ ] speedup reading emissions
