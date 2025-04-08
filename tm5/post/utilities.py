@@ -25,13 +25,17 @@ _B = 6356.7523 * 1000
 #
 _ERmeter  = (2*_A + _B)/3
 
+def get_hostname():
+    import socket
+    hostname = socket.gethostname()
+    return hostname
+
 
 def lonstr(lon, fmt="{:.3f}"):
     if lon<0:
         return fmt.format(abs(lon))+'W'
     else:
         return fmt.format(lon)+'E'
-# ---end-of-lonstr
 
 
 def latstr(lat, fmt="{:.3f}"):
@@ -39,7 +43,6 @@ def latstr(lat, fmt="{:.3f}"):
         return fmt.format(abs(lat))+'S'
     else:
         return fmt.format(lat)+'N'
-# ---end-of-latstr
 
 
 def to_posix_ts(d: dtm.datetime, utc:bool=True) -> float:
@@ -69,7 +72,6 @@ def lst_intersect(l1,l2):
     s2 = set(l2)
     s = s1.intersection(s2)
     return sorted(list(s))
-# ---end-of-lst_intersect
 
 
 def X_is_running():
@@ -88,7 +90,6 @@ def X_is_running():
     # p = Popen(["xset", "-q"], stdout=PIPE, stderr=PIPE)
     # p.communicate()
     # return p.returncode == 0
-# ---end-of-X_is_running
 
 
 def create_sha512(fname, blocksize=None):
