@@ -5,15 +5,15 @@
     - [x] Make conda environment accessible for the FIT-IC group
     - [x] Ask inventory compilers to register at Jupyter hub and ask Ute to make them members of fit-ic project
     - [ ] (re) implement connection with TM5 (work with Zois)
-    - [ ] implement only configuration with 3 level zoom "avengers-1", i.e global/Europe/NL+D+CH
     - [x] add GUI code to TM5 code on this GIT
     - [ ] add an "overwrite" field for the emissions
+    - [ ] implement only configuration with 3 level zoom "avengers-1", i.e global/Europe/NL+D+CH
 - GUI (analysis)
     - [x] plot continuous timeseries at requested stations
     - [ ] check domain size on plot after change of region
-    - [x] plot comparison with observations
-    - [ ] automated plot with emissions budget by region and category
     - [ ] Automated observation fit statistics (RMSE, maybe as table)
+    - [ ] automated plot with emissions budget by region and category
+    - [x] plot comparison with observations
 - TM5
     - [x] diagnose issue with concentrations decreasing too fast (i.e. sink too strong?)
     - [x] -> mv to check preprocessing of emission for climatological files
@@ -27,8 +27,8 @@
     - [x] speedup chemistry
     - [ ] speedup reading emissions
 - TM5 analyses, open questions regarding our initial TM5 runs with prior emission fields: to be addressed with long run on COSMOS:
-    - [ ] simulated variability of Cabauw appears too small; do forward run with out model setup and posterior emission fields from CAMS inversion -> MV to check for the location of the emissions
     - [ ] check proper reading of the OH file and see whether that improves the seasonality at SPO -> GM
+    - [ ] simulated variability of Cabauw appears too small; do forward run with out model setup and posterior emission fields from CAMS inversion -> MV to check for the location of the emissions
 - Documentation
     - [ ] properly setup github pages with mkdocs
  
