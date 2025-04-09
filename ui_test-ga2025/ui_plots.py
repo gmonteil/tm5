@@ -407,11 +407,11 @@ class EmissionExplorer(pn.viewable.Viewer):
         #--
         #
         msg = f"{dtm.datetime.utcnow()}, @__init__, setting self.param.region.objects"
-        print(f"DEBUG::{msg}")
+        # print(f"DEBUG::{msg}")
         self.param.region.objects = list(self.data.keys())
         self.region = self.param.region.objects[0]
         msg = f"{dtm.datetime.utcnow()}, @__init__, setting self.param.category.objects"
-        print(f"DEBUG::{msg}")
+        # print(f"DEBUG::{msg}")
         self.param.category.objects = list(self.data[self.region].data_vars)
         self.category = self.param.category.objects[0]
 
