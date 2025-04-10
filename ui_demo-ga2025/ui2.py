@@ -1,3 +1,4 @@
+import os
 import param
 from datetime import date
 import panel as pn
@@ -8,8 +9,11 @@ from typing import List
 from functools import lru_cache
 from pathlib import Path
 import xarray as xr
-import os
 
+#-- local packages
+#   NOTE: preliminary imports currently,
+#         will/need to be accessible eventually via the FIT-IC environment.
+from ui_util import fitic_inputemisdir
 
 pn.extension()
 pn.extension('terminal')
@@ -18,21 +22,6 @@ pn.param.ParamMethod.loading_indicator = True
 
 species_implemented = ['CO2', 'CH4']
 
-def get_hostname():
-    import socket
-    hostname = socket.gethostname()
-    return hostname
-
-# print(f"***{get_hostname().find('cosmos')}***")
-if get_hostname().find('cosmos')>=0:
-    emission_dir = '/lunarc/nobackup/projects/ghg_inv/michael/TM5/input/ch4/emissions_fitic'
-else:
-    #-- on ICOS jupyter lab
-    emission_dir = '/project/fit_ic/data/input/emissions/CH4'
-
-#print(f"***{get_hostname()}***  ==>{emission_dir}<==")
-
-    
 class ReactionSettings(pn.viewable.Viewer):
     """
     Block of widgets controlling *one* chemical reaction.
@@ -165,7 +154,9 @@ class TracerSettings(pn.viewable.Viewer):
     add_emissions_category = param.Event(doc='Add new emissions category', label='Add new emissions category')
     reactions = param.ListSelector(default=[], objects=[], doc='Chemical reactions')
     regions = param.List(doc='list of zoom regions') # This is a top-level parameter, but I don't know how to refer to it ...
-    emission_path = param.Path(Path(emission_dir))
+    #-- access directory containing FIT-IC input emission/flux fields
+    emisdir = fitic_inputemisdir()
+    emission_path = param.Path(emisdir)
 
     def __init__(self, **params):
         super().__init__(**params)

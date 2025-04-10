@@ -26,62 +26,18 @@ hv.extension('bokeh')
 
 
 #-- local packages
-#   NOTE: only currently at the present location,
+#   NOTE: preliminary imports currently,
 #         will/need to be accessible eventually via the FIT-IC environment.
-from ui_util import get_hostname, is_jupyterhub
+from ui_util import fix_env
 from ui_util import cams_at_obspack_load_conctseries
 from ui_util import obspack_load_conctseries
+from ui_util import emisdir, stations_file, camsfile, obspackdir
 
 #
 #-- FIT-IC simulations currently limited to CH4 as single species
 #
 species = 'CH4'
-
-#---------------------------------------
-#
-#         h a r d - c o d e d   p a t h s
-#
-#---------------------------------------
-#
-#-- file/directory selection depends on host (COSMOS or ICOS Jupyter Hub)
-#
-if get_hostname().find('cosmos')>=0:
-    outdir = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir/testruns_output-cosmos-home_until-2025-03-14/testruns.v5/tm5simu-tropo34-avengers-1_meteo-coarsened-True_Makefile.singularity.ifort_platform-cx03/output_2021-01-01--2022-01-01')
-    
-    camsfile = '/lunarc/nobackup/projects/ghg_inv/michael/CAMS/ch4/cams_ch4conc_at-obspack-locations_2021.nc'
-    obspackdir = '/lunarc/nobackup/projects/ghg_inv/michael/FIT-IC/obspack_ch4_1_GLOBALVIEWplus_v6.0_2023-12-01/data/nc'
-    logger.remove()
-    logger.add(sys.stdout, level="DEBUG")
-else: #-- ICOS jupyter lab
-    outdir = Path('/project/fit_ic/data/output_misc/output_2021-01-01--2022-01-01_avengers-1_singletracer_all-emis-default')
-    outdir = Path('/data/avengers/ga2025/fit-ic_precomputed-output/fitic-simu-default_20210101--20211231')
-    camsfile = '/project/fit_ic/data/validation/cams_ch4conc_at-obspack-locations_2021.nc'
-    obspackdir = '/project/fit_ic/data/validation/obspack_ch4_1_GLOBALVIEWplus_v6.0_2023-12-01/data/nc'
-    #-- no loguru logging on ICOS
-    logger.remove()
-    logger.add(sys.stdout, level="WARNING")
-emisdir       = outdir / 'emissions'
-stations_file = outdir / 'stations/stations.nc4'
-
-if not stations_file.exists():
-    msg = f"file ***{stations_file}*** not accessbible"
-    raise RuntimeError(msg)
-
-
-# Fix env variables for cartopy:
-def fix_env() -> None:
-    import sys, os
-    from pathlib import Path
-    env_base_path = Path(sys.executable).parents[1]
-    os.environ["SSL_CERT_FILE"] = str(env_base_path / 'ssl' / 'cert.pem')
-    os.environ["SSL_CERT_DIR"] = str(env_base_path / 'ssl' / 'certs')
-    os.environ["REQUESTS_CA_BUNDLE"] = str(env_base_path / 'ssl' / 'cert.pem')
-    os.environ["PROJ_LIB"] = str(env_base_path / 'share' / 'proj')
-    if get_hostname().find('cosmos')>=0:
-        pass
-    if is_jupyterhub():
-        import cartopy
-        cartopy.config['data_dir'] = str(env_base_path/'share'/'cartopy')
+supported_domain_list = ['glb600x400','eur300x200','gns100x100']
 
 @lru_cache
 def get_file_list(path: Path, pattern: str) -> List[Path]:
@@ -99,15 +55,20 @@ class EmissionExplorer(pn.viewable.Viewer):
     category = param.Selector()
     region   = param.Selector()
     
-    def __init__(self, settings, pattern : str = None):
+    def __init__(self, settings, pattern : str = None, load_parallel : bool = False):
         super().__init__()
         fix_env()
         self.settings = settings
         #-- emission file naming convention is
         #   ch4emis.{species}.{reg}.yyyymmdd.nc
-        self.date_ptn = pattern if pattern!=None else '????????'
-        self.setup_emis()
-        #-- self.setup_emis_mp() #-- multiprocessor version to speed-up
+        self.yyyymmdd_ptn = pattern if pattern!=None else '????????'
+        #
+        #-- read and prepare emissions to be ready for plotting
+        #
+        if load_parallel:
+            self.setup_emis_mp() #-- multiprocessor version to speed-up
+        else:
+            self.setup_emis()
         #
         #--
         #
@@ -256,11 +217,11 @@ class EmissionExplorer(pn.viewable.Viewer):
         self.data = OrderedDict()
         self.glob_timeseries = OrderedDict()
         self.dates = None
-        for reg in ['glb600x400','eur300x200','gns100x100']:
+        for reg in supported_domain_list:
             msg = f"...@setup_emis@{reg} reading input"
             logger.debug(msg)
             #-- check whether emissions for region were generated
-            fptn = f"ch4emis.{species}.{reg}.{self.date_ptn}.nc"
+            fptn = f"ch4emis.{species}.{reg}.{self.yyyymmdd_ptn}.nc"
             _file_lst = sorted(list(emisdir.glob(fptn)))
             if len(_file_lst)==0:
                 msg = f"no emissions files detected with pattern " \
@@ -297,14 +258,13 @@ class EmissionExplorer(pn.viewable.Viewer):
     @lru_cache
     def setup_emis_mp(self):
         from multiprocessing import Process, Manager
-
         def do_region(reg):
             msg = f"...@setup_emis@{reg} reading input"
             logger.debug(msg)
             #-- check whether emissions for region were generated
-            _file_lst = sorted(list(emisdir.glob(f"ch4emis.{species}.{reg}.*.nc")))
+            _file_lst = sorted(list(emisdir.glob(f"ch4emis.{species}.{reg}.{self.yyyymmdd_ptn}.nc")))
             if len(_file_lst)>0:
-                emis_ptn = f"{str(emisdir)}/ch4emis.{species}.{reg}.*.nc"
+                emis_ptn = f"{str(emisdir)}/ch4emis.{species}.{reg}.{self.yyyymmdd_ptn}.nc"
                 cur_emis = load_emis(emis_ptn)
                 cur_dates = {Timestamp(v).strftime('%B %Y'): iv for (iv, v) in enumerate(cur_emis.time.values)}
                 mp_dates[reg] = cur_dates
@@ -335,12 +295,11 @@ class EmissionExplorer(pn.viewable.Viewer):
         msg = f"{dtm.datetime.utcnow()}, @setup_emis, start"
         logger.debug(msg)
         # print(f"DEBUG::{msg}")
-        dom_list = ['glb600x400','eur300x200','gns100x100']
         manager = Manager()
         mp_dates = manager.dict()
         mp_data  = manager.dict()
         mp_domtseries = manager.dict()
-        processes = [Process(target=do_region, args=(_reg,)) for _reg in dom_list ]
+        processes = [Process(target=do_region, args=(_reg,)) for _reg in supported_domain_list ]
         for process in processes:
             process.start()
         #-- wait for all process to complete
@@ -349,7 +308,7 @@ class EmissionExplorer(pn.viewable.Viewer):
         # print(f"...processes joined.")
         self.data = OrderedDict()
         self.glob_timeseries = OrderedDict()
-        for _dom in dom_list:
+        for _dom in supported_domain_list:
             self.data[_dom] = mp_data[_dom]
             self.glob_timeseries[_dom] = mp_domtseries[_dom]
         #-- TODO: should still make sure dates are equal for all regions

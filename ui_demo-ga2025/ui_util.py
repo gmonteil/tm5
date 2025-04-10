@@ -31,6 +31,69 @@ def is_jupyterhub():
     import os
     return 'JUPYTERHUB_API_TOKEN' in os.environ
 
+# Fix env variables for cartopy:
+def fix_env() -> None:
+    import sys, os
+    from pathlib import Path
+    env_base_path = Path(sys.executable).parents[1]
+    os.environ["SSL_CERT_FILE"] = str(env_base_path / 'ssl' / 'cert.pem')
+    os.environ["SSL_CERT_DIR"] = str(env_base_path / 'ssl' / 'certs')
+    os.environ["REQUESTS_CA_BUNDLE"] = str(env_base_path / 'ssl' / 'cert.pem')
+    os.environ["PROJ_LIB"] = str(env_base_path / 'share' / 'proj')
+    if get_hostname().find('cosmos')>=0:
+        pass
+    if is_jupyterhub():
+        import cartopy
+        cartopy.config['data_dir'] = str(env_base_path/'share'/'cartopy')
+
+#---------------------------------------
+#
+#         h a r d - c o d e d   p a t h s
+#
+#---------------------------------------
+#
+#-- file/directory selection depends on host (COSMOS or ICOS Jupyter Hub)
+#
+if get_hostname().find('cosmos')>=0:
+    outdir = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir/testruns_output-cosmos-home_until-2025-03-14/testruns.v5/tm5simu-tropo34-avengers-1_meteo-coarsened-True_Makefile.singularity.ifort_platform-cx03/output_2021-01-01--2022-01-01')
+    
+    camsfile = '/lunarc/nobackup/projects/ghg_inv/michael/CAMS/ch4/cams_ch4conc_at-obspack-locations_2021.nc'
+    obspackdir = '/lunarc/nobackup/projects/ghg_inv/michael/FIT-IC/obspack_ch4_1_GLOBALVIEWplus_v6.0_2023-12-01/data/nc'
+    logger.remove()
+    logger.add(sys.stdout, level="DEBUG")
+else: #-- ICOS jupyter lab
+    outdir = Path('/project/fit_ic/data/output_misc/output_2021-01-01--2022-01-01_avengers-1_singletracer_all-emis-default')
+    outdir = Path('/data/avengers/ga2025/fit-ic_precomputed-output/fitic-simu-default_20210101--20211231')
+    camsfile = '/project/fit_ic/data/validation/cams_ch4conc_at-obspack-locations_2021.nc'
+    obspackdir = '/project/fit_ic/data/validation/obspack_ch4_1_GLOBALVIEWplus_v6.0_2023-12-01/data/nc'
+    #-- no loguru logging on ICOS
+    logger.remove()
+    logger.add(sys.stdout, level="WARNING")
+#
+#--
+#
+emisdir       = outdir / 'emissions'
+stations_file = outdir / 'stations/stations.nc4'
+if not stations_file.exists():
+    msg = f"file ***{stations_file}*** not accessbible"
+    raise RuntimeError(msg)
+
+
+def fitic_inputemisdir():
+    if get_hostname().find('cosmos')>=0:
+        emisdir = '/lunarc/nobackup/projects/ghg_inv/michael/TM5/input/ch4/emissions_fitic'
+    else:
+        #-- on ICOS jupyter lab
+        emisdir = '/project/fit_ic/data/input/emissions/CH4'
+
+    emisdir = Path(emisdir)
+    if not emisdir.is_dir():
+        msg = f"fit-ic input emissions directory not found on system " \
+            f"***{emisdir}***"
+        raise RuntimeError(msg)
+
+    return emisdir
+
 #===========================================================
 #
 #                   s h o u l d   b e   m o v e d   t o   m o d u l e ....
@@ -214,7 +277,7 @@ def obspack_load_conctseries( obspackdir :  Union[str, Path],
                 obspack_fpath = fpath
                 obspack_dict = ch4_dict
                 msg = f"...@{sta_tag} (height={altq}), selected file ***{obspack_fpath}*** (alt_dif={alt_dif}[m])"
-                logger.info(msg)
+                logger.debug(msg)
                 break
         if obspack_fpath==None:
             msg = f"...@{sta_tag} (height={altq}), no matching obspack observation found."
