@@ -9,3 +9,5 @@ output/*
 *.o
 bin/congrad.exe
 .vscode
+.*~
+*~
