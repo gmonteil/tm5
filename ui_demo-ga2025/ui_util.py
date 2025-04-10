@@ -27,6 +27,10 @@ def get_hostname():
     hostname = socket.gethostname()
     return hostname
 
+def is_jupyterhub():
+    import os
+    return 'JUPYTERHUB_API_TOKEN' in os.environ
+
 #===========================================================
 #
 #                   s h o u l d   b e   m o v e d   t o   m o d u l e ....

@@ -22,12 +22,13 @@ from typing import Union, List, Tuple
 #   For now, this import of crs is made only in
 #   routines where needed!
 # import cartopy.crs as ccrs
+hv.extension('bokeh')
 
-#
+
 #-- local packages
 #   NOTE: only currently at the present location,
 #         will/need to be accessible eventually via the FIT-IC environment.
-from ui_util import get_hostname
+from ui_util import get_hostname, is_jupyterhub
 from ui_util import cams_at_obspack_load_conctseries
 from ui_util import obspack_load_conctseries
 
@@ -76,6 +77,11 @@ def fix_env() -> None:
     os.environ["SSL_CERT_DIR"] = str(env_base_path / 'ssl' / 'certs')
     os.environ["REQUESTS_CA_BUNDLE"] = str(env_base_path / 'ssl' / 'cert.pem')
     os.environ["PROJ_LIB"] = str(env_base_path / 'share' / 'proj')
+    if get_hostname().find('cosmos')>=0:
+        pass
+    if is_jupyterhub():
+        import cartopy
+        cartopy.config['data_dir'] = str(env_base_path/'share'/'cartopy')
 
 @lru_cache
 def get_file_list(path: Path, pattern: str) -> List[Path]:
@@ -93,10 +99,13 @@ class EmissionExplorer(pn.viewable.Viewer):
     category = param.Selector()
     region   = param.Selector()
     
-    def __init__(self, settings):
+    def __init__(self, settings, pattern : str = None):
         super().__init__()
         fix_env()
         self.settings = settings
+        #-- emission file naming convention is
+        #   ch4emis.{species}.{reg}.yyyymmdd.nc
+        self.date_ptn = pattern if pattern!=None else '????????'
         self.setup_emis()
         #-- self.setup_emis_mp() #-- multiprocessor version to speed-up
         #
@@ -105,7 +114,8 @@ class EmissionExplorer(pn.viewable.Viewer):
         msg = f"{dtm.datetime.utcnow()}, @__init__, setting self.param.region.objects"
         # print(f"DEBUG::{msg}")
         self.param.region.objects = list(self.data.keys())
-        self.region = self.param.region.objects[0]
+        self.region = self.param.region.objects[-1]
+        self.region = self.param.region.objects[1]
         msg = f"{dtm.datetime.utcnow()}, @__init__, setting self.param.category.objects"
         # print(f"DEBUG::{msg}")
         self.param.category.objects = list(self.data[self.region].data_vars)
@@ -129,7 +139,9 @@ class EmissionExplorer(pn.viewable.Viewer):
         # widget_map2 = hv.DynamicMap(pn.bind(self.plot_domain_emis,widget_datesel,widget_fldsel,widget_regsel))
 
         widget_map1 = hv.DynamicMap(self.map_emis)
+        # widget_map1 = self.map_emis
         widget_map2 = hv.DynamicMap(self.plot_domain_emis)
+        # widget_map2 = self.plot_domain_emis
         widget = pn.Column(widget_regsel,widget_fldsel,widget_datesel,
                            pn.Row(widget_map1,widget_map2))
         return widget
@@ -142,7 +154,7 @@ class EmissionExplorer(pn.viewable.Viewer):
     def current_date(self):
         return self.data[self.region].time.values[self.time_index]
 
-    @property
+    # @property
     # @pn.depends('region', watch=True)
     @pn.depends('region')
     def current_extent(self):
@@ -166,7 +178,7 @@ class EmissionExplorer(pn.viewable.Viewer):
         # print(f"DEBUG::{msg}")
         cur_cat = self.category if self.category!=None else 'wetland'
         cur_date = pd.to_datetime(str(self.current_date)).strftime('%Y-%m-%d')
-        lonmin,lonmax,latmin,latmax = self.current_extent
+        lonmin,lonmax,latmin,latmax = self.current_extent()
         title = f"{cur_cat}@{self.region} ([kg{species}/cell/s], {cur_date})"
         clabel = f"[kg{species}/cell/s]"
         # print(f"DEBUG::@map_emis title -->{title}<--")
@@ -214,19 +226,27 @@ class EmissionExplorer(pn.viewable.Viewer):
         # print(f"DEBUG::{msg}")
         if self.region==None:
             return
-        # cat_data = self.data[self.region].sum(('lat', 'lon'))
-        # cat_df = cat_data.to_dataframe()
-        # cat_df = cat_df.reset_index()
         cat_df = self.glob_timeseries[self.region]
         ylabel = f"[kg{species}/s]"
-        title = f"sectorial {species} emissions (@{self.region})"
+        if self.region=='glb600x400':
+            title = f"global sectoral {species} emission totals (@{self.region})"
+        else:
+            title = f"regional sectoral {species} emission totals (@{self.region})"
         # print(cat_df.head())
-        cat_hvplot = cat_df.hvplot(grid=True, x='time', xlabel='time', ylabel=ylabel, title=title)
+        # cat_hvplot = cat_df.hvplot(grid=True, x='time',
+        #                            xlabel='time', ylabel=ylabel, title=title,
+        #                            fontsize={'legend':6})
+        cat_hvplot = cat_df.hvplot(grid=True, x='time',
+                                   xlabel='time', ylabel=ylabel, title=title)
+        # cat_hvplot.opts(backend_opts={"plot.toolbar.autohide": True}, legend_position='bottom_right', legend_offset=(0,0), fontsize={'legend':6,'legend_title':6})
+        cat_hvplot.opts(backend_opts={"plot.toolbar.autohide": True}, fontsize={'legend':6,'legend_title':6})
+        # cat_hvplot = cat_df.plot(grid=True, x='time',
+        #                          xlabel='time', ylabel=ylabel, title=title)
         msg = f"{dtm.datetime.utcnow()}, @plot_domain_emis, hvplot prepared"
         logger.debug(msg)
         # print(f"DEBUG::{msg}")
         # print(f"DEBUG::type(cat_hvplot)={type(cat_hvplot)}")
-        return cat_hvplot.opts(backend_opts={"plot.toolbar.autohide": True})
+        return cat_hvplot
 
 
     @lru_cache
@@ -240,12 +260,14 @@ class EmissionExplorer(pn.viewable.Viewer):
             msg = f"...@setup_emis@{reg} reading input"
             logger.debug(msg)
             #-- check whether emissions for region were generated
-            _file_lst = sorted(list(emisdir.glob(f"ch4emis.{species}.{reg}.*.nc")))
-            if len(_file_lst)>0:
-                emis_ptn = f"{str(emisdir)}/ch4emis.{species}.{reg}.*.nc"
-                ### shorten list of files for speeding up when devloping
-                emis_ptn = f"{str(emisdir)}/ch4emis.{species}.{reg}.202101??.nc"
-                ###
+            fptn = f"ch4emis.{species}.{reg}.{self.date_ptn}.nc"
+            _file_lst = sorted(list(emisdir.glob(fptn)))
+            if len(_file_lst)==0:
+                msg = f"no emissions files detected with pattern " \
+                    f"==>{fptn}<=="
+                raise RuntimeError(msg)
+            else:
+                emis_ptn = f"{str(emisdir)}/{fptn}"
                 cur_emis = load_emis(emis_ptn)
                 cur_dates = {Timestamp(v).strftime('%B %Y'): iv for (iv, v) in enumerate(cur_emis.time.values)}
                 if self.dates is None:
