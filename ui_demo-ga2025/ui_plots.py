@@ -16,7 +16,11 @@ import panel as pn
 import hvplot.pandas
 from loguru import logger
 from typing import Union, List, Tuple
-import cartopy.crs as ccrs
+#-- to avoid PROJ path warning message on JupyterHub,
+#   fix_env would need to be called prior import of ccrs.
+#   For now, this import of crs is made only in
+#   routines where needed!
+# import cartopy.crs as ccrs
 
 #
 # WGS84 ellipsoid:
@@ -375,6 +379,7 @@ def fix_env() -> None:
     os.environ["SSL_CERT_FILE"] = str(env_base_path / 'ssl' / 'cert.pem')
     os.environ["SSL_CERT_DIR"] = str(env_base_path / 'ssl' / 'certs')
     os.environ["REQUESTS_CA_BUNDLE"] = str(env_base_path / 'ssl' / 'cert.pem')
+    os.environ["PROJ_LIB"] = str(env_base_path / 'share' / 'proj')
 
 @lru_cache
 def get_file_list(path: Path, pattern: str) -> List[Path]:
@@ -471,6 +476,7 @@ class EmissionExplorer(pn.viewable.Viewer):
     # @pn.depends('time_index', 'region', 'category', watch=True)
     @pn.depends('time_index', 'region', 'category')
     def map_emis(self):
+        import cartopy.crs as ccrs
         #-- MVO::can end-up here with self.category==None,
         #        so need to catch this case
         msg = f"{dtm.datetime.utcnow()}, start@map_emis -->{self.region}<-- -->{self.category}<-- itime={self.time_index}"
