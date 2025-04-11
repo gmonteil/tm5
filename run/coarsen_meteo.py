@@ -12,22 +12,35 @@ from tm5.system import runcmd
 from argparse import ArgumentParser
 import sys
 
+def get_hostname():
+    import socket
+    hostname = socket.gethostname()
+    return hostname
+
 parser = ArgumentParser()
 parser.add_argument('-b', '--build', action='store_true', default=False, help='Use this option to compile the code')
 parser.add_argument('-m', '--host', default=os.environ['TM5_HOST'])
 parser.add_argument('--config_file', default='coarsen_meteo.yaml')
+parser.add_argument('--trange',
+                    metavar=('tstart','tend'),
+                    nargs=2,
+                    help="""whether to override simulation start/end time specified in the yaml file (strings must be parseable as pandas Timestamp).""")
 args = parser.parse_args(sys.argv[1:])
 
 # keys = sorted(os.environ.keys())
 # for k in keys:
 #     print(f"{k:<20}: {os.environ[k]}")
-try:
-    platform = os.environ['HOSTNAME']
-except KeyError:
-    platform = 'unknown'
+yaml_file = Path(args.config_file)
+if not yaml_file.exists():
+    msg = f"provided yaml file ***{str(yaml_file)}*** not accessible!"
+    raise RuntimeError(msg)
+
+platform = get_hostname()
 
 # 1. Build the model
-tm = tm5.TM5(args.config_file, host=args.host, platform=platform)
+tm = tm5.TM5(str(yaml_file), host=args.host,
+             platform=platform, override_trange=args.trange)
+
 if args.build :
     tm.build()
 
