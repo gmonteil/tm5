@@ -180,8 +180,14 @@ class EmissionExplorer(pn.viewable.Viewer):
             projection=cproj, features=cfeatures, project=True)#, rasterize=True)
         msg = f"{dtm.datetime.utcnow()}, @map_emis, hvplot ready"
         logger.debug(msg)
-        # print(f"DEBUG::{msg}")
-        return emis_hvplot.opts(framewise=True, backend_opts={"plot.toolbar.autohide": True})
+        #
+        #-- autohide toolbar
+        #
+        emis_hvplot = emis_hvplot.opts(backend_opts={"plot.toolbar.autohide": True})
+        # #-- 'framewise=True' did not help to update maps
+        # #   when changing region...
+        # emis_hvplot = emis_hvplot.opts(framewise=True, backend_opts={"plot.toolbar.autohide": True})
+        return emis_hvplot
 
     # @pn.depends('time_index', 'region', 'category', watch=True)
     @pn.depends('time_index', 'region', 'category')
@@ -479,7 +485,13 @@ class StationExplorer(pn.viewable.Viewer):
         # print(dfplot.head(n=3))
         # print(f"TM5 entries: {dfplot[self.tracer].notnull().sum()}")
         # print(f"obspack:     {dfplot['obspack'].notnull().sum()}")
-        hvret = dfplot.hvplot(x='time', grid=True,
+        hvplot = dfplot.hvplot(x='time', grid=True,
                               ylabel=ylabel, xlabel='time', title=title)
-        # print(f"@plot_timeseries, returning type -->{type(hvret)}<--")
-        return hvret
+        # print(f"@plot_timeseries, returning type -->{type(hvplot)}<--")
+        #
+        #
+        #-- autohide toolbar
+        #
+        hvplot = hvplot.opts(backend_opts={"plot.toolbar.autohide": True})
+
+        return hvplot
