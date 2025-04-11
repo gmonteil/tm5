@@ -55,7 +55,7 @@ class EmissionExplorer(pn.viewable.Viewer):
     category = param.Selector()
     region   = param.Selector()
     
-    def __init__(self, settings, pattern : str = None, load_parallel : bool = False):
+    def __init__(self, settings, pattern : str = None, load_parallel : bool = True):
         super().__init__()
         fix_env()
         self.settings = settings
@@ -99,8 +99,11 @@ class EmissionExplorer(pn.viewable.Viewer):
         # widget_map1 = hv.DynamicMap(pn.bind(self.map_emis,widget_datesel,widget_fldsel,widget_regsel))
         # widget_map2 = hv.DynamicMap(pn.bind(self.plot_domain_emis,widget_datesel,widget_fldsel,widget_regsel))
 
-        widget_map1 = hv.DynamicMap(self.map_emis)
+        # dyn_params = {'cache_size':1}
+        # widget_map1 = hv.DynamicMap(self.map_emis, **dyn_params)
         # widget_map1 = self.map_emis
+        # widget_map1 = hv.DynamicMap(self.map_emis, **dyn_params)
+        widget_map1 = hv.DynamicMap(self.map_emis)
         widget_map2 = hv.DynamicMap(self.plot_domain_emis)
         # widget_map2 = self.plot_domain_emis
         widget = pn.Column(widget_regsel,widget_fldsel,widget_datesel,
@@ -151,7 +154,6 @@ class EmissionExplorer(pn.viewable.Viewer):
         elif self.region=='eur300x200':
             cproj = ccrs.GOOGLE_MERCATOR
             cproj = ccrs.PlateCarree()
-            # cfeatures = ['borders',]
             cfeatures = {'borders':'50m', 'coastline':'50m'}
             coastline = '50m'
         elif self.region=='gns100x100':
@@ -162,6 +164,9 @@ class EmissionExplorer(pn.viewable.Viewer):
         cur_emis = self.data[self.region][cur_cat].isel(time=self.time_index)
         msg = f"{dtm.datetime.utcnow()}, @map_emis, current data ready"
         logger.debug(msg)
+        # with open(f"map_emis_{dtm.datetime.utcnow().isoformat()}.log", 'w') as fp:
+        #     msg = f"***{title}*** coastline={coastline} cfeatures={cfeatures}"
+        #     fp.write(f"{msg}" +'\n')
         # emis_hvplot = cur_emis.hvplot.quadmesh(geo=True,
         #                                        coastline=coastline,
         #                                        features=cfeatures,
@@ -172,11 +177,11 @@ class EmissionExplorer(pn.viewable.Viewer):
             xlim=(lonmin,lonmax), ylim=(latmin,latmax),
             coastline=coastline, title=title,
             crs=ccrs.PlateCarree(),
-            projection=cproj, features=cfeatures, project=True)
+            projection=cproj, features=cfeatures, project=True)#, rasterize=True)
         msg = f"{dtm.datetime.utcnow()}, @map_emis, hvplot ready"
         logger.debug(msg)
         # print(f"DEBUG::{msg}")
-        return emis_hvplot.opts(backend_opts={"plot.toolbar.autohide": True})
+        return emis_hvplot.opts(framewise=True, backend_opts={"plot.toolbar.autohide": True})
 
     # @pn.depends('time_index', 'region', 'category', watch=True)
     @pn.depends('time_index', 'region', 'category')
