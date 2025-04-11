@@ -273,12 +273,6 @@ class EmissionExplorer(pn.viewable.Viewer):
                 cur_emis = load_emis(emis_ptn)
                 cur_dates = {Timestamp(v).strftime('%B %Y'): iv for (iv, v) in enumerate(cur_emis.time.values)}
                 mp_dates[reg] = cur_dates
-                # print(f"@do_region for -->{reg}<--, mp_dates -->{mp_dates.keys()}")
-                # if ireg==1:
-                #     self.dates = cur_dates
-                # else:
-                #     #-- make sure all regions are for the same dates
-                #     assert np.all(self.dates==cur_dates)
                 #
                 #-- add cat emissions field
                 #
