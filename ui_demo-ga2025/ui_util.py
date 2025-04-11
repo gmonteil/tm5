@@ -63,9 +63,14 @@ if get_hostname().find('cosmos')>=0:
     logger.add(sys.stdout, level="DEBUG")
 else: #-- ICOS jupyter lab
     outdir = Path('/project/fit_ic/data/output_misc/output_2021-01-01--2022-01-01_avengers-1_singletracer_all-emis-default')
-    outdir = Path('/data/avengers/ga2025/fit-ic_precomputed-output/fitic-simu-default_20210101--20211231')
     camsfile = '/project/fit_ic/data/validation/cams_ch4conc_at-obspack-locations_2021.nc'
     obspackdir = '/project/fit_ic/data/validation/obspack_ch4_1_GLOBALVIEWplus_v6.0_2023-12-01/data/nc'
+    #
+    #-- 2025-04-11:: data should all be available on the Jupyter-Hub via
+    #                directory /data/avengers (which is mounted from the VM)
+    outdir = Path('/data/avengers/ga2025/fit-ic_precomputed-output/fitic-simu-default_20210101--20211231')
+    camsfile = '/data/avengers/fit_ic/validation/cams_ch4conc_at-obspack-locations_2021.nc'
+    obspackdir = '/data/avengers/fit_ic/validation/obspack_ch4_1_GLOBALVIEWplus_v6.0_2023-12-01/data/nc'
     #-- no loguru logging on ICOS
     logger.remove()
     logger.add(sys.stdout, level="WARNING")
