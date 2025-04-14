@@ -119,8 +119,11 @@ class EmissionSettings(pn.viewable.Viewer):
         self.widgets['field'].visible = len(self.param.fieldname.objects) > 1
 
     @param.depends('path', watch=True)
-    def update_file_choices(self):
-        available_files = get_emis_file_list(self.path, '**/*.nc*')
+    def update_file_choices(self, domain='glb1x1'):
+        # available_files = get_emis_file_list(self.path, '**/*.nc*')
+        #-- 2025-04-14:: restrict here to the global (default) domain
+        fptn = f"**/*{domain}*.nc"
+        available_files = get_emis_file_list(self.path, fptn)
         self.param.filename.objects = set([f.name.rsplit('_', maxsplit=1)[0] for f in available_files])
         self.filename = self.param.filename.objects[0]
         
