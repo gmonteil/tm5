@@ -249,7 +249,7 @@ class EmissionExplorer(pn.viewable.Viewer):
         if self.region=='glb600x400':
             title = f"global sectoral {species} emission totals (@{self.region})"
         else:
-            title = f"regional sectoral {species} emission totals (@{self.region})"
+            title = f"domain sectoral {species} emission totals (@{self.region})"
         # print(cat_df.head())
         # cat_hvplot = cat_df.hvplot(grid=True, x='time',
         #                            xlabel='time', ylabel=ylabel, title=title,
