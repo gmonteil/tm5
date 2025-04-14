@@ -207,7 +207,7 @@ class EmissionExplorer(pn.viewable.Viewer):
         title = f"{cur_cat}@{self.region} " \
             f"({cur_date}, total={emis_tot:.3f}{emis_tot_unit})"
         title = f"{cur_cat}@{self.region} {unitlabel} ({cur_date})" + '\n' \
-            f"total: {emis_tot:.3f}{emis_tot_unit}"
+            f"domain total: {emis_tot:.3f}{emis_tot_unit}"
         # with open(f"map_emis_{dtm.datetime.utcnow().isoformat()}.log", 'w') as fp:
         #     msg = f"***{title}*** coastline={coastline} cfeatures={cfeatures}"
         #     fp.write(f"{msg}" +'\n')
