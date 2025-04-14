@@ -52,35 +52,38 @@ def fix_env() -> None:
 #
 #---------------------------------------
 #
-#-- file/directory selection depends on host (COSMOS or ICOS Jupyter Hub)
+#-- file/directory selection depends on host
+#   - COSMOS
+#   - ICOS Jupyter Hub
 #
 if get_hostname().find('cosmos')>=0:
-    outdir = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir/testruns_output-cosmos-home_until-2025-03-14/testruns.v5/tm5simu-tropo34-avengers-1_meteo-coarsened-True_Makefile.singularity.ifort_platform-cx03/output_2021-01-01--2022-01-01')
-    
+    outdir_default = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir/testruns_output-cosmos-home_until-2025-03-14/testruns.v5/tm5simu-tropo34-avengers-1_meteo-coarsened-True_Makefile.singularity.ifort_platform-cx03/output_2021-01-01--2022-01-01')
+    #-- pre-computed outputs
+    outdir_default = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir/ga2025/fitic-simu-default_platform-cx03/output_2021-01-01--2022-01-01')
+    outdir_overwrite = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir/ga2025/fitic-simu-overwrite_platform-cx03/output_2021-01-01--2022-01-01')
     camsfile = '/lunarc/nobackup/projects/ghg_inv/michael/CAMS/ch4/cams_ch4conc_at-obspack-locations_2021.nc'
     obspackdir = '/lunarc/nobackup/projects/ghg_inv/michael/FIT-IC/obspack_ch4_1_GLOBALVIEWplus_v6.0_2023-12-01/data/nc'
     logger.remove()
     logger.add(sys.stdout, level="DEBUG")
-else: #-- ICOS jupyter lab
-    outdir = Path('/project/fit_ic/data/output_misc/output_2021-01-01--2022-01-01_avengers-1_singletracer_all-emis-default')
+elif is_jupyterhub(): #-- ICOS jupyter lab
+    outdir_default = Path('/project/fit_ic/data/output_misc/output_2021-01-01--2022-01-01_avengers-1_singletracer_all-emis-default')
     camsfile = '/project/fit_ic/data/validation/cams_ch4conc_at-obspack-locations_2021.nc'
     obspackdir = '/project/fit_ic/data/validation/obspack_ch4_1_GLOBALVIEWplus_v6.0_2023-12-01/data/nc'
     #
     #-- 2025-04-11:: data should all be available on the Jupyter-Hub via
     #                directory /data/avengers (which is mounted from the VM)
-    outdir = Path('/data/avengers/ga2025/fit-ic_precomputed-output/fitic-simu-default_20210101--20211231')
+    #
+    #-- 2025-04-14:: updated path to precomputed output
+    #                (data synchronised from cosmos to pancake)
+    outdir_default = Path('/data/avengers/ga2025/fit-ic_precomputed-output/fitic-simu-default_platform-cx03/output_2021-01-01--2022-01-01')
+    outdir_overwrite = Path('/data/avengers/ga2025/fit-ic_precomputed-output/fitic-simu-overwrite_platform-cx03/output_2021-01-01--2022-01-01')
     camsfile = '/data/avengers/fit_ic/validation/cams_ch4conc_at-obspack-locations_2021.nc'
     obspackdir = '/data/avengers/fit_ic/validation/obspack_ch4_1_GLOBALVIEWplus_v6.0_2023-12-01/data/nc'
     #-- no loguru logging on ICOS
     logger.remove()
     logger.add(sys.stdout, level="WARNING")
-#
-#--
-#
-emisdir       = outdir / 'emissions'
-stations_file = outdir / 'stations/stations.nc4'
-if not stations_file.exists():
-    msg = f"file ***{stations_file}*** not accessbible"
+else:
+    msg = f"detected platform not yet supported"
     raise RuntimeError(msg)
 
 
@@ -90,6 +93,9 @@ def fitic_inputemisdir():
     else:
         #-- on ICOS jupyter lab
         emisdir = '/project/fit_ic/data/input/emissions/CH4'
+        #-- 2025-04-14: switchted to directory path as used on VM
+        #               (and mounted as such on the Jupyter-Hub)
+        emisdir = '/data/avengers/fit_ic/input/emissions'
 
     emisdir = Path(emisdir)
     if not emisdir.is_dir():

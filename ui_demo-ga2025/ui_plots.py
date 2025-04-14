@@ -31,8 +31,9 @@ hv.extension('bokeh')
 from ui_util import fix_env
 from ui_util import cams_at_obspack_load_conctseries
 from ui_util import obspack_load_conctseries
-from ui_util import emisdir, stations_file, camsfile, obspackdir
+from ui_util import outdir_default, outdir_overwrite, camsfile, obspackdir
 
+#
 #
 #-- FIT-IC simulations currently limited to CH4 as single species
 #
@@ -55,13 +56,33 @@ class EmissionExplorer(pn.viewable.Viewer):
     category = param.Selector()
     region   = param.Selector()
     
-    def __init__(self, settings, pattern : str = None, load_parallel : bool = True):
+    def __init__(self, settings, pattern : str = None, mode : str = 'precomputed_default', load_parallel : bool = True):
         super().__init__()
         fix_env()
         self.settings = settings
         #-- emission file naming convention is
         #   ch4emis.{species}.{reg}.yyyymmdd.nc
         self.yyyymmdd_ptn = pattern if pattern!=None else '????????'
+        #
+        #--
+        #
+        if mode=='precomputed_default':
+            self.outdir_precomputed = outdir_default
+        elif mode=='precomputed_regional':
+            self.outdir_precomputed = outdir_overwrite
+        else:
+            msg = f"selected mode -->{mode}<-- not supported."
+            raise RuntimeError(msg)
+        #
+        self.emisdir       = self.outdir_precomputed / 'emissions'
+        #-- basic consistency tests
+        if not self.emisdir.is_dir():
+            msg = f"directory for emissions ==>{self.emisdir}<== is not accessible"
+            raise RuntimeError(msg)
+        else:
+            msg = f"emissions directory ***{self.emisdir}***"
+            logger.debug(msg)
+
         #
         #-- read and prepare emissions to be ready for plotting
         #
@@ -79,8 +100,19 @@ class EmissionExplorer(pn.viewable.Viewer):
         self.region = self.param.region.objects[1]
         msg = f"{dtm.datetime.utcnow()}, @__init__, setting self.param.category.objects"
         # print(f"DEBUG::{msg}")
-        self.param.category.objects = list(self.data[self.region].data_vars)
-        self.category = self.param.category.objects[0]
+        datavar_list = sorted(list(self.data[self.region].data_vars))
+        self.param.category.objects = datavar_list
+        #
+        #-- start with 'fossil' as initial category (if present),
+        #   otherwise start with first in list
+        #
+        istart = 0
+        for i,varname in enumerate(datavar_list):
+            if varname=='fossil':
+                istart = i
+                break
+        self.category = self.param.category.objects[istart]
+        
 
         # dates = {Timestamp(v).strftime('%B %Y'): iv for (iv, v) in enumerate(self.data.time.values)}
         self.widgets = {
@@ -143,8 +175,6 @@ class EmissionExplorer(pn.viewable.Viewer):
         cur_cat = self.category if self.category!=None else 'wetland'
         cur_date = pd.to_datetime(str(self.current_date)).strftime('%Y-%m-%d')
         lonmin,lonmax,latmin,latmax = self.current_extent()
-        title = f"{cur_cat}@{self.region} ([kg{species}/cell/s], {cur_date})"
-        clabel = f"[kg{species}/cell/s]"
         # print(f"DEBUG::@map_emis title -->{title}<--")
         # features features (default=None): A list of features or a dictionary of features and the scale at which to render it. Available features include ‘borders’, ‘coastline’, ‘lakes’, ‘land’, ‘ocean’, ‘rivers’ and ‘states’. Available scales include ‘10m’/’50m’/’110m’.
         if self.region=='glb600x400':
@@ -162,8 +192,22 @@ class EmissionExplorer(pn.viewable.Viewer):
             cfeatures = {'borders':'10m', 'coastline':'10m'}
             coastline = '10m'
         cur_emis = self.data[self.region][cur_cat].isel(time=self.time_index)
+        unitlabel = f"[kg{species}/cell/s]"
+        #
+        #-- compute total
+        #
+        emis_tot = cur_emis.sum(('lat','lon')).values #- kgTRACER/s
+        emis_tot = emis_tot / 1e6 * (365*86400)       #- ktTRACER/year
+        emis_tot_unit = f"[kt{species}/year]"
+        if emis_tot>=1.e3:
+            emis_tot = emis_tot / 1e3
+            emis_tot_unit = f"[Mt{species}/year]"
         msg = f"{dtm.datetime.utcnow()}, @map_emis, current data ready"
         logger.debug(msg)
+        title = f"{cur_cat}@{self.region} " \
+            f"({cur_date}, total={emis_tot:.3f}{emis_tot_unit})"
+        title = f"{cur_cat}@{self.region} {unitlabel} ({cur_date})" + '\n' \
+            f"total: {emis_tot:.3f}{emis_tot_unit}"
         # with open(f"map_emis_{dtm.datetime.utcnow().isoformat()}.log", 'w') as fp:
         #     msg = f"***{title}*** coastline={coastline} cfeatures={cfeatures}"
         #     fp.write(f"{msg}" +'\n')
@@ -172,7 +216,7 @@ class EmissionExplorer(pn.viewable.Viewer):
         #                                        features=cfeatures,
         #                                        xlim=(lonmin,lonmax),
         #                                        ylim=(latmin,latmax),
-        #                                        clabel=clabel, title=title)
+        #                                        clabel=unitlabel, title=title)
         emis_hvplot = cur_emis.hvplot.quadmesh(
             xlim=(lonmin,lonmax), ylim=(latmin,latmax),
             coastline=coastline, title=title,
@@ -183,7 +227,9 @@ class EmissionExplorer(pn.viewable.Viewer):
         #
         #-- autohide toolbar
         #
-        emis_hvplot = emis_hvplot.opts(backend_opts={"plot.toolbar.autohide": True})
+        emis_hvplot = emis_hvplot.opts(
+            # colorbar_options={'label':unitlabel},
+            backend_opts={"plot.toolbar.autohide": True})
         # #-- 'framewise=True' did not help to update maps
         # #   when changing region...
         # emis_hvplot = emis_hvplot.opts(framewise=True, backend_opts={"plot.toolbar.autohide": True})
@@ -233,13 +279,13 @@ class EmissionExplorer(pn.viewable.Viewer):
             logger.debug(msg)
             #-- check whether emissions for region were generated
             fptn = f"ch4emis.{species}.{reg}.{self.yyyymmdd_ptn}.nc"
-            _file_lst = sorted(list(emisdir.glob(fptn)))
+            _file_lst = sorted(list(self.emisdir.glob(fptn)))
             if len(_file_lst)==0:
                 msg = f"no emissions files detected with pattern " \
                     f"==>{fptn}<=="
                 raise RuntimeError(msg)
             else:
-                emis_ptn = f"{str(emisdir)}/{fptn}"
+                emis_ptn = f"{str(self.emisdir)}/{fptn}"
                 cur_emis = load_emis(emis_ptn)
                 cur_dates = {Timestamp(v).strftime('%B %Y'): iv for (iv, v) in enumerate(cur_emis.time.values)}
                 if self.dates is None:
@@ -273,9 +319,9 @@ class EmissionExplorer(pn.viewable.Viewer):
             msg = f"...@setup_emis@{reg} reading input"
             logger.debug(msg)
             #-- check whether emissions for region were generated
-            _file_lst = sorted(list(emisdir.glob(f"ch4emis.{species}.{reg}.{self.yyyymmdd_ptn}.nc")))
+            _file_lst = sorted(list(self.emisdir.glob(f"ch4emis.{species}.{reg}.{self.yyyymmdd_ptn}.nc")))
             if len(_file_lst)>0:
-                emis_ptn = f"{str(emisdir)}/ch4emis.{species}.{reg}.{self.yyyymmdd_ptn}.nc"
+                emis_ptn = f"{str(self.emisdir)}/ch4emis.{species}.{reg}.{self.yyyymmdd_ptn}.nc"
                 cur_emis = load_emis(emis_ptn)
                 cur_dates = {Timestamp(v).strftime('%B %Y'): iv for (iv, v) in enumerate(cur_emis.time.values)}
                 mp_dates[reg] = cur_dates
@@ -324,17 +370,34 @@ class StationExplorer(pn.viewable.Viewer):
     station = param.Selector()
     data = param.ObjectSelector()
     
-    def __init__(self, settings):
+    def __init__(self, settings, mode : str = 'precomputed_default'):
         super().__init__()
         self.settings = settings
-        self.data = nc4.Dataset(str(stations_file))
+        #
+        #--
+        #
+        if mode=='precomputed_default':
+            self.outdir_precomputed = outdir_default
+        elif mode=='precomputed_regional':
+            self.outdir_precomputed = outdir_overwrite
+        else:
+            msg = f"selected mode -->{mode}<-- not supported."
+            raise RuntimeError(msg)
+        self.stations_file = self.outdir_precomputed / 'stations' / 'stations.nc4'
+        #-- basic consistency tests
+        if not self.stations_file.exists():
+            msg =f"file with simulated concentrations at stations " \
+                f"==>{self.stations_file}<== is not accessible."
+            raise RuntimeError(msg)
+        self.data = nc4.Dataset(str(self.stations_file))
         self._dates = [Timestamp(*_) for _ in self.data['date_midpoints'][:]]
         
         ntrac = self.data.dimensions['tracers']
         tracers = [getattr(self.data, f'tracer_{itrac+1:03.0f}') for itrac in range(self.data.dimensions['tracers'].size)]
         self.param.tracer.objects = tracers
         self.tracer = tracers[0]
-        
+        #
+
         stations = sorted(set([self.data[_].getncattr('name') for _ in self.data.groups]))
         self.param.station.objects = sorted(stations)
         self.station = stations[-1]
