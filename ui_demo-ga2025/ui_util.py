@@ -82,6 +82,11 @@ elif is_jupyterhub(): #-- ICOS jupyter lab
     #-- no loguru logging on ICOS
     logger.remove()
     logger.add(sys.stdout, level="WARNING")
+elif get_hostname().find('mvobook2')>=0:
+    outdir_default = Path('/data/avengers/ga2025/fit-ic_precomputed-output/fitic-simu-default_platform-cx03/output_2021-01-01--2022-01-01')
+    outdir_overwrite = Path('/data/avengers/ga2025/fit-ic_precomputed-output/fitic-simu-overwrite_platform-cx03/output_2021-01-01--2022-01-01')
+    camsfile = '/data/avengers/fit_ic/validation/cams_ch4conc_at-obspack-locations_2021.nc'
+    obspackdir = '/data/avengers/fit_ic/validation/obspack_ch4_1_GLOBALVIEWplus_v6.0_2023-12-01/data/nc'
 else:
     msg = f"detected platform not yet supported"
     raise RuntimeError(msg)
