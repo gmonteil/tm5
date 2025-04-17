@@ -120,14 +120,14 @@ class FieldSelector(pn.viewable.Viewer):
         #-- 2025-04-14:: restrict here to the global (default) domain
         logger.info(self.domain)
         logger.info(f'**/*{self.domain}*.nc')
-        available_files = get_emis_file_list(Path(self.path), f'**/*{self.domain}*.nc')
+        available_files = get_emis_file_list(self.path, f'**/*{self.domain}*.nc')
         self.param.filename.objects = set([f.name.rsplit('_', maxsplit=1)[0] for f in available_files])
         if len(available_files) > 0:
             self.filename = self.param.filename.objects[0]
 
     @param.depends('filename', 'fieldname', watch=True)
     def update_field_description(self):
-        available_files = get_emis_file_list(Path(self.path), f'**/{self.filename}*.nc*')
+        available_files = get_emis_file_list(self.path, f'**/{self.filename}*.nc*')
         if len(available_files) > 0:
             ds = xr.open_dataset(available_files[0])
 
@@ -156,8 +156,8 @@ class EmissionSettings(pn.viewable.Viewer):
         super().__init__(**params)
         self.emis_reg = FieldSelector(desc='Emissions for the regional domain', domain=self.regions[-1])
         self.emis_glo = FieldSelector(desc='Global emissions', domain=self.regions[0])
-        self.emis_glo.path = Path(self.path)
-        self.emis_reg.path = Path(self.path)
+        self.emis_glo.path = self.path
+        self.emis_reg.path = self.path
         self.pane_glo = pn.Column(self.emis_glo)
         self.pane_reg = pn.Column(self.emis_reg, visible=len(self.regions) > 1)
         self.switch_button = pn.Row(
