@@ -102,12 +102,12 @@ class FieldSelector(pn.viewable.Viewer):
             self.widgets['info']
         )
 
-    @param.depends('filename', 'path', watch=True)
+    @param.depends('filename', 'path', 'domain', watch=True)
     def update_field_choices(self):
         """
         Update the choices of the "Field" widget.
         """
-        available_files = get_emis_file_list(Path(self.path) / self.domain, '*.nc*')
+        available_files = get_emis_file_list(Path(self.path) / self.domain, f'{self.filename}*.nc')
         if len(available_files) > 0:
             ds = xr.open_dataset(available_files[0])
             self.param.fieldname.objects = [ _ for _ in ds.data_vars if _!='area' ]
@@ -120,14 +120,14 @@ class FieldSelector(pn.viewable.Viewer):
         #-- 2025-04-14:: restrict here to the global (default) domain
         logger.info(self.domain)
         logger.info(f'**/*{self.domain}*.nc')
-        available_files = get_emis_file_list(self.path, f'**/*{self.domain}*.nc')
+        available_files = get_emis_file_list(Path(self.path) / self.domain, '*.nc')
         self.param.filename.objects = set([f.name.rsplit('_', maxsplit=1)[0] for f in available_files])
-        if len(available_files) > 0:
-            self.filename = self.param.filename.objects[0]
+        #if len(available_files) > 0:
+        self.filename = self.param.filename.objects[0]
 
     @param.depends('filename', 'fieldname', watch=True)
     def update_field_description(self):
-        available_files = get_emis_file_list(self.path, f'**/{self.filename}*.nc*')
+        available_files = get_emis_file_list(Path(self.path) / self.domain, f'{self.filename}*.nc*')
         if len(available_files) > 0:
             ds = xr.open_dataset(available_files[0])
 
@@ -136,7 +136,7 @@ class FieldSelector(pn.viewable.Viewer):
             
             **{self.fieldname}**
             - *long_name*\t: {ds[self.fieldname].long_name}
-            - *units*\t: {ds[self.fieldname].units}'
+            - *units*\t: {ds[self.fieldname].units}
             """
 
     @param.depends('desc', watch=True)
@@ -338,10 +338,18 @@ class TracerSettings(pn.viewable.Viewer):
     def __panel__(self):
         components = [
             pn.widgets.TextInput.from_param(self.param.tracer_name),
+            pn.pane.Markdown("""
+            ## Initial condition:
+            
+            Select whether the model should be initialized with concentrations from a previous run, from CAMS reanalysis, or left to zero. 
+            """),
             pn.widgets.Select.from_param(self.param.initial_condition),
-            "## Chemical reactions:",
             self.reaction_widgets,
-            "## Emissions:",
+            pn.pane.Markdown("""
+            ## Emissions:
+            
+            You can add one or multiple emission products to your simulation. The emissions are global (by default), but you have the option to use a different emission dataset within the regional domain.
+            """),
             self.emissions_widgets,
             pn.widgets.Button.from_param(self.param.add_emissions_category)
         ]
@@ -362,7 +370,13 @@ class TracerSettings(pn.viewable.Viewer):
     @property
     def reaction_widgets(self):
         if len(self.reactions) > 0:
-            return pn.Column(*[r for r in self.reactions])
+            return pn.Column(
+                pn.pane.Markdown("""
+                ## Chemical reactions (sink):
+                
+                The transport model supports tracer loss through reaction with other species. The defaults settings are always sane, but you can change them to see the impact on the results.
+                """),
+                *[r for r in self.reactions])
 
 
 class CH4TracerSettings(TracerSettings):
@@ -477,7 +491,14 @@ class RunSettings(pn.viewable.Viewer):
                     pn.widgets.MultiSelect.from_param(self.param.output_types),
                 ),
             ),
-            pn.pane.Markdown('## Tracers:'),
+            pn.pane.Markdown("""
+            ## Tracers:
+            
+            The transport model (TM5) computes the transport of one or more atmospheric "tracers", i.e. atmospheric species, which are independent from each other. Set here the list of tracers you want to simulate. You can for instance configure your run with:
+            - one single tracer with all processes (initial condition, sources and sinks);
+            - one tracer for each source process (to be able to track the contribution of each process).
+            - several tracers as "sensitivity tests"
+            """),
             self.tracers_widgets,
             pn.Row(
                 pn.widgets.Button.from_param(self.param.create_co2_tracer, disabled=True),
