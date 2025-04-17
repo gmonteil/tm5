@@ -467,7 +467,7 @@ class RunSettings(pn.viewable.Viewer):
         'eur1x1':    ['glb6x4', 'eur3x2', 'eur1x1']       
     }, doc='zoom configuration for TM5 simulation')
     run_name = param.String(default=f'{os.environ["USER"]}_{date.today().strftime("%d%b%Y")}', doc='Name of the simulation')
-    output_types = param.ListSelector(default=['stations'], objects=['stations', 'mix', 'columns'], doc='choice of outputs (common to all tracers)')
+    # output_types = param.ListSelector(default=['stations'], objects=['stations', 'mix', 'columns'], doc='choice of outputs (common to all tracers)')
     create_ch4_tracer = param.Event(doc='Add new CH4 tracer', label='New CH4 tracer')
     create_co2_tracer = param.Event(doc='Add new CO2 tracer', label='New CO2 tracer')
     levels = param.Selector(default='tropo34', objects=['tropo25', 'tropo34'], doc='Number of vertical levels')
@@ -488,7 +488,7 @@ class RunSettings(pn.viewable.Viewer):
                         pn.widgets.DatePicker.from_param(self.param.end),
                     ),
                     pn.widgets.Select.from_param(self.param.zoom_configuration),
-                    pn.widgets.MultiSelect.from_param(self.param.output_types),
+                    # pn.widgets.MultiSelect.from_param(self.param.output_types),
                 ),
             ),
             pn.pane.Markdown("""
@@ -727,9 +727,9 @@ class FitIC_UI(pn.viewable.Viewer):
         conf.run.levels = self.settings.levels
         
         # Output section
-        conf.output = {}
-        for outp in self.settings.output_types:
-            conf.output[outp] = True
+        # conf.output = {}
+        # for outp in self.settings.output_types:
+        #     conf.output[outp] = True
 
         # Tracers:
         conf.tracers = {}
