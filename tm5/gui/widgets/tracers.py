@@ -1,9 +1,7 @@
 import param
 import panel as pn
-from pathlib import Path
 from tm5.gui.widgets.emissions import EmissionSettings
 from tm5.gui.widgets.reactions import ReactionSettings
-from copy import deepcopy
 from tm5.gui import host
 
 
@@ -59,8 +57,18 @@ class TracerSettings(pn.viewable.Viewer):
     def __panel__(self):
         components = [
             pn.widgets.TextInput.from_param(self.param.tracer_name),
+            pn.pane.Markdown("""
+            ## Initial condition:
+            
+            Select whether the model should be initialized with concentrations from a previous run, from CAMS reanalysis, or left to zero. 
+            """),
             pn.widgets.Select.from_param(self.param.initial_condition),
             self.reaction_widgets,
+            pn.pane.Markdown("""
+            ## Emissions:
+            
+            You can add one or multiple emission products to your simulation. The emissions are global (by default), but you have the option to use a different emission dataset within the regional domain.
+            """),
             self.emissions_widgets,
             pn.widgets.Button.from_param(self.param.add_emissions_category)
         ]
@@ -76,11 +84,18 @@ class TracerSettings(pn.viewable.Viewer):
                 sizing_mode='stretch_width',
                 hide_header=True), 
             )
+        # return pn.layout.Card(pn.Column(*components), title=self.param.tracer_name)
 
     @property
     def reaction_widgets(self):
         if len(self.reactions) > 0:
-            return pn.Column(*[r for r in self.reactions])
+            return pn.Column(
+                pn.pane.Markdown("""
+                ## Chemical reactions (sink):
+                
+                The transport model supports tracer loss through reaction with other species. The defaults settings are always sane, but you can change them to see the impact on the results.
+                """),
+                *[r for r in self.reactions])
 
 
 class CH4TracerSettings(TracerSettings):
