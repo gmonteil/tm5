@@ -699,8 +699,9 @@ class FitIC_UI(pn.viewable.Viewer):
         if status in ['finished', 'running']:
             self.terminal.visible = True
             self.terminal.clear()
-            with open(r.json()['outfile'], 'r') as fid:
-                self.terminal.writelines(fid.readlines())
+            self.terminal.writelines(r.json()['stdout'])
+            #with open(r.json()['outfile'], 'r') as fid:
+            #    self.terminal.writelines(fid.readlines())
 
     # @param.depends('run_tm5_button', watch=True)
     # def run_tm5(self):
