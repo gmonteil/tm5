@@ -14,7 +14,7 @@ from typing import List
 parser = ArgumentParser()
 parser.add_argument('-b', '--build', action='store_true', default=False, help='Use this option to compile the code')
 parser.add_argument('--build-only', action='store_true', default=False)
-parser.add_argument('-m', '--host', default=os.environ['TM5_HOST'])
+#parser.add_argument('-m', '--host', default=os.environ['TM5_HOST'])
 parser.add_argument('--skip-setup-meteo', action='store_true', default=False)
 parser.add_argument('config_file')
 
