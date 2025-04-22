@@ -89,7 +89,7 @@ class RunSettings(pn.viewable.Viewer):
             trclass(
                 tracer_name=trname, 
                 regions=self.zoom_configuration, 
-                parent=self
+                parent=self,
         ))
 #        self._tracers.append(trname)
         self.update_tracer_widgets()

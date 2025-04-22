@@ -3,8 +3,8 @@ import panel as pn
 from pathlib import Path
 from tm5.gui.widgets.emissions import EmissionSettings
 from tm5.gui.widgets.reactions import ReactionSettings
-from tm5.gui import emission_dir
 from copy import deepcopy
+from tm5.gui import host
 
 
 class TracerSettings(pn.viewable.Viewer):
@@ -23,7 +23,6 @@ class TracerSettings(pn.viewable.Viewer):
     add_emissions_category = param.Event(doc='Add new emissions category', label='Add new emissions category')
     reactions = param.ListSelector(default=[], objects=[], doc='Chemical reactions')
     regions = param.List(doc='list of zoom regions') # This is a top-level parameter, but I don't know how to refer to it ...
-    emission_path = param.Path(Path(emission_dir))
     remove_event = param.Event(doc="Remove tracer", label="Remove tracer")
     duplicate_event = param.Event(doc='Duplicate tracer', label='Duplicate tracer')
 
@@ -38,7 +37,7 @@ class TracerSettings(pn.viewable.Viewer):
         self.emissions.append(EmissionSettings(
             catname=f'emissions_{len(self.emissions) + 1}', 
             regions=self.regions,
-            path=self.emission_path
+            path=host.emission_path
         ))
         self.emissions_widgets.append(self.emissions[-1].__panel__())
 
