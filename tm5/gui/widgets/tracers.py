@@ -1,7 +1,10 @@
 import param
 import panel as pn
 from pathlib import Path
-from tm5.gui.widgets import EmissionSettings, ReactionSettings, emission_dir
+from tm5.gui.widgets.emissions import EmissionSettings
+from tm5.gui.widgets.reactions import ReactionSettings
+from tm5.gui import emission_dir
+from copy import deepcopy
 
 
 class TracerSettings(pn.viewable.Viewer):
@@ -21,27 +24,37 @@ class TracerSettings(pn.viewable.Viewer):
     reactions = param.ListSelector(default=[], objects=[], doc='Chemical reactions')
     regions = param.List(doc='list of zoom regions') # This is a top-level parameter, but I don't know how to refer to it ...
     emission_path = param.Path(Path(emission_dir))
+    remove_event = param.Event(doc="Remove tracer", label="Remove tracer")
+    duplicate_event = param.Event(doc='Duplicate tracer', label='Duplicate tracer')
 
-    def __init__(self, **params):
+    def __init__(self, parent = None, **params):
         super().__init__(**params)
         self.emissions = []
         self.emissions_widgets = pn.Column()
+        self.parent = parent
         
     @param.depends('add_emissions_category', watch=True)
     def add_emis(self):
         self.emissions.append(EmissionSettings(
             catname=f'emissions_{len(self.emissions) + 1}', 
-            regnames=self.regions,
+            regions=self.regions,
             path=self.emission_path
         ))
         self.emissions_widgets.append(self.emissions[-1].__panel__())
 
     @param.depends('regions', watch=True)
     def update_emis_region(self):
-        print(self.tracer_name, self.regions)
         for iemis, emis in enumerate(self.emissions):
             emis.regions = self.regions
             self.emissions_widgets[iemis] = emis.__panel__()
+
+    @param.depends("remove_event", watch=True)
+    def delete(self):
+        self.parent.remove_tracer(self)
+
+    @param.depends("duplicate_event", watch=True)
+    def duplicate(self):
+        self.parent.duplicate_tracer(self)
 
     @param.depends('tracer_name', watch=True)
     def __panel__(self):
@@ -52,7 +65,18 @@ class TracerSettings(pn.viewable.Viewer):
             self.emissions_widgets,
             pn.widgets.Button.from_param(self.param.add_emissions_category)
         ]
-        return pn.layout.Card(pn.Column(*components), title=self.param.tracer_name)
+        return pn.Row(
+            pn.Column(
+                pn.widgets.Button.from_param(self.param.remove_event),
+                pn.widgets.Button.from_param(self.param.duplicate_event)
+            ),
+            pn.layout.Card(
+                pn.Column(*components), 
+                title=self.param.tracer_name, 
+                styles={'background': '#edfafa'},
+                sizing_mode='stretch_width',
+                hide_header=True), 
+            )
 
     @property
     def reaction_widgets(self):
@@ -104,6 +128,20 @@ class CH4TracerSettings(TracerSettings):
             )
         ], doc='Chemical reactions')
     species = param.String('CH4')
+
+    def copy(self):
+        newtr = self.__class__(
+            initial_condition = self.initial_condition,
+            reactions = [_.copy() for _ in self.reactions],
+            tracer_name = f'{self.name}_copy',
+            regions = self.regions,
+            parent = self.parent
+        )
+
+        # Set the emissions
+        newtr.emissions = [_.copy() for _ in self.emissions]
+        newtr.emissions_widgets = pn.Column(*[_.__panel__() for _ in newtr.emissions])
+        return newtr
         
         
 class CO2TracerSettings(TracerSettings):

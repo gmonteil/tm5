@@ -38,3 +38,15 @@ class ReactionSettings(pn.viewable.Viewer):
             #pn.widgets.FloatInput.from_param(self.param.rate0),
             #pn.widgets.FloatInput.from_param(self.param.rate1),
         )
+
+    def copy(self):
+        return self.__class__(
+            versions = self.param.field.objects,
+            reacname = self.reacname,
+            shortname = self.shortname,
+            rate0 = self.rate0,
+            rate1 = self.rate1,
+            active = self.active,
+            domain = self.domain,
+            #field = self.field
+        )

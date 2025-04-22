@@ -3,6 +3,7 @@ import param
 import os
 from datetime import date
 from tm5.gui.widgets import CH4TracerSettings, CO2TracerSettings
+from copy import deepcopy
 
 
 class RunSettings(pn.viewable.Viewer):
@@ -40,18 +41,26 @@ class RunSettings(pn.viewable.Viewer):
     
     def __panel__(self):
         return pn.Column(
-            pn.pane.Markdown('# Run settings'),
-            pn.widgets.TextInput.from_param(self.param.run_name),
-            pn.widgets.DatePicker.from_param(self.param.start),
-            pn.widgets.DatePicker.from_param(self.param.end),
-            pn.widgets.Select.from_param(self.param.zoom_configuration),
-            pn.widgets.MultiSelect.from_param(self.param.output_types),
-            pn.pane.Markdown('# Tracer settings'),
+            pn.pane.Markdown('## Run settings'),
+            pn.Row(
+                pn.widgets.TextInput.from_param(self.param.run_name),
+                pn.Column(
+                    pn.Row(
+                        pn.widgets.DatePicker.from_param(self.param.start),
+                        pn.widgets.DatePicker.from_param(self.param.end),
+                    ),
+                    pn.widgets.Select.from_param(self.param.zoom_configuration),
+                    pn.widgets.MultiSelect.from_param(self.param.output_types),
+                ),
+            ),
+            pn.pane.Markdown('## Tracers:'),
             self.tracers_widgets,
             pn.Row(
                 pn.widgets.Button.from_param(self.param.create_co2_tracer, disabled=True),
                 pn.widgets.Button.from_param(self.param.create_ch4_tracer),
-            )
+            ),
+            styles=dict(background='#daf5f6'),
+            sizing_mode='stretch_width'
         )
         
     @param.depends('create_ch4_tracer', watch=True)
@@ -62,11 +71,28 @@ class RunSettings(pn.viewable.Viewer):
     def add_co2_tracer(self):
         self.add_tracer('CO2')
 
+    def update_tracer_widgets(self):
+        self.tracers_widgets.objects = [_.__panel__() for _ in self.tracers]
+
+    def remove_tracer(self, tracer):
+        self.tracers.remove(tracer)
+        self.update_tracer_widgets()
+
+    def duplicate_tracer(self, tracer):
+        self.tracers.append(tracer.copy())
+        self.update_tracer_widgets()
+
     def add_tracer(self, species: str):
         trname = self.get_unique_trname(species)
         trclass = dict(CH4=CH4TracerSettings, CO2=CO2TracerSettings)[species]
-        self.tracers.append(trclass(tracer_name=trname, regions=self.zoom_configuration))
-        self.tracers_widgets.append(self.tracers[-1].__panel__())
+        self.tracers.append(
+            trclass(
+                tracer_name=trname, 
+                regions=self.zoom_configuration, 
+                parent=self
+        ))
+#        self._tracers.append(trname)
+        self.update_tracer_widgets()
 
     def get_unique_trname(self, species: str) -> str:
         trname = species
