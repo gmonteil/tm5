@@ -15,11 +15,12 @@ parser = ArgumentParser()
 parser.add_argument('-b', '--build', action='store_true', default=False, help='Use this option to compile the code')
 parser.add_argument('--build-only', action='store_true', default=False)
 parser.add_argument('-m', '--host', default=os.environ['TM5_HOST'])
+parser.add_argument('--skip-setup-meteo', action='store_true', default=False)
 parser.add_argument('config_file')
 
 
-def run(args: List[str]):
-    args = parser.parse_args(args)
+def forward():
+    args = parser.parse_args(sys.argv[1:])
     
     #=====================================================
     # 1. Build the model
@@ -36,7 +37,7 @@ def run(args: List[str]):
     #=====================================================
 
     # Fill in all the meteo-related rc-keys + download the meteo files (if needed)
-    tm.setup_meteo()
+    tm.setup_meteo(fast=args.skip_setup_meteo)
 
     # Fill in the rc-keys related to run type and duration
     tm.setup_run('forward')
@@ -70,8 +71,7 @@ def run(args: List[str]):
     # Run TM5
     #=====================================================
     runcmd(tm.dconf.run.run_cmd.split() + [str(rcf)])
-    
-    
+
+
 if __name__ == '__main__':
-    args = parser.parse_args(sys.argv[1:])
-    run(args)
+    forward()

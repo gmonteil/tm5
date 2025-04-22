@@ -60,7 +60,7 @@ class TM5:
             os.symlink(tm5exec.absolute(), self.tm5exec)
 
     # Main setup methods
-    def setup_meteo(self, coarsen : bool = False):
+    def setup_meteo(self, coarsen : bool = False, fast: bool = False):
         """
         This will set the following (group of) rc keys:
         - my.meteo.source.dir
@@ -124,7 +124,8 @@ class TM5:
         # Constant 1x1 fields (oro and lsm):
         self.settings['tmm.sourcekey.*.sfc.const'] = 'tm5-nc:mdir=ec/ea/an0tr1/sfc/glb100x100;tres=_00p01;namesep=/'
 
-        self.meteo.setup_files(start=self.dconf.run.start, end=self.dconf.run.end)
+        if not fast :
+            self.meteo.setup_files(start=self.dconf.run.start, end=self.dconf.run.end)
 
     def setup_regions(self):
         """
