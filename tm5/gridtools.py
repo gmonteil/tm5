@@ -10,7 +10,7 @@ from numpy.typing import NDArray
 from types import SimpleNamespace
 from typing import List
 import xarray as xr
-import xesmf
+# import xesmf
 
 
 @dataclass
@@ -167,8 +167,8 @@ class RectiLinearGrid:
             }
         )
 
-    def regridder(self, other, method : str = 'conservative') -> xesmf.Regridder:
-        return xesmf.Regridder(self.xr_coordinates, other.xr_coordinates, method)
+#    def regridder(self, other, method : str = 'conservative') -> xesmf.Regridder:
+#        return xesmf.Regridder(self.xr_coordinates, other.xr_coordinates, method)
 
 
 @dataclass
