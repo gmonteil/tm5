@@ -4,6 +4,7 @@ from pathlib import Path
 from functools import lru_cache
 from typing import List
 import xarray as xr
+from loguru import logger
 
 
 @lru_cache
@@ -17,6 +18,7 @@ class FieldSelector(pn.viewable.Viewer):
     fieldname = param.Selector(doc="name of the field to be used")
     path = param.Path(doc='location of the emission files')
     desc = param.String(doc="domain of the emissions")
+    domain = param.String(doc="title of the section")
 
     def __init__(self, **params):
         super().__init__(**params)
@@ -35,27 +37,30 @@ class FieldSelector(pn.viewable.Viewer):
             self.widgets['info']
         )
 
-    @param.depends('filename', 'path', watch=True)
+    @param.depends('filename', 'path', 'domain', watch=True)
     def update_field_choices(self):
         """
         Update the choices of the "Field" widget.
         """
-        available_files = get_emis_file_list(self.path, f'**/{self.filename}*.nc*')
+        available_files = get_emis_file_list(Path(self.path) / self.domain, f'{self.filename}*.nc')
         if len(available_files) > 0:
             ds = xr.open_dataset(available_files[0])
             self.param.fieldname.objects = [ _ for _ in ds.data_vars if _!='area' ]
             self.fieldname = self.param.fieldname.objects[0]
             self.widgets['field'].visible = len(self.param.fieldname.objects) > 1
 
-    @param.depends('path', watch=True)
+    @param.depends('path', 'domain', watch=True)
     def update_file_choices(self):
-        available_files = get_emis_file_list(self.path, '**/*.nc*')
+        # available_files = get_emis_file_list(self.path, '**/*.nc*')
+        #-- 2025-04-14:: restrict here to the global (default) domain
+        available_files = get_emis_file_list(Path(self.path) / self.domain, '*.nc')
         self.param.filename.objects = set([f.name.rsplit('_', maxsplit=1)[0] for f in available_files])
+        #if len(available_files) > 0:
         self.filename = self.param.filename.objects[0]
 
     @param.depends('filename', 'fieldname', watch=True)
     def update_field_description(self):
-        available_files = get_emis_file_list(self.path, f'**/{self.filename}*.nc*')
+        available_files = get_emis_file_list(Path(self.path) / self.domain, f'{self.filename}*.nc*')
         if len(available_files) > 0:
             ds = xr.open_dataset(available_files[0])
 
@@ -64,7 +69,7 @@ class FieldSelector(pn.viewable.Viewer):
             
             **{self.fieldname}**
             - *long_name*\t: {ds[self.fieldname].long_name}
-            - *units*\t: {ds[self.fieldname].units}'
+            - *units*\t: {ds[self.fieldname].units}
             """
 
     @param.depends('desc', watch=True)
@@ -82,8 +87,8 @@ class EmissionSettings(pn.viewable.Viewer):
 
     def __init__(self, **params):
         super().__init__(**params)
-        self.emis_reg = FieldSelector(desc='Emissions for the regional domain')
-        self.emis_glo = FieldSelector(desc='Global emissions')
+        self.emis_reg = FieldSelector(desc='Emissions for the regional domain', domain=self.regions[-1])
+        self.emis_glo = FieldSelector(desc='Global emissions', domain=self.regions[0])
         self.emis_glo.path = self.path
         self.emis_reg.path = self.path
         self.pane_glo = pn.Column(self.emis_glo)
