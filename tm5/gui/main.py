@@ -18,21 +18,20 @@ class FitIC_UI(pn.viewable.Viewer):
     rcfile = param.FileSelector(path='*.yaml', doc='TM5 settings (yaml file) to be used as a template', label='TM5 config file')
     #run_tm5_button = param.Event(doc='run TM5', label='Run TM5')
     #build_tm5_button = param.Event(doc='compile TM5', label='Compile TM5')
-
     submit_event = param.Event(doc='submit tm5', label='Submit a new run')
     check_status_event = param.Event(doc='Check status', label='Check status')
     jobid = param.Integer(doc='TM5 job ID')
     
-    def __init__(self, **params):
+    def __init__(self, url_tm5, **params):
         super().__init__(**params)
         self.settings = RunSettings()
-        #self.textbox = pn.pane.Markdown('', enable_streaming=True, hard_line_break=True)
         self.textbox = pn.pane.Alert(visible=False, width=300)
         self.terminal = pn.widgets.Terminal(options={"cursorBlink": True}, height=300, sizing_mode='stretch_width', write_to_console=True, visible=False)
         self.submit_button = pn.widgets.Button.from_param(self.param.submit_event)
         self.check_status_button = pn.widgets.Button.from_param(self.param.check_status_event, visible=False)
         self.job_selector = pn.widgets.IntInput.from_param(self.param.jobid, visible=False, name='', width=60)
         self.alert = pn.pane.Alert(visible=False)
+        self.url_tm5 = url_tm5
 
     def __panel__(self):
         return pn.Column(
@@ -61,7 +60,7 @@ class FitIC_UI(pn.viewable.Viewer):
         self.textbox.visible = False
 
         try :
-            url = 'http://localhost:5000/submit'
+            url = f'{self.url_tm5}/submit'
             r = requests.get(url, params={'config':'toto'})
             
             if not r.ok:
@@ -102,7 +101,7 @@ class FitIC_UI(pn.viewable.Viewer):
 
     @param.depends('check_status_event', watch=True)
     def check_status(self):
-        r = requests.get(f'http://localhost:5000/status/{self.jobid}')
+        r = requests.get(f'{self.url_tm5}/status/{self.jobid}')
 
         status = r.json()['status']
 
@@ -127,18 +126,12 @@ class FitIC_UI(pn.viewable.Viewer):
         if status in ['finished', 'running']:
             self.terminal.visible = True
             self.terminal.clear()
-            with open(r.json()['outfile'], 'r') as fid:
-                self.terminal.writelines(fid.readlines())
-
-    # @param.depends('build_tm5_button', watch=True)
-    # def build_tm5(self):
-    #     self.update_rcfile()
+            self.terminal.writelines(r.json()['stdout'])
 
     def update_rcfile(self):
         """
         The correspondance between yaml keys and UI params is established in this section
         """
-
         conf = OmegaConf.create()
 
         # Run section
@@ -150,9 +143,9 @@ class FitIC_UI(pn.viewable.Viewer):
         conf.run.levels = self.settings.levels
         
         # Output section
-        conf.output = {}
-        for outp in self.settings.output_types:
-            conf.output[outp] = True
+        # conf.output = {}
+        # for outp in self.settings.output_types:
+        #     conf.output[outp] = True
 
         # Tracers:
         conf.tracers = {}
@@ -185,7 +178,6 @@ class FitIC_UI(pn.viewable.Viewer):
                     'regions': emcat.regions
                 }
 
-        self.terminal.object = OmegaConf.to_yaml(conf)
-        #self.terminal.write(OmegaConf.to_yaml(conf))
+        self.terminal.write(OmegaConf.to_yaml(conf))
         with open(f'{self.settings.run_name}.yaml', 'w') as fid:
             fid.writelines(OmegaConf.to_yaml(conf))
