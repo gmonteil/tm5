@@ -1,0 +1,28 @@
+[build-system]
+requires = ['setuptools']
+build-backend = 'setuptools.build_meta'
+
+
+[project]
+name = "fitic"
+version = '2025.03.30'
+authors = [
+    {name = "Guillaume Monteil", email = "gmonteil@ik.me"},
+    {name = 'Michael Vossbeck', email = 'michael.vossbeck@inversion-lab.com'},
+    {name = 'Thomas Kaminsky', email = 'thomas.kaminsky@inversion-lab.com'}]
+readme = "README.md"
+dependencies = ['numpy', 'ipython', 'pandas', 'xarray', 'h5py', 'netcdf4', 'loguru', 'omegaconf', 'pint', 'tqdm', 'dask', 'bottleneck']
+requires-python = '>=3.10'
+
+
+[tool.setuptools.packages.find]
+include = ['tm5']
+
+
+[project.optional-dependencies]
+dev = ['ipython', 'mkdocs']
+fitic = ['flask', 'jupyter', 'jupyter_bokeh', 'panel', 'param', 'hvplot', 'geoviews', 'holoviews', 'cartopy']
+
+
+[project.scripts]
+tm5 = 'tm5.cli:forward'
