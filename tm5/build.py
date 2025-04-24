@@ -7,7 +7,7 @@ import shutil
 from typing import Dict, List
 import tempfile
 from omegaconf import OmegaConf
-from tm5.run import run_tm5
+#from tm5.run import run_tm5
 from loguru import logger
 import subprocess
 from tm5 import debug
