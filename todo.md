@@ -14,7 +14,7 @@
     - [ ] check domain size on plot after change of region
     - [ ] Automated observation fit statistics (RMSE, maybe as table)
     - [x] automated plot with emissions budget by region and category
-    - [ ] Integrate some visualisation of the emission budget in configuration part of the GUI (to allow perform a quick sanity check)
+    - (4) [ ] Integrate some visualisation of the emission budget in configuration part of the GUI (to allow perform a quick sanity check)
     - [x] plot comparison with observations
 - TM5
     - [x] diagnose issue with concentrations decreasing too fast (i.e. sink too strong?)
@@ -33,9 +33,9 @@
     - [x] speedup chemistry
     - [ ] speedup reading emissions
 - TM5 analyses, open questions regarding our initial TM5 runs with prior emission fields: to be addressed with long run on COSMOS:
-    - [ ] check proper reading of the OH file and see whether that improves the seasonality at SPO -> GM
-    - [ ] implement and test reading of the CAMS reanalysis OH field (to be used for the troposhere, for the stratosphere we'll rather use Bruehl et al.), this should be the default, Spivakovsky is kept as an alternative -> GM
-    - [ ] simulated variability of Cabauw appears too small; do forward run with out model setup and posterior emission fields from CAMS inversion -> MV to check for the location of the emissions; GM to check in his run with Avengers zoom configuration
+    - (1) [ ] check proper reading of the OH file and see whether that improves the seasonality at SPO -> GM
+    - (2) [ ] implement and test reading of the CAMS reanalysis OH field (to be used for the troposhere, for the stratosphere we'll rather use Bruehl et al.), this should be the default, Spivakovsky is kept as an alternative -> GM
+    - (3) [ ] simulated variability of Cabauw appears too small; do forward run with out model setup and posterior emission fields from CAMS inversion -> MV to check for the location of the emissions; GM to check in his run with Avengers zoom configuration
 - Documentation
     - [ ] properly setup github pages with mkdocs
  
