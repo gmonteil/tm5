@@ -34,7 +34,8 @@
     - [ ] speedup reading emissions
 - TM5 analyses, open questions regarding our initial TM5 runs with prior emission fields: to be addressed with long run on COSMOS:
     - [ ] check proper reading of the OH file and see whether that improves the seasonality at SPO -> GM
-    - [ ] simulated variability of Cabauw appears too small; do forward run with out model setup and posterior emission fields from CAMS inversion -> MV to check for the location of the emissions
+    - [ ] implement and test reading of the CAMS reanalysis OH field (to be used for the troposhere, for the stratosphere we'll rather use Bruehl et al.), this should be the default, Spivakovsky is kept as an alternative -> GM
+    - [ ] simulated variability of Cabauw appears too small; do forward run with out model setup and posterior emission fields from CAMS inversion -> MV to check for the location of the emissions; GM to check in his run with Avengers zoom configuration
 - Documentation
     - [ ] properly setup github pages with mkdocs
  
