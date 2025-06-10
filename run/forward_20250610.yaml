@@ -1,0 +1,225 @@
+gmlaptop :
+#  container : /home/guillaume/iLab/tm5-intel-ubuntu20_v2.simg
+  container : /home/guillaume/tm5-intel-ubuntu20.simg
+  makedepf90 : makedepf90
+  build_cmd : singularity run ${.container} make -C ${build.directory} tm5.x
+  run_cmd : singularity run ${.container} ${run.paths.output}/tm5.x
+  makefile : Makefile.singularity.ifort
+  paths:
+    output : /home/guillaume/iLab/TM5/output
+    build : /home/guillaume/iLab/TM5/build
+    meteo : /home/guillaume/iLab/TM5/meteo_coarsened
+    meteo_out : /home/guillaume/iLab/TM5/meteo_out
+    udunits : /opt/etc/udunits.dat  # included in the container!
+    diffusion : /home/guillaume/iLab/TM5/diffusion
+    emissions : /home/guillaume/iLab/TM5/emissions
+    emissions_archive : /home/guillaume/iLab/TM5/emissions/CH4
+    chemistry :
+      ch4_spivakovsky : /home/guillaume/iLab/TM5/OH_troposphere-Spivakovsky-2000-ml60-glb100x100.v2.nc
+      ch4_cams : /home/guillaume/iLab/TM5/CAMS/OH/oh_cams
+    data : /home/guillaume/iLab/TM5
+    initial_condition:
+      CH4: /home/guillaume/iLab/TM5/CAMS/ch4
+
+
+run :
+  start : 1 jan 2021
+  #end : 1 feb 2021
+  end : 31 dec 2021
+  name : ${.zoom}
+  paths :
+    output : ${host.paths.output}/${run.name}
+    meteo : ${host.paths.meteo}
+    cf_table : ../data/cf-standard-name-table.xml
+    udunits : ${host.paths.udunits}
+    diffusion : ${host.paths.diffusion}/${run.levels}
+    emissions : ${host.paths.emissions}
+  meteo :
+    coarsened : yes
+    write : no
+  regions : ${zoom_configuration.${.zoom}}
+  run_cmd : ${host.run_cmd}
+  tracers : [CH4]
+  zoom : glb600x400
+  #zoom : gns100x100
+  levels : tropo34
+
+
+zoom_configuration: 
+  glb100x100: [glb100x100]
+  glb300x200: [glb300x200]
+  glb600x400: [glb600x400]
+  eur300x200: [glb600x400, eur300x200]
+  gns100x100 : [glb600x400, eur300x200, gns100x100]
+
+
+species :
+  ch4 :
+    species : CH4
+    reactions:
+      oh :
+        file : ${host.paths.chemistry.ch4_spivakovsky}
+        version : spivakovsky
+        rate : [2.45e-12, -1775]
+        domain : tropo
+        scaling_factor : 1.
+    flux_unit : TgCH4
+    mix_unit : ppb
+    chemistry : yes
+    emissions : ${emissions.CH4}
+
+
+tracers :
+  CH4 : ${species.ch4}
+
+
+emissions:
+  CH4:
+    prefix : ${run.paths.emissions}/ch4emis
+    categories:
+      wetland :
+        path : ${host.paths.emissions_archive}/cal_lpj_ch4_wetland_glb1x1_daily_2021.nc
+        field : ch4_wetland
+        regions : ${run.regions}
+        overwrite :
+          path : ${host.paths.emissions_archive}/avengers/cal_lpj_ch4_wetland_domain--10W-35Ex35N-71N_daily_2021.nc
+          field : ch4_wetland
+      mineral-sink :
+        path : ${host.paths.emissions_archive}/cal_lpj_ch4_mineral-sink_glb1x1_daily_2021.nc
+        field : ch4_mineral-sink
+        regions : ${run.regions}
+        overwrite :
+          path : ${host.paths.emissions_archive}/avengers/cal_lpj_ch4_mineral-sink_domain--10W-35Ex35N-71N_daily_2021.nc
+          field : ch4_mineral-sink
+      mineral-source :
+        path : ${host.paths.emissions_archive}/cal_lpj_ch4_mineral-source_glb1x1_daily_2021.nc
+        field : ch4_mineral-source
+        regions : ${run.regions}
+        overwrite :
+          path : ${host.paths.emissions_archive}/avengers/cal_lpj_ch4_mineral-source_domain--10W-35Ex35N-71N_daily_2021.nc
+          field : ch4_mineral-source
+      geological :
+        path : ${host.paths.emissions_archive}/CH4-intercomparison-natural-climatological_glb1x1_monthly_2021.nc
+        field : geological
+        regions : ${run.regions}
+      lakes :
+        path : ${host.paths.emissions_archive}/CH4-intercomparison-natural-climatological_glb1x1_monthly_2021.nc
+        field : lakes
+        regions : ${run.regions}
+      ocean :
+        path : ${host.paths.emissions_archive}/CH4-intercomparison-natural-climatological_glb1x1_monthly_2021.nc
+        field : ocean
+        regions : ${run.regions}
+      termites :
+        path : ${host.paths.emissions_archive}/CH4-intercomparison-natural-climatological_glb1x1_monthly_2021.nc
+        field : termites
+        regions : ${run.regions}
+      fire :
+        path : ${host.paths.emissions_archive}/gfas_ch4-fluxes_glb1x1_daily_2021.nc
+        field : ch4fire
+        regions : ${run.regions}
+      fossil :
+        path : ${host.paths.emissions_archive}/EDGARv8.0_ch4-fluxes_glb1x1_monthly_2021.nc
+        field : fossil
+        regions : ${run.regions}
+        overwrite :
+          path : ${host.paths.emissions_archive}/avengers/TNO_GHGco_v7_ch4-fluxes_domain--30W-60Ex30N-72N_annual_2021.nc
+          field : fossil
+      agriculture :
+        path : ${host.paths.emissions_archive}/EDGARv8.0_ch4-fluxes_glb1x1_monthly_2021.nc
+        field : agriculture
+        regions : ${run.regions}
+        overwrite :
+          path : ${host.paths.emissions_archive}/avengers/TNO_GHGco_v7_ch4-fluxes_domain--30W-60Ex30N-72N_annual_2021.nc
+          field : agriculture
+      waste :
+        path : ${host.paths.emissions_archive}/EDGARv8.0_ch4-fluxes_glb1x1_monthly_2021.nc
+        field : waste
+        regions : ${run.regions}
+        overwrite :
+          path : ${host.paths.emissions_archive}/avengers/TNO_GHGco_v7_ch4-fluxes_domain--30W-60Ex30N-72N_annual_2021.nc
+          field : waste
+
+
+initial_condition:
+  type : fitic    # will use the dedicated iniconc F90 module. Do not change
+  CH4:
+    type : CAMS
+    mix : 0
+    filename : ${host.paths.initial_condition.CH4}/cams73_latest_ch4_conc_surface_inst_%Y%m.nc
+
+
+meteo :
+  levels : tropo34
+  path : ${host.paths.meteo}
+  archive : swestore:TM5/meteo/
+  coarsened : ${run.meteo.coarsened}
+  output    : ${run.meteo.write}
+  regions : ${run.regions}
+  output_path : ${host.paths.meteo_out}
+
+
+build :
+  directory : ${host.paths.build}
+  paths :
+    src :
+      - ../src/base
+      - ../src/proj/macros/tmm_tm5
+      - ../src/proj/levels/ml137
+      - ../src/proj/levels/ml137/${run.levels}a
+      #- ../src/proj/levels/ml137/tropo25a
+      - ../src/proj/linalg/mkl
+      - ../src/proj/openmp_speedups
+#      - ../src/proj/tracer/CO2
+      - ../src/proj/era5_met
+      - ../src/proj/output
+#      - ../src/proj/regions/glb6x4
+#      - ../src/proj/regions/fit-ic
+      - ../src/proj/regions/${regions.${run.zoom}.src}
+      - ../src/dev
+      - ../src/emissions  # attempt to replace the pyshell emissions by a simpler implementation, without daily cycles
+      - ../src/chemistry  # attempt at a tracer-agnostic chemistry module
+    remove__ : True
+  macros : 
+    mdf.inc : [with_go, with_netcdf4]
+    tm5.inc : [slopes, without_wet_deposition, without_dry_deposition, without_photolysis]
+    #tm5.inc : [slopes, without_wet_deposition, without_dry_deposition, without_photolysis, without_chemistry]
+  makefile : ${host.makefile}
+  makedepf90 : ${host.makedepf90}
+  build_cmd: ${host.build_cmd}
+
+
+regions :
+
+  glb600x400 :
+    name : glb600x400
+    src : glb6x4
+    lons : [-180, 180, 6]
+    lats : [-90, 90, 4]
+    levels : ${run.levels}
+
+  eur300x200 :
+    name : eur300x200
+    levels : ${run.levels}
+    lons : [-36, 54, 3]
+    lats : [22, 74, 2]
+    parent : glb600x400
+    
+  gns100x100:
+    name : gns100x100
+    src : fit-ic
+    levels : ${run.levels}
+    parent : glb300x200
+    lons : [0, 18, 1]
+    lats : [42, 58, 1]
+
+
+output :
+  stations: 
+    filename: ${host.paths.data}/stationlist.ch4.fitic.txt
+    meteo: False
+  point:
+    interpolation: 'linear'
+  mix:
+    output_frequency: 1d
+    prefix: mix

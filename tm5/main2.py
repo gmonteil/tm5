@@ -346,6 +346,8 @@ class TM5:
                     self.settings[f'tracers.{tr}.{reacname}.file'] = reac.file
                     self.settings[f'tracers.{tr}.{reacname}.domain'] = reac.domain
                     self.settings[f'tracers.{tr}.{reacname}.rate'] = reac.rate
+                    self.settings[f'tracers.{tr}.{reacname}.scaling_factor'] = reac.scaling_factor
+                    self.settings[f'tracers.{tr}.{reacname}.version'] = reac.version
             else:
                 self.settings[f'tracers.{tr}.chemistry'] = 'F'
 

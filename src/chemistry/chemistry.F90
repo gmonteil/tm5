@@ -6,10 +6,17 @@
 
 module chemistry
 
-    use go,             only : TDate, readrc, T_Time_Window, operator(<), NewDate
+    use go,             only : TDate, readrc, T_Time_Window, operator(<), NewDate, TIncrDate, operator(+), IncrDate
     use global_data,    only : rcf
     use chem_param,     only : ntracet, tracers, tracer_t, react_t, ntlow
-    use dims,           only : im, jm, lm, isr, ier, jsr, jer
+    use dims,           only : im, jm, lm, isr, ier, jsr, jer, nregions
+    use meteo,          only : pclim_dat
+    use file_netcdf
+    use grid_type_ll,   only : init_grid => init, tllgridinfo
+    use grid_type_hyb,  only : init_levels => init, tlevelinfo
+    use grid_3d,        only : fill3d
+    use go,             only : gol, goerr
+    use tm5_geometry,   only : lli, levi
 
     implicit none
 
@@ -29,7 +36,7 @@ module chemistry
 
         subroutine chemistry_step(region, period, status)
 
-            use global_data,    only : mass_dat
+            use global_data,    only : mass_dat, region_dat
             use dims,           only : isr, ier, jsr, jer
             use go,             only : operator(-), rtotal
 
@@ -50,18 +57,19 @@ module chemistry
             do itr = 1, ntracet
                 if (tracers(itr)%has_chem) then
 
-                    rm => mass_dat(region)%rm_t(is:ie, js:je, :, itr)
-                    rxm => mass_dat(region)%rxm_t(is:ie, js:je, :, itr)
-                    rym => mass_dat(region)%rym_t(is:ie, js:je, :, itr)
-                    rzm => mass_dat(region)%rzm_t(is:ie, js:je, :, itr)
-
                     call get_total_loss_rate(region, period, tracers(itr), loss_rate)
 
-                    rm = rm * (1 - loss_rate * dtime)
+                    rm => mass_dat(region)%rm_t(is : ie, js : je, :, itr)
+                    
+                    rxm => mass_dat(region)%rxm_t(is : ie, js : je, :, itr)
+                    rym => mass_dat(region)%rym_t(is : ie, js : je, :, itr)
+                    rzm => mass_dat(region)%rzm_t(is : ie, js : je, :, itr)
+
+                    rm = rm * (1 - loss_rate(is : ie, js : je, :) * dtime)
 #ifdef slopes
-                    rxm = rxm * (1 - loss_rate * dtime)
-                    rym = rym * (1 - loss_rate * dtime)
-                    rzm = rzm * (1 - loss_rate * dtime)
+                    rxm = rxm * (1 - loss_rate(is: ie, js: je, :) * dtime)
+                    rym = rym * (1 - loss_rate(is: ie, js: je, :) * dtime)
+                    rzm = rzm * (1 - loss_rate(is: ie, js: je, :) * dtime)
 #endif
 
                     nullify(rm, rxm, rym, rzm)
@@ -111,7 +119,7 @@ module chemistry
                 call apply_l_domain(rrate, tracer%reactions(ireac), region)
 
                 ! Calculate the loss rate
-                loss_rate = loss_rate + rrate * tracer%reactions(ireac)%data
+                loss_rate = loss_rate + rrate * tracer%reactions(ireac)%conc(region)%values
 
             end do
 
@@ -136,7 +144,7 @@ module chemistry
                 do ilat = jsr(region), jer(region)
                     do ilon = isr(region), ier(region)
                         ! itemp = nint(temper_dat(region)%data(ilon, ilat, ilev) - real(ntlow))
-                        field3d(ilon, ilat, ilev) = reaction%rate(int(temper_dat(region)%data(ilon, ilat, ilev)))
+                        field3d(ilon, ilat, ilev) = reaction%rate(int(temper_dat(region)%data(ilon, ilat, ilev))) * reaction%scalef
                     end do
                 end do
             end do
@@ -206,40 +214,130 @@ module chemistry
         end subroutine apply_l_domain
 
 
-        subroutine get_conc_field(reaction, period, region)! result(field3d)
+        subroutine get_conc_field(reaction, period, region)
 
-            use meteo,          only : pclim_dat
-            use file_netcdf
-            use grid_type_ll,   only : init_grid => init, tllgridinfo
-            use grid_type_hyb,  only : init_levels => init, tlevelinfo
-            use grid_3d,        only : fill3d
-            use go,             only : gol, goerr
-            use tm5_geometry,   only : lli, levi
+            type(react_t), intent(inout)                :: reaction
+            type(TDate), dimension(2), intent(in)       :: period
+            integer, intent(in)                         :: region
+
+            ! Check if we need to read new data (i.e. new period). Otherwise return what's already in memory
+            if (period(1) < reaction%data_period%t2) return
+
+            select case (reaction%version)
+                case ('cams        ')
+                    call get_conc_field_cams(reaction, period)
+                case ('spivakovsky ')
+                    call get_conc_field_spivakovsky(reaction, period)
+            end select
+
+        end subroutine get_conc_field
+
+
+        subroutine get_conc_field_cams(reaction, period)
+
+            type(react_t), intent(inout)                :: reaction
+            type(TDate), dimension(2), intent(in)       :: period
+
+            real, dimension(:, :, :, :), allocatable    :: ohfield_in
+            real, dimension(:), allocatable             :: hyb_a, hyb_b 
+            character(len=*), parameter                 :: rname = mname//'/get_conc_field_cams'
+
+            integer             :: ncf
+            integer             :: status
+            character(len=60)   :: reacfile
+            type(tllgridinfo)   :: lli_in
+            type(tlevelinfo)    :: levi_in
+            integer             :: nlay
+            integer             :: region
+
+            print*, 'get cams'
+            reaction%climatology = .false.
+            reaction%data_timestep = '3d'
+
+            print*, 'get periods'
+            reaction%data_period = get_new_period(period(1), reaction%data_timestep)
+
+            print*, 'read nc'
+            write(reacfile, '(a,i4,a)') trim(reaction%file)//'_', period(1)%year, '.nc'
+            print*, trim(reacfile)
+
+            ncf = nc_open(reacfile, 'r', status)
+            IF_NOTOK_RETURN(status=1)
+
+            print*, 'read oh'
+            ohfield_in = nc_read_var(ncf, 'oh', status)
+            IF_NOTOK_RETURN(status=1)
+
+            print*, 'read at'
+            hyb_a = nc_read_var(ncf, 'z_a_grid', status)
+            IF_NOTOK_RETURN(status=1)
+            
+            print*, 'read bt'
+            hyb_b = nc_read_var(ncf, 'z_b_grid', status)
+            IF_NOTOK_RETURN(status=1)
+            
+            call nc_close(ncf)
+
+            print*, 'init grid'
+            call init_grid(lli_in, -179.5, 1.0, 360, -89.5, 1.0, 180, status)
+            IF_NOTOK_RETURN(status=1)
+
+            print*, 'init levels'
+            call init_levels(levi_in, nlay, hyb_a, hyb_b, status, name='OH', revert=.true.)
+            IF_NOTOK_RETURN(status=1)
+
+            print*, 'regrid'
+            nlay = size(hyb_a) - 1
+
+            do region = 1, nregions
+                if (.not. allocated(reaction%conc(region)%values)) allocate(reaction%conc(region)%values(im(region), jm(region), lm(region)))
+
+                print*, 'init data'
+                reaction%conc(region)%values = 0.
+
+          ! mole/(mole air) * mlc/mole * (mole air)/m3 * m3/cm3 = mlc/m3
+          !                     Avog        p/(RT)     *  1e-6
+          !  data_gp = data_gp * Avog * pres_gp/(Rgas*tmpr_gp) * 1e-6  ! mlc/cm3
+
+            ! Interpolate vertically (and horizontally?)
+            ! call init_grid(lli_in, 0, 0.75, 480, -90, 0.75, 241, status)
+
+                print*, 'fill3d'
+                call fill3d( &
+                    lli(region), levi, 'n', pclim_dat(region)%data(:, :, 1), &
+                    reaction%conc(region)%values, lli_in, levi_in, &
+                    ohfield_in(:, :, :, reaction%data_period%t1%month), &
+                    'mass-aver', status)
+            enddo
+
+            print*, 'deallocate'
+            IF_NOTOK_RETURN(status=1)
+            deallocate(ohfield_in)
+
+            print*, 'read cams oh'
+
+        end subroutine get_conc_field_cams
+
+
+        subroutine get_conc_field_spivakovsky(reaction, period)! result(field3d)
 
             ! Return the concentration field of a reactive species (in units of ...), during the requested time interval
             type(react_t), intent(inout)                :: reaction
             type(TDate), dimension(2), intent(in)       :: period
-            integer, intent(in)                         :: region
             real(4), dimension(:, :, :, :), allocatable :: tmp
             real, dimension(:, :, :, :), allocatable    :: field4d
-            character(len=*), parameter                 :: rname = mname//'/get_conc_field'
+            character(len=*), parameter                 :: rname = mname//'/get_conc_field_spivakovsky'
             type(tllgridinfo)   :: lli_in
             type(tlevelinfo)    :: levi_in
             integer             :: ncf
             integer             :: status
+            integer             :: region
             
-            ! Check if we need to read new data (i.e. new period). Otherwise return what's already in memory
-            if (period(1) < reaction%data_period%t2) return
-        
             ! Hard-coded stuff specific to the Spivakovsky OH field. Code below needs to be revised when more
             ! OH fields are implemented
             reaction%climatology = .true.
-            reaction%data_timestep = 'm'
-            reaction%data_period = get_new_period(period(1), 'm')
-            if (.not. allocated(reaction%data)) allocate(reaction%data(im(region), jm(region), lm(region)))
-
-            ! If we need to load new data:
-            reaction%data = 0.
+            reaction%data_timestep = '1m'
+            reaction%data_period = get_new_period(period(1), '1m')
 
             ! GM, 14 oct 2024:
             ! Code adapted from https://sourceforge.net/p/tm5/cy3_4dvar/ci/d13c-ch4/tree/proj/tracer/d13CH4/src/import_chemistry_fields.F90#l232
@@ -253,39 +351,51 @@ module chemistry
             IF_NOTOK_RETURN(status=1)
             field4d = nc_read_var(ncf, 'field', status)
             IF_NOTOK_RETURN(status=1)
-            !field4d = tmp
 
             ! Create coordinates for the OH field
             call init_grid(lli_in, -179.5, 1.0, 360, -89.5, 1.0, 180, status)
             IF_NOTOK_RETURN(status=1)
             call init_levels(levi_in, 'tm60', status)
             IF_NOTOK_RETURN(status=1)
-            call fill3d( &
+
+            ! Apply regridding
+            do region = 1, nregions
+                if (.not. allocated(reaction%conc(region)%values)) allocate(reaction%conc(region)%values(im(region), jm(region), lm(region)))
+                ! If we need to load new data:
+                reaction%conc(region)%values = 0.
+
+                call fill3d( &
                     lli(region), levi, 'n', pclim_dat(region)%data(:, :, 1), &
-                    reaction%data, lli_in, levi_in, &
+                    reaction%conc(region)%values, lli_in, levi_in, &
                     field4d(:, :, :, reaction%data_period%t1%month), &
                     'mass-aver', status)
-            IF_NOTOK_RETURN(status=1)
+                IF_NOTOK_RETURN(status=1)
+            enddo
             deallocate(field4d)
 
-        end subroutine get_conc_field
+        end subroutine get_conc_field_spivakovsky
 
         function get_new_period(date, tres) result(new_period)
-            ! Very ad-hoc function to handle the dates in this module. Only the cases that are currently in 
+            ! *Very* ad-hoc function to handle the dates in this module. Only the cases that are currently in 
             ! use are implemented ...
 
             type(TDate), intent(in)         :: date
-            character(len=1), intent(in)    :: tres
+            type(TIncrDate)                 :: dt
+            character(len=2), intent(in)    :: tres
             type(T_Time_Window)             :: new_period
 
             select case (tres)
-                case ('m')
+                case ('1m')
                     new_period%t1 = NewDate(year=date%year, month=date%month, day=1)
                     if (new_period%t1%month == 12) then
                         new_period%t2 = NewDate(year=date%year + 1, month=1, day=1)
                     else
                         new_period%t2 = NewDate(year=date%year, month=date%month + 1, day=1)
                     endif
+                case ('3d')
+                   ! dt = IncrDate(day=3)
+                    new_period%t1 = NewDate(year=date%year, month=date%month, day=date%day)
+                    new_period%t2 = new_period%t1 + IncrDate(day=3)
             end select
 
         end function get_new_period

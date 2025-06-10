@@ -9,6 +9,7 @@ module chem_param
     use global_data,    only : ntracet
     use os_specs,       only : MAX_FILENAME_LEN
     use go,             only : gol, goerr, T_Time_Window, NewDate
+    use dims,           only : nregions
 
     implicit none
 
@@ -16,6 +17,11 @@ module chem_param
         ! d3_data%d3   : 3D data, e.g. nox emissions
         real, dimension(:,:,:), allocatable :: d3
     end type d3_data
+
+    type conc_field
+        ! same as d3_data but with naming that makes more sense ...
+        real, dimension(:, :, :), allocatable   :: values
+    end type conc_field
 
     type d4_data
         type(d3_data), allocatable :: field_t(:) ! time dimension added to d3_data
@@ -95,9 +101,11 @@ module chem_param
         character(len=50)               :: name         ! reaction name (as in the rc-file)
         real, dimension(ntlow:nthigh)   :: rate = 0     ! reaction rate as function of temperature
         logical                         :: climatology = .false.
-        character(len=1)                        :: data_timestep
+        character(len=2)                        :: data_timestep
         type(T_Time_Window)                     :: data_period
-        real, dimension(:, :, :), allocatable   :: data ! in-memory field
+        type(conc_field), dimension(nregions)   :: conc ! in-memory field
+        character(len=12)               :: version      ! name of the implementation
+        real                            :: scalef = 1.  ! scaling factor for the reaction
 
         !contains
         !    procedure init => init_reaction
@@ -190,6 +198,9 @@ module chem_param
                     IF_NOTOK_RETURN(status=1)
                     call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.' // trim(reacnames_tmp(ireac)) // '.rate', tracers(itrac)%reactions(ireac)%parameters, status)
                     IF_NOTOK_RETURN(status=1)
+                    call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.' // trim(reacnames_tmp(ireac)) // '.scaling_factor', tracers(itrac)%reactions(ireac)%scalef, status)
+                    IF_NOTOK_RETURN(status=1)
+                    call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.' // trim(reacnames_tmp(ireac)) // '.version', tracers(itrac)%reactions(ireac)%version, status)
                     call init_reaction(tracers(itrac)%reactions(ireac))
                 end do
 
