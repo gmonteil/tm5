@@ -1,43 +1,32 @@
 # Tasks (by order of priority)
 
 - GUI (setup)
-    - [x] Test on ICOS Jupyter hub and fix problem
-    - [x] Make conda environment accessible for the FIT-IC group
-    - [x] Ask inventory compilers to register at Jupyter hub and ask Ute to make them members of fit-ic project
-    - [x] (re) implement connection with TM5 (work with Zois)
-    - [x] add GUI code to TM5 code on this GIT
-    - [x] add an "overwrite" field for the emissions
-    - [ ] change: "Use different emissions for the zoom domain" -> "Use different regional emissions"
+    - (6) [ ] change: "Use different emissions for the zoom domain" -> "Use different regional emissions"
     - [ ] implement only configuration with 3 level zoom "avengers-1", i.e global/Europe/NL+D+CH
 - GUI (analysis)
-    - [x] plot continuous timeseries at requested stations
-    - [ ] check domain size on plot after change of region
+    - (4) [ ] check domain size on plot after change of region
     - [ ] Automated observation fit statistics (RMSE, maybe as table)
     - [x] automated plot with emissions budget by region and category
-    - (4) [ ] Integrate some visualisation of the emission budget in configuration part of the GUI (to allow perform a quick sanity check)
+    - (5) [ ] Integrate some visualisation of the emission budget in configuration part of the GUI (to allow perform a quick sanity check)
     - [x] plot comparison with observations
-- TM5
-    - [x] diagnose issue with concentrations decreasing too fast (i.e. sink too strong?)
-    - [x] -> mv to check preprocessing of emission for climatological files
-    - [x] -> mv to test 1 year simulation with regional zoom (takes roughly 1 hour on pancake and on COSMOS, with single tracer)
-    - [x] -> mv to prepare the met forcing for the zoom configurations
 - GUI (extension)    
     - [ ] (re) implement possibility to pass defaults through a YAML file
     - [ ] implement a few default configurations
-    - [x] implement a job scheduler so multiple TM runs triggered by different users can happen at the same time
     - [ ] improve the location and extend the content of the config file  
     - [ ] extend station explorer so the user can select time series from a list of completed experiments
     - [ ] implement submitting with same job ID would overwrite the previous job with the same ID, to avoid submitting the same job twice, to save resources (not needed immediately)
     - [ ] think about permission for co-working on same code base
 - TM5 speedup
-    - [x] speedup chemistry
-    - [ ] speedup reading emissions
+    - (3) [ ] speedup reading emissions, and check correct implementation in zoom
 - TM5 analyses, open questions regarding our initial TM5 runs with prior emission fields: to be addressed with long run on COSMOS:
-    - (1) [ ] check proper reading of the OH file and see whether that improves the seasonality at SPO -> GM
-    - (2) [ ] implement and test reading of the CAMS reanalysis OH field (to be used for the troposhere, for the stratosphere we'll rather use Bruehl et al.), this should be the default, Spivakovsky is kept as an alternative -> GM
-    - (3) [ ] simulated variability of Cabauw appears too small; do forward run with out model setup and posterior emission fields from CAMS inversion -> MV to check for the location of the emissions; GM to check in his run with Avengers zoom configuration
+    - (4) [ ] implement and test reading of the CAMS reanalysis OH field (to be used for the troposhere, for the stratosphere we'll rather use Bruehl et al.), this should be the default, Spivakovsky is kept-     - (2) [ ] perform one year forward run with recent code update and 0.75 factor for Spivakovsky OH -> MV
+    - (1) [ ] simulated variability of Cabauw appears too small; do forward run with out model setup and posterior emission fields from CAMS inversion -> TK to send email to Arjo asking whether the CAMS CH4 inversion posterior concentration has seen posterior emissions with higher temporal variability than the reported monthly 
 - Documentation
     - [ ] properly setup github pages with mkdocs
+- Inversion
+    - [ ] implement dummy inversion based on Jacobians to test computational performance -> txk
+    - [ ] adapt adjoint to run with the simplified emission preparation -> gm
+    - [ ] adapt adjoint to run with the OH field (to Spivakovsky first, which is enough for the Jacobian computations, possibly later CAMS OH) -> gm
  
 # Task ideas / discussion
 - avoid misuse through implementation of "accepted ranges" => *That's essentially built-in the GUI*
