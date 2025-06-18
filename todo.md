@@ -1,13 +1,18 @@
 # Tasks (by order of priority)
 
+- prior
+    - [ ] add comment or extend long name forfield "fossil" in EDGAR files to clarify that this is the sum of a number of fields in the same file(s)
 - GUI (setup)
-    - (6) [ ] change: "Use different emissions for the zoom domain" -> "Use different regional emissions"
+    - (6) [ ] GM: change: "Use different emissions for the zoom domain" -> "Use different regional emissions"
     - [ ] implement only configuration with 3 level zoom "avengers-1", i.e global/Europe/NL+D+CH
+    - [4] MV to remove for the Demo in Geneva the additional Chemistry settings (from stratosphere)
+    - [2] MV are there really no data for SPO?
+    - [3] MV for the demo remove cams inversion line from station explorer and add a second FIT-IC run with flat temporal profile for anthropogenic emissions
 - GUI (analysis)
-    - (4) [ ] check domain size on plot after change of region
+    - (8) [ ] GM: check domain size on plot after change of region
     - [ ] Automated observation fit statistics (RMSE, maybe as table)
     - [x] automated plot with emissions budget by region and category
-    - (5) [ ] Integrate some visualisation of the emission budget in configuration part of the GUI (to allow perform a quick sanity check)
+    - (7) [ ] GM: Integrate some visualisation of the emission budget in configuration part of the GUI (to allow perform a quick sanity check)
     - [x] plot comparison with observations
 - GUI (extension)    
     - [ ] (re) implement possibility to pass defaults through a YAML file
@@ -17,10 +22,10 @@
     - [ ] implement submitting with same job ID would overwrite the previous job with the same ID, to avoid submitting the same job twice, to save resources (not needed immediately)
     - [ ] think about permission for co-working on same code base
 - TM5 speedup
-    - (3) [ ] speedup reading emissions, and check correct implementation in zoom
+    - (5) [ ] GM: speedup reading emissions, and check correct implementation in zoom (if this does not work then we interact more with Arjo)
 - TM5 analyses, open questions regarding our initial TM5 runs with prior emission fields: to be addressed with long run on COSMOS:
-    - (4) [ ] implement and test reading of the CAMS reanalysis OH field (to be used for the troposhere, for the stratosphere we'll rather use Bruehl et al.), this should be the default, Spivakovsky is kept-     - (2) [ ] perform one year forward run with recent code update and 0.75 factor for Spivakovsky OH -> MV
-    - (1) [ ] simulated variability of Cabauw appears too small; do forward run with out model setup and posterior emission fields from CAMS inversion -> TK to send email to Arjo asking whether the CAMS CH4 inversion posterior concentration has seen posterior emissions with higher temporal variability than the reported monthly 
+    - [ ] implement and test reading of the CAMS reanalysis OH field (to be used for the troposhere, for the stratosphere we'll rather use Bruehl et al.), this should be the default, Spivakovsky is kept-
+    - (1) [ ] MV simulated variability of Cabauw appears too small; Check sampling heights in CAMS and FIT-IC curves are correct 
 - Documentation
     - [ ] properly setup github pages with mkdocs
 - Inversion
