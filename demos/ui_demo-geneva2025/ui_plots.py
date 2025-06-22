@@ -451,13 +451,15 @@ class StationExplorer(pn.viewable.Viewer):
         staconc = ncmix[itrac,:].data
         data_dict = {'time':self._dates, self.tracer: staconc}
         df = DataFrame.from_dict(data_dict)
-        #
-        #-- compare against cams
-        #
-        dfcams = cams_at_obspack_load_conctseries(camsfile,
-                                                  stalon,
-                                                  stalat,
-                                                  sta_alt)
+        #-- MVO-20250622:don't show CAMS in Geneva demo
+        # #
+        # #-- compare against cams
+        # #
+        # dfcams = cams_at_obspack_load_conctseries(camsfile,
+        #                                           stalon,
+        #                                           stalat,
+        #                                           sta_alt)
+        dfcams = one
         if not dfcams is None:
             #
             #-- merging daily averages from TM5 simulation and CAMS
