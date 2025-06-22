@@ -56,17 +56,33 @@ def fix_env() -> None:
 #   - COSMOS
 #   - ICOS Jupyter Hub
 #
+#
+#
+#       COSMOS
+#
+#
 if get_hostname().find('cosmos')>=0:
     outdir_default = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir/testruns_output-cosmos-home_until-2025-03-14/testruns.v5/tm5simu-tropo34-avengers-1_meteo-coarsened-True_Makefile.singularity.ifort_platform-cx03/output_2021-01-01--2022-01-01')
     #-- pre-computed outputs
     outdir_default = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir/ga2025/fitic-simu-default_platform-cx03/output_2021-01-01--2022-01-01')
     outdir_overwrite = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir/ga2025/fitic-simu-overwrite_platform-cx03/output_2021-01-01--2022-01-01')
+    #
+    #-- 2025-06-22:: updated for Geneva25 presentation
+    #                results based on TM5 code including fix for chemistry applied by Guillaume
+    outdir_default = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir/testrun_fitic-single-tracer_fixed-chem/tm5simu_avengers-1_Makefile.singularity.ifort_platform-cx03/output_2021-01-01--2022-01-01')
+    outdir_edgarflat = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir/testrun_fitic-edgarflat-single-tracer_fixed-chem/tm5simu_avengers-1_Makefile.singularity.ifort_platform-cx03/output_20210101--20220101')
     camsfile = '/lunarc/nobackup/projects/ghg_inv/michael/CAMS/ch4/cams_ch4conc_at-obspack-locations_2021.nc'
     obspackdir = '/lunarc/nobackup/projects/ghg_inv/michael/FIT-IC/obspack_ch4_1_GLOBALVIEWplus_v6.0_2023-12-01/data/nc'
     logger.remove()
     logger.add(sys.stdout, level="DEBUG")
+#
+#
+#       ICOS jupyter lab
+#
+#
 elif is_jupyterhub(): #-- ICOS jupyter lab
     outdir_default = Path('/project/fit_ic/data/output_misc/output_2021-01-01--2022-01-01_avengers-1_singletracer_all-emis-default')
+    outdir_edgarflat = Path('/project/fit_ic/data/output_misc/output_2021-01-01--2022-01-01_avengers-1_singletracer_all-emis-edgarflat')
     camsfile = '/project/fit_ic/data/validation/cams_ch4conc_at-obspack-locations_2021.nc'
     obspackdir = '/project/fit_ic/data/validation/obspack_ch4_1_GLOBALVIEWplus_v6.0_2023-12-01/data/nc'
     #
@@ -77,6 +93,10 @@ elif is_jupyterhub(): #-- ICOS jupyter lab
     #                (data synchronised from cosmos to pancake)
     outdir_default = Path('/data/avengers/ga2025/fit-ic_precomputed-output/fitic-simu-default_platform-cx03/output_2021-01-01--2022-01-01')
     outdir_overwrite = Path('/data/avengers/ga2025/fit-ic_precomputed-output/fitic-simu-overwrite_platform-cx03/output_2021-01-01--2022-01-01')
+    #
+    #-- 2025-06-22:: updated for Geneva25 presentation
+    #                results based on TM5 code including fix for chemistry applied by Guillaume
+    outdir_default = Path('/data/avengers/geneva2025/fit-ic_precomputed-output/fitic-simu-default/output_2021-01-01--2022-01-01')
     camsfile = '/data/avengers/fit_ic/validation/cams_ch4conc_at-obspack-locations_2021.nc'
     obspackdir = '/data/avengers/fit_ic/validation/obspack_ch4_1_GLOBALVIEWplus_v6.0_2023-12-01/data/nc'
     #-- no loguru logging on ICOS
