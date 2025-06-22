@@ -459,7 +459,7 @@ class StationExplorer(pn.viewable.Viewer):
         #                                           stalon,
         #                                           stalat,
         #                                           sta_alt)
-        dfcams = one
+        dfcams = None
         if not dfcams is None:
             #
             #-- merging daily averages from TM5 simulation and CAMS
