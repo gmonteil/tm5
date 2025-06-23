@@ -32,7 +32,7 @@ from ui_util import fix_env
 from ui_util import cams_at_obspack_load_conctseries
 from ui_util import obspack_load_conctseries
 from ui_util import outdir_default, outdir_overwrite, outdir_edgarflat
-from uu_util import camsfile, obspackdir #-- Note: camsfile not required in Geneva25 demo
+from ui_util import camsfile, obspackdir #-- Note: camsfile not required in Geneva25 demo
 
 #
 #
