@@ -69,9 +69,9 @@ if get_hostname().find('cosmos')>=0:
         msg = f"directory with pre-computed simulations not found -->{demo_geneva_precompdir}<--"
         raise RuntimeError(msg)
     demo_geneva_precompdir = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir')
-    outdir_default = demo_geneva_precompdir / 'testrun_fitic-single-tracer_fixed-chem/tm5simu_avengers-1_Makefile.singularity.ifort_platform-cx03/output_2021-01-01--2022-01-01')
+    outdir_default = demo_geneva_precompdir / 'testrun_fitic-single-tracer_fixed-chem/tm5simu_avengers-1_Makefile.singularity.ifort_platform-cx03/output_2021-01-01--2022-01-01'
     outdir_overwrite = demo_geneva_precompdir / 'testrun_fitic-edgarflat-single-tracer_fixed-chem/tm5simu_avengers-1_Makefile.singularity.ifort_platform-cx03'
-    outdir_edgarflat = demo_geneva_precompdir / 'testrun_fitic-edgarflat-single-tracer_fixed-chem/tm5simu_avengers-1_Makefile.singularity.ifort_platform-cx03/output_20210101--20220101')
+    outdir_edgarflat = demo_geneva_precompdir / 'testrun_fitic-edgarflat-single-tracer_fixed-chem/tm5simu_avengers-1_Makefile.singularity.ifort_platform-cx03/output_20210101--20220101'
     camsfile = '/lunarc/nobackup/projects/ghg_inv/michael/CAMS/ch4/cams_ch4conc_at-obspack-locations_2021.nc'
     obspackdir = '/lunarc/nobackup/projects/ghg_inv/michael/FIT-IC/obspack_ch4_1_GLOBALVIEWplus_v6.0_2023-12-01/data/nc'
     logger.remove()
@@ -107,7 +107,7 @@ elif get_hostname().find('mvobook2')>=0:
     if not demo_geneva_precompdir.exists():
         msg = f"directory with pre-computed simulations not found -->{demo_geneva_precompdir}<--"
         raise RuntimeError(msg)
-    outdir_default   = demo_geneva_precompdir / 'fitic-simu-default/output_2021-01-01--2022-01-01')
+    outdir_default   = demo_geneva_precompdir / 'fitic-simu-default/output_2021-01-01--2022-01-01'
     outdir_overwrite = demo_geneva_precompdir / 'fitic-simu-overwrite/output_2021-01-01--2022-01-01')
     outdir_edgarflat = demo_geneva_precompdir / 'fitic-simu-edgarflat/output_2021-01-01--2022-01-01'
     camsfile = '/data/avengers/fit_ic/validation/cams_ch4conc_at-obspack-locations_2021.nc'
