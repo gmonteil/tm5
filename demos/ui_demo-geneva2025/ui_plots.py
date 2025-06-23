@@ -577,7 +577,9 @@ class StationExplorer(pn.viewable.Viewer):
         dfplot = dfplot.rename(columns=rename_map)
 
         #--
-        plot_columns = ['time', rename_map[self.tracer],]
+        plot_columns = ['time', rename_map[self.tracer], ]
+        if 'FIT-IC (flat anthropogenic)' in dfplot.columns:
+            plot_columns += ['FIT-IC (flat anthropogenic)',]
         for _c in dfplot.columns:
             if _c.startswith('cams') or _c.startswith('obspack'):
                 plot_columns.append(_c)

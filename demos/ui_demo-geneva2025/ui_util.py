@@ -91,7 +91,7 @@ elif is_jupyterhub(): #-- ICOS jupyter lab
         raise RuntimeError(msg)
     outdir_default   = demo_geneva_precompdir / 'fitic-simu-default/output_2021-01-01--2022-01-01'
     outdir_overwrite = demo_geneva_precompdir / 'fitic-simu-overwrite/output_2021-01-01--2022-01-01'
-    outdir_edgarflat = demo_geneva_precompdir / 'fitic-simu-edgarflat/output_2021-01-01--2022-01-01'
+    outdir_edgarflat = demo_geneva_precompdir / 'fitic-simu-edgarflat/output_20210101--20220101'
     camsfile = '/data/avengers/fit_ic/validation/cams_ch4conc_at-obspack-locations_2021.nc'
     obspackdir = '/data/avengers/fit_ic/validation/obspack_ch4_1_GLOBALVIEWplus_v6.0_2023-12-01/data/nc'
     #-- no loguru logging on ICOS
