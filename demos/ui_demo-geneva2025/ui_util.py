@@ -109,7 +109,7 @@ elif get_hostname().find('mvobook2')>=0:
         raise RuntimeError(msg)
     outdir_default   = demo_geneva_precompdir / 'fitic-simu-default/output_2021-01-01--2022-01-01'
     outdir_overwrite = demo_geneva_precompdir / 'fitic-simu-overwrite/output_2021-01-01--2022-01-01'
-    outdir_edgarflat = demo_geneva_precompdir / 'fitic-simu-edgarflat/output_2021-01-01--2022-01-01'
+    outdir_edgarflat = demo_geneva_precompdir / 'fitic-simu-edgarflat/output_20210101--20220101'
     camsfile = '/data/avengers/fit_ic/validation/cams_ch4conc_at-obspack-locations_2021.nc'
     obspackdir = '/data/avengers/fit_ic/validation/obspack_ch4_1_GLOBALVIEWplus_v6.0_2023-12-01/data/nc'
 else:
@@ -296,15 +296,20 @@ def obspack_load_conctseries( obspackdir :  Union[str, Path],
         logger.warning(msg)
         return dfobs
     else:
+        nfiles = len(file_lst)
         # msg = f"...@{sta_tag}, {len(file_lst)} candidate files " \
         #     f"(***{[_.name for _ in file_lst]}***)"
         # logger.info(msg)
         obspack_dict = None
         obspack_fpath = None
+        obspack_ch4_lst = [None]*nfiles
+        altdif_lst = np.full(nfiles, np.inf)
         for ipath,fpath in enumerate(file_lst):
             ch4_dict = load_obspack_ch4(fpath,
                                         date_first=tcover_start,
                                         date_last=tcover_end)
+            # print(f"fpath ***{fpath}*** yields\n{ch4_dict}")
+            obspack_ch4_lst[ipath] = ch4_dict
             if ch4_dict==None:
                 continue
             elev = ch4_dict.get('elevation',None)
@@ -315,16 +320,26 @@ def obspack_load_conctseries( obspackdir :  Union[str, Path],
             elif len(alt)==0:
                 continue #-- Hmm, obspack data file without measurement height...
             alt_dif = np.max(np.abs(altq-alt))
-            if alt_dif<=1: #-- less than 1meter difference
-                obspack_fpath = fpath
-                obspack_dict = ch4_dict
-                msg = f"...@{sta_tag} (height={altq}), selected file ***{obspack_fpath}*** (alt_dif={alt_dif}[m])"
-                logger.debug(msg)
-                break
+            altdif_lst[ipath] = alt_dif
+            # if alt_dif<=1: #-- less than 1meter difference
+            #     obspack_fpath = fpath
+            #     obspack_dict = ch4_dict
+            #     msg = f"...@{sta_tag} (height={altq}), selected file ***{obspack_fpath}*** (alt_dif={alt_dif}[m])"
+            #     logger.debug(msg)
+            #     break
+        ialtmin = np.argmin(altdif_lst)
+        altdif_min = altdif_lst[ialtmin]
+        msg = f"minimal difference in altitude at file ***{file_lst[ialtmin]}***, minimal difference in altitude -->{altdif_min}<--"
+        logger.info(msg)
+        if altdif_min<10: #
+            obspack_fpath = file_lst[ialtmin]
+            obspack_dict  = obspack_ch4_lst[ialtmin]
         if obspack_fpath==None:
             msg = f"...@{sta_tag} (height={altq}), no matching obspack observation found."
             logger.warning(msg)
         else:
+            msg = f"...using obspack data from file ***{obspack_fpath}*** for comparison."
+            logger.info(msg)
             dfobs = pd.DataFrame.from_dict({'time':obspack_dict['time'],
                                             'obspack_ch4':obspack_dict['ch4']})
     return dfobs
@@ -428,3 +443,23 @@ def load_obspack_ch4(filepath : Union[str,Path],
     fp.close()
 
     return ch4_dict
+
+
+if __name__ == '__main__':
+
+    obspackdir = '/srv/data/avengers/fit_ic/validation/obspack_ch4_1_GLOBALVIEWplus_v6.0_2023-12-01/data/nc'
+    # // group attributes:
+    #               :name = "South Pole, Antarctica" ;
+    #               :latitude = -89.98 ;
+    #               :longitude = -24.8 ;
+    #               :altitude = 2821. ;
+    #               :region = "glb600x400" ;
+    #               :abbr = "FM/spo_11" ;
+    sta_tag = 'spo_11'
+    lonq = -24.8
+    latq = -89.98
+    altq = 2821.
+    tstart = pd.Timestamp('20210101')
+    tend   = pd.Timestamp('20211231')
+    ch4_dict = obspack_load_conctseries(obspackdir, tstart, tend,
+                                        sta_tag, lonq, latq, altq)
