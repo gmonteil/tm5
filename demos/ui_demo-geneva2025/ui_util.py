@@ -108,7 +108,7 @@ elif get_hostname().find('mvobook2')>=0:
         msg = f"directory with pre-computed simulations not found -->{demo_geneva_precompdir}<--"
         raise RuntimeError(msg)
     outdir_default   = demo_geneva_precompdir / 'fitic-simu-default/output_2021-01-01--2022-01-01'
-    outdir_overwrite = demo_geneva_precompdir / 'fitic-simu-overwrite/output_2021-01-01--2022-01-01')
+    outdir_overwrite = demo_geneva_precompdir / 'fitic-simu-overwrite/output_2021-01-01--2022-01-01'
     outdir_edgarflat = demo_geneva_precompdir / 'fitic-simu-edgarflat/output_2021-01-01--2022-01-01'
     camsfile = '/data/avengers/fit_ic/validation/cams_ch4conc_at-obspack-locations_2021.nc'
     obspackdir = '/data/avengers/fit_ic/validation/obspack_ch4_1_GLOBALVIEWplus_v6.0_2023-12-01/data/nc'
