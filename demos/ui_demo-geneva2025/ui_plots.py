@@ -31,7 +31,8 @@ hv.extension('bokeh')
 from ui_util import fix_env
 from ui_util import cams_at_obspack_load_conctseries
 from ui_util import obspack_load_conctseries
-from ui_util import outdir_default, outdir_overwrite, camsfile, obspackdir
+from ui_util import outdir_default, outdir_overwrite, outdir_edgarflat
+from uu_util import camsfile, obspackdir #-- Note: camsfile not required in Geneva25 demo
 
 #
 #
@@ -366,9 +367,9 @@ class EmissionExplorer(pn.viewable.Viewer):
         self.dates = mp_dates['glb600x400']
 
 class StationExplorer(pn.viewable.Viewer):
-    tracer = param.Selector()
+    tracer  = param.Selector()
     station = param.Selector()
-    data = param.ObjectSelector()
+    data    = param.ObjectSelector()
     
     def __init__(self, settings, mode : str = 'precomputed_default'):
         super().__init__()
@@ -376,29 +377,49 @@ class StationExplorer(pn.viewable.Viewer):
         #
         #--
         #
-        if mode=='precomputed_default':
-            self.outdir_precomputed = outdir_default
-        elif mode=='precomputed_regional':
-            self.outdir_precomputed = outdir_overwrite
-        else:
-            msg = f"selected mode -->{mode}<-- not supported."
-            raise RuntimeError(msg)
-        self.stations_file = self.outdir_precomputed / 'stations' / 'stations.nc4'
+        self.precompoutdir_default = outdir_default
+        self.precompoutdir_flat    = outdir_edgarflat
+        self.precompoutdir_ovr     = outdir_overwrite
+        #
+        #-- up to 3 files with simulated concentrations at stations
+        #
+        self.stations_file_default = self.precompoutdir_default / 'stations' / 'stations.nc4'
+        self.stations_file_flat    = self.precompoutdir_flat / 'stations' / 'stations.nc4'
         #-- basic consistency tests
-        if not self.stations_file.exists():
+        if not self.stations_file_default.exists():
             msg =f"file with simulated concentrations at stations " \
-                f"==>{self.stations_file}<== is not accessible."
+                f"==>{self.stations_file_default}<== is not accessible."
             raise RuntimeError(msg)
-        self.data = nc4.Dataset(str(self.stations_file))
-        self._dates = [Timestamp(*_) for _ in self.data['date_midpoints'][:]]
-        
-        ntrac = self.data.dimensions['tracers']
-        tracers = [getattr(self.data, f'tracer_{itrac+1:03.0f}') for itrac in range(self.data.dimensions['tracers'].size)]
+        elif not self.stations_file_flat.exists():
+            msg =f"file with simulated concentrations at stations " \
+                f"==>{self.stations_file_flat}<== is not accessible."
+            raise RuntimeError(msg)
+        #
+        #-- open station NetCDF files
+        #
+        self.data_default = nc4.Dataset(str(self.stations_file_default))
+        self.data_flat    = nc4.Dataset(str(self.stations_file_flat))
+        #
+        #--
+        #
+        assert np.all(self.data_default['date_midpoints'][:]==self.data_flat['date_midpoints'][:])
+        #
+        #-- store concentration dates
+        #
+        self._dates = [Timestamp(*_) for _ in self.data_default['date_midpoints'][:]]
+        #
+        #-- store tracer names (expected to be equal among simulations)
+        #
+        ntrac = self.data_default.dimensions['tracers']
+        tracers = [getattr(self.data_default, f'tracer_{itrac+1:03.0f}') for itrac in range(self.data_default.dimensions['tracers'].size)]
         self.param.tracer.objects = tracers
         self.tracer = tracers[0]
         #
 
-        stations = sorted(set([self.data[_].getncattr('name') for _ in self.data.groups]))
+        #
+        #-- for the panel
+        #
+        stations = sorted(set([self.data_default[_].getncattr('name') for _ in self.data_default.groups]))
         self.param.station.objects = sorted(stations)
         self.station = stations[-1]
         
@@ -410,7 +431,10 @@ class StationExplorer(pn.viewable.Viewer):
         )
 
     def _get_unit(self, station_id):
-        stagrp = self.data[station_id]
+        #
+        #-- mixing unit is equal among default/overwrite/edgarflat
+        #
+        stagrp = self.data_default[station_id]
         ncmix = stagrp['mixing_ratio']
         assert ncmix.dimensions==('tracers','samples')
         mix_unit = ncmix.unit
@@ -425,32 +449,46 @@ class StationExplorer(pn.viewable.Viewer):
         if self.tracer is None or self.station is None:
             return
         #-- temporal coverage
-        tcover_start = pd.Timestamp(self.data.getncattr('starting time'))
-        tcover_end   = pd.Timestamp(self.data.getncattr('ending time'))
+        tcover_start = pd.Timestamp(self.data_default.getncattr('starting time'))
+        tcover_end   = pd.Timestamp(self.data_default.getncattr('ending time'))
         # print(tcover_start)
         # print(tcover_end)
+        #
         #-- pick stations with matching name
-        station_ids = [_ for _ in self.data.groups if self.data[_].getncattr('name') == self.station]
+        #
+        station_ids = [_ for _ in self.data_default.groups if self.data_default[_].getncattr('name') == self.station]
         #
         #-- currently restrict to upper-most vertical level
         #
-        station_level = [self.data[_].getncattr('altitude') for _ in station_ids]
+        station_level = [self.data_default[_].getncattr('altitude') for _ in station_ids]
         station_ids = station_ids[station_level.index(max(station_level))]
         #
         #--
         #
         # print(f"DEBUG ***{station_ids}***")
-        stagrp = self.data[station_ids]
+        stagrp = self.data_default[station_ids]
         abbr_tag = stagrp.abbr.replace('FM/','')
         sta_alt = stagrp.altitude
         stalon = stagrp.longitude
         stalat = stagrp.latitude
         sta_region   = stagrp.region
+        #
+        #-- load (default) concentration at station (and level),
+        #   insert into data frame
+        #
         ncmix = stagrp['mixing_ratio']
         itrac = self.param.tracer.objects.index(self.tracer)
         staconc = ncmix[itrac,:].data
         data_dict = {'time':self._dates, self.tracer: staconc}
         df = DataFrame.from_dict(data_dict)
+        #
+        #-- add simulation with flat profile
+        #
+        stagrp_flat = self.data_flat[station_ids]
+        ncmix_flat = stagrp_flat['mixing_ratio']
+        itrac = self.param.tracer.objects.index(self.tracer)
+        staconc_flat = ncmix_flat[itrac,:].data
+        df['FIT-IC (flat anthropogenic)'] = staconc_flat[:]
         #-- MVO-20250622:don't show CAMS in Geneva demo
         # #
         # #-- compare against cams
@@ -459,7 +497,7 @@ class StationExplorer(pn.viewable.Viewer):
         #                                           stalon,
         #                                           stalat,
         #                                           sta_alt)
-        dfcams = None
+        dfcams = None #-- i.e. not showing CAMS concentrations
         if not dfcams is None:
             #
             #-- merging daily averages from TM5 simulation and CAMS
