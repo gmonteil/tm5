@@ -375,7 +375,12 @@ class StationExplorer(pn.viewable.Viewer):
         super().__init__()
         self.settings = settings
         #
-        #--
+        #-- station plot comparison against obspack
+        #   currently limited to single level (no button yet to set level)
+        #
+        self.vlevel = 'lowest'
+        #
+        #-- directories with pre-computed output
         #
         self.precompoutdir_default = outdir_default
         self.precompoutdir_flat    = outdir_edgarflat
@@ -385,6 +390,7 @@ class StationExplorer(pn.viewable.Viewer):
         #
         self.stations_file_default = self.precompoutdir_default / 'stations' / 'stations.nc4'
         self.stations_file_flat    = self.precompoutdir_flat / 'stations' / 'stations.nc4'
+        self.stations_file_ovr     = self.precompoutdir_ovr / 'stations' / 'stations.nc4'
         #-- basic consistency tests
         if not self.stations_file_default.exists():
             msg =f"file with simulated concentrations at stations " \
@@ -394,11 +400,16 @@ class StationExplorer(pn.viewable.Viewer):
             msg =f"file with simulated concentrations at stations " \
                 f"==>{self.stations_file_flat}<== is not accessible."
             raise RuntimeError(msg)
+        # elif not self.stations_file_ovr.exists():
+        #     msg =f"file with simulated concentrations at stations " \
+        #         f"==>{self.stations_file_ovr}<== is not accessible."
+        #     raise RuntimeError(msg)
         #
         #-- open station NetCDF files
         #
         self.data_default = nc4.Dataset(str(self.stations_file_default))
         self.data_flat    = nc4.Dataset(str(self.stations_file_flat))
+        # self.data_ovr     = nc4.Dataset(str(self.stations_file_ovr))
         #
         #--
         #
@@ -451,17 +462,24 @@ class StationExplorer(pn.viewable.Viewer):
         #-- temporal coverage
         tcover_start = pd.Timestamp(self.data_default.getncattr('starting time'))
         tcover_end   = pd.Timestamp(self.data_default.getncattr('ending time'))
-        # print(tcover_start)
-        # print(tcover_end)
+        # #MVDEBUG
+        # # print(tcover_start)
+        # # print(tcover_end)
         #
         #-- pick stations with matching name
         #
         station_ids = [_ for _ in self.data_default.groups if self.data_default[_].getncattr('name') == self.station]
         #
-        #-- currently restrict to upper-most vertical level
+        #-- vertical level of simulation
         #
         station_level = [self.data_default[_].getncattr('altitude') for _ in station_ids]
-        station_ids = station_ids[station_level.index(max(station_level))]
+        #
+        #-- currently restrict to upper-most vertical level
+        #
+        if self.vlevel=='lowest':
+            station_ids = station_ids[station_level.index(min(station_level))]
+        else:
+            station_ids = station_ids[station_level.index(max(station_level))]
         #
         #--
         #
@@ -515,7 +533,7 @@ class StationExplorer(pn.viewable.Viewer):
             ### TESTING ONLY
             # dfplot = dfd.reset_index()
         else:
-            dfplot = df
+            dfplot = df.copy()
         #
         #-- add comparison against obspack
         #
@@ -534,16 +552,26 @@ class StationExplorer(pn.viewable.Viewer):
                 #     f"{dfobspack['time'].min()} to {dfobspack['time'].max()}"
                 # print(msg)
                 #
+                #-- for now comparison only with daily averages
+                #
+                dfd = dfplot.copy()
+                dfd.index = dfd['time']
+                dfd = dfd.drop(['time',], axis=1)
+                dfd = dfd.resample('D').mean()
+                dfplot = dfd
+                # dfplot = dfplot.reset_index()
+                #
                 #-- for now: convert to daily means
                 #
                 dfobspack.index = dfobspack['time']
                 dfobspack = dfobspack.drop(['time',], axis=1)
                 dfd_obspack = dfobspack.resample('D').mean()
                 dfd_obspack = dfd_obspack[dfd_obspack.notnull()]
+                # print(dfd_obspack.head(n=10))
                 #-- dfplot: make 'time' become index again
                 # print(dfd_obspack.head())
-                dfplot.index = dfplot['time']
-                dfplot = dfplot.drop(['time',], axis=1)
+                # dfplot.index = dfplot['time']
+                # dfplot = dfplot.drop(['time',], axis=1)
                 #-- insert emtpy 'obspack' column
                 dfplot['obspack'] = np.nan
                 #-- insert obspack data at dates where available
@@ -587,7 +615,8 @@ class StationExplorer(pn.viewable.Viewer):
         #     if _c in dfplot.columns:
         #         plot_columns.append(_c)
         dfplot = dfplot[plot_columns]
-        # print(dfplot.head(n=3))
+        # print(dfplot.head(n=20))
+        # print("-"*40)
         # print(f"TM5 entries: {dfplot[self.tracer].notnull().sum()}")
         # print(f"obspack:     {dfplot['obspack'].notnull().sum()}")
         hvplot = dfplot.hvplot(x='time', grid=True,
