@@ -3,11 +3,11 @@
 - prior
     - [ ] add comment or extend long name forfield "fossil" in EDGAR files to clarify that this is the sum of a number of fields in the same file(s)
 - GUI (setup)
-    - (6) [ ] GM: change: "Use different emissions for the zoom domain" -> "Use different regional emissions"
+    - (6) [ ] MV: change: "Use different emissions for the zoom domain" -> "Use different regional emissions"
     - [ ] implement only configuration with 3 level zoom "avengers-1", i.e global/Europe/NL+D+CH
-    - [4] MV to remove for the Demo in Geneva the additional Chemistry settings (from stratosphere)
-    - [2] MV are there really no data for SPO?
-    - [3] MV for the demo remove cams inversion line from station explorer and add a second FIT-IC run with flat temporal profile for anthropogenic emissions
+    - [2] GM to replace continuous line for obspack by dots or crosses 
+    - [3] GM to check again unit conversion for zoom region emissions
+    - [4] MV to check the preparation of the monthly emissions files (monthly and flat) 
 - GUI (analysis)
     - (8) [ ] GM: check domain size on plot after change of region
     - [ ] Automated observation fit statistics (RMSE, maybe as table)
@@ -22,10 +22,10 @@
     - [ ] implement submitting with same job ID would overwrite the previous job with the same ID, to avoid submitting the same job twice, to save resources (not needed immediately)
     - [ ] think about permission for co-working on same code base
 - TM5 speedup
-    - (5) [ ] GM: speedup reading emissions, and check correct implementation in zoom (if this does not work then we interact more with Arjo)
+    - (5) [ ] GM: speedup reading emissions, and check correct implementation in zoom; also check code against original version from https://sourceforge.net/p/tm5/cy3_4dvar/ci/cams-ch4/tree/ (if this does not work then we interact more with Arjo)
 - TM5 analyses, open questions regarding our initial TM5 runs with prior emission fields: to be addressed with long run on COSMOS:
     - [ ] implement and test reading of the CAMS reanalysis OH field (to be used for the troposhere, for the stratosphere we'll rather use Bruehl et al.), this should be the default, Spivakovsky is kept-
-    - (1) [ ] MV simulated variability of Cabauw appears too small; Check sampling heights in CAMS and FIT-IC curves are correct 
+    - (1) [ ] MV: make comparison between 3 pm obs at Cabauw and simulated value at same time of day
 - Documentation
     - [ ] properly setup github pages with mkdocs
 - Inversion
