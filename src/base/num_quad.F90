@@ -497,7 +497,7 @@ contains
     select case ( iflag )
       case ( -1 )
         ! a < x(1)
-        write (gol,'("interval is partly less than x :")')
+        write (gol,'("interval is partly less than x :")'); call goErr
         write (gol,'("  a       : ",es12.4)')    a; call goErr
         write (gol,'("  x(1)    : ",es12.4)') x(1); call goErr
         write (gol,'("ERROR in ",a)') rname; status=1; return
@@ -508,7 +508,7 @@ contains
         if ( present(fac) ) fac(i_a) = fac(i_a) + f
       case ( 1 )
         ! a > x(n+1)
-        write (gol,'("interval partly exceeds x :")')
+        write (gol,'("interval partly exceeds x :")'); call goErr
         write (gol,'("  a       : ",es12.4)')      a; call goErr
         write (gol,'("  x(n+1)  : ",es12.4)') x(n+1); call goErr
         write (gol,'("ERROR in ",a)') rname; status=1; return
@@ -523,7 +523,7 @@ contains
     select case ( iflag )
       case ( -1 )
         ! b < x(1)
-        write (gol,'("interval is outside x :")')
+        write (gol,'("interval is outside x :")'); call goErr
         write (gol,'("  b       : ",es12.4)')    a; call goErr
         write (gol,'("  x(1)    : ",es12.4)') x(1); call goErr
         write (gol,'("ERROR in ",a)') rname; status=1; return
@@ -540,12 +540,12 @@ contains
         if ( present(fac) ) fac(i_b) = fac(i_b) + f
       case ( 1 )
         ! b > x(n+1)
-        write (gol,'("interval exceeds x :")')
+        write (gol,'("interval exceeds x :")'); call goErr
         write (gol,'("  b       : ",es12.4)')      b; call goErr
         write (gol,'("  x(n+1)  : ",es12.4)') x(n+1); call goErr
         write (gol,'("ERROR in ",a)') rname; status=1; return
       case default
-        write (gol,'("unsupported iflag from call to Interval : ",i6)') iflag
+        write (gol,'("unsupported iflag from call to Interval : ",i6)') iflag; call goErr
         write (gol,'("in ",a)') rname; call goErr; status=1; return
     end select
 

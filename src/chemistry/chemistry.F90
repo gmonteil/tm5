@@ -239,7 +239,7 @@ module chemistry
             type(TDate), dimension(2), intent(in)       :: period
 
             real, dimension(:, :, :, :), allocatable    :: ohfield_in
-            real, dimension(:), allocatable             :: hyb_a, hyb_b 
+            real, dimension(:), allocatable             :: hyb_a, hyb_b
             character(len=*), parameter                 :: rname = mname//'/get_conc_field_cams'
 
             integer             :: ncf
@@ -250,71 +250,53 @@ module chemistry
             integer             :: nlay
             integer             :: region
 
-            print*, 'get cams'
             reaction%climatology = .false.
-            reaction%data_timestep = '3d'
-
-            print*, 'get periods'
+            reaction%data_timestep = '1m'
             reaction%data_period = get_new_period(period(1), reaction%data_timestep)
 
-            print*, 'read nc'
-            write(reacfile, '(a,i4,a)') trim(reaction%file)//'_', period(1)%year, '.nc'
-            print*, trim(reacfile)
+            ! Reset the i_period counter if we change year (i.e. if we change file). This assumes the file is annual ...
+            if (cur_year /= reaction%data_period%t1%year) then
+                cur_year = reaction%data_period%t1%year
+                i_period = 0
+            endif
 
+            ! Increase the position counter
+            i_period = i_period + 1
+
+            ! Load required data from the netCDF file
+            write(reacfile, '(a,i4,a)') trim(reaction%file)//'_', period(1)%year, '_monthly.nc'
             ncf = nc_open(reacfile, 'r', status)
             IF_NOTOK_RETURN(status=1)
-
-            print*, 'read oh'
-            ohfield_in = nc_read_var(ncf, 'oh', status)
+            ohfield_in = nc_read_var(ncf, 'OH', status)     ! needs to be pre-converted in molec/cm3!
             IF_NOTOK_RETURN(status=1)
-
-            print*, 'read at'
             hyb_a = nc_read_var(ncf, 'z_a_grid', status)
             IF_NOTOK_RETURN(status=1)
-            
-            print*, 'read bt'
             hyb_b = nc_read_var(ncf, 'z_b_grid', status)
             IF_NOTOK_RETURN(status=1)
-            
             call nc_close(ncf)
 
-            print*, 'init grid'
+            ! Create the horizontal and vertical grids for the input file
+            nlay = size(hyb_a) - 1
             call init_grid(lli_in, -179.5, 1.0, 360, -89.5, 1.0, 180, status)
             IF_NOTOK_RETURN(status=1)
 
-            print*, 'init levels'
-            call init_levels(levi_in, nlay, hyb_a, hyb_b, status, name='OH', revert=.true.)
+            call init_levels(levi_in, nlay, hyb_a, hyb_b, status, name='OH')
             IF_NOTOK_RETURN(status=1)
 
-            print*, 'regrid'
-            nlay = size(hyb_a) - 1
-
+            ! Do the regridding, for each region
             do region = 1, nregions
                 if (.not. allocated(reaction%conc(region)%values)) allocate(reaction%conc(region)%values(im(region), jm(region), lm(region)))
 
-                print*, 'init data'
                 reaction%conc(region)%values = 0.
 
-          ! mole/(mole air) * mlc/mole * (mole air)/m3 * m3/cm3 = mlc/m3
-          !                     Avog        p/(RT)     *  1e-6
-          !  data_gp = data_gp * Avog * pres_gp/(Rgas*tmpr_gp) * 1e-6  ! mlc/cm3
-
-            ! Interpolate vertically (and horizontally?)
-            ! call init_grid(lli_in, 0, 0.75, 480, -90, 0.75, 241, status)
-
-                print*, 'fill3d'
                 call fill3d( &
                     lli(region), levi, 'n', pclim_dat(region)%data(:, :, 1), &
                     reaction%conc(region)%values, lli_in, levi_in, &
-                    ohfield_in(:, :, :, reaction%data_period%t1%month), &
-                    'mass-aver', status)
+                    ohfield_in(:, :, :, i_period), &
+                    'mass-aver', status &
+                )
+                IF_NOTOK_RETURN(status=1)
             enddo
-
-            print*, 'deallocate'
-            IF_NOTOK_RETURN(status=1)
-            deallocate(ohfield_in)
-
-            print*, 'read cams oh'
 
         end subroutine get_conc_field_cams
 
@@ -374,6 +356,7 @@ module chemistry
             deallocate(field4d)
 
         end subroutine get_conc_field_spivakovsky
+
 
         function get_new_period(date, tres) result(new_period)
             ! *Very* ad-hoc function to handle the dates in this module. Only the cases that are currently in 

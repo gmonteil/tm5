@@ -110,7 +110,7 @@ contains
 
         do itrac = 1, ntracet
             call emission_fwd_apply_tracer(ireg, itrac, tracers_em_info(ireg)%tracer(itrac), tr, status)
-            call production_fwd(itrac, ireg, tr(1), tr(2))
+            !call production_fwd(itrac, ireg, tr(1), tr(2))
         end do
 
     end subroutine emission_fwd_apply
