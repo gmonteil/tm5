@@ -117,29 +117,31 @@ class CH4TracerSettings(TracerSettings):
                 domain='tropo', 
                 versions=['Spivakovsky', 'CAMS']
             ),
-            ReactionSettings(
-                reacname='CH4 + OH (stratosphere)', 
-                shortname='ohstrat', 
-                rate0=2.45e-12, 
-                rate1=-1755, 
-                domain='strato', 
-                versions=['Bruehl']
-            ),
-            ReactionSettings(
-                reacname='CH4 + O(1D)', 
-                shortname='o1d', 
-                rate0=1.5e-10, 
-                domain='strato', 
-                versions=['Bruehl']
-            ),
-            ReactionSettings(
-                reacname='CH4 + Cl', 
-                shortname='cl', 
-                rate0=7.3e-12, 
-                rate1=-1280, 
-                domain='strato', 
-                versions=['Bruehl']
-            )
+            #-- MVO::deactivated for now in the GUI since stratosphere chemistry
+            #        is not covered yet in TM5 simulation
+            # ReactionSettings(
+            #     reacname='CH4 + OH (stratosphere)', 
+            #     shortname='ohstrat', 
+            #     rate0=2.45e-12, 
+            #     rate1=-1755, 
+            #     domain='strato', 
+            #     versions=['Bruehl']
+            # ),
+            # ReactionSettings(
+            #     reacname='CH4 + O(1D)', 
+            #     shortname='o1d', 
+            #     rate0=1.5e-10, 
+            #     domain='strato', 
+            #     versions=['Bruehl']
+            # ),
+            # ReactionSettings(
+            #     reacname='CH4 + Cl', 
+            #     shortname='cl', 
+            #     rate0=7.3e-12, 
+            #     rate1=-1280, 
+            #     domain='strato', 
+            #     versions=['Bruehl']
+            # )
         ], doc='Chemical reactions')
     species = param.String('CH4')
 
