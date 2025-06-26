@@ -95,7 +95,7 @@ class EmissionSettings(pn.viewable.Viewer):
         self.pane_reg = pn.Column(self.emis_reg, visible=len(self.regions) > 1)
         self.switch_button = pn.Row(
                     pn.widgets.Switch.from_param(self.param.switch_reg, align='center'),
-                    pn.pane.Markdown("Use different emissions for the zoom domain"),
+                    pn.pane.Markdown("Use different regional emissions"),
                     visible = len(self.regions) > 1
                 )
         self.update_visibility_regional_emissions()
