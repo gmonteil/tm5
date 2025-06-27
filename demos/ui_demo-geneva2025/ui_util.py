@@ -65,12 +65,12 @@ if get_hostname().find('cosmos')>=0:
     #
     #-- 2025-06-22:: updated for Geneva25 presentation
     #                results based on TM5 code including fix for chemistry applied by Guillaume
+    demo_geneva_precompdir = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir')
     if not demo_geneva_precompdir.exists():
         msg = f"directory with pre-computed simulations not found -->{demo_geneva_precompdir}<--"
         raise RuntimeError(msg)
-    demo_geneva_precompdir = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir')
     outdir_default = demo_geneva_precompdir / 'testrun_fitic-single-tracer_fixed-chem/tm5simu_avengers-1_Makefile.singularity.ifort_platform-cx03/output_2021-01-01--2022-01-01'
-    outdir_overwrite = demo_geneva_precompdir / 'testrun_fitic-edgarflat-single-tracer_fixed-chem/tm5simu_avengers-1_Makefile.singularity.ifort_platform-cx03'
+    outdir_overwrite = demo_geneva_precompdir / 'testrun_fitic-single-tracer-overwrite_fixed-chem/tm5simu_avengers-1_Makefile.singularity.ifort_platform-cx03/output_2021-01-01--2022-01-01'
     outdir_edgarflat = demo_geneva_precompdir / 'testrun_fitic-edgarflat-single-tracer_fixed-chem/tm5simu_avengers-1_Makefile.singularity.ifort_platform-cx03/output_20210101--20220101'
     camsfile = '/lunarc/nobackup/projects/ghg_inv/michael/CAMS/ch4/cams_ch4conc_at-obspack-locations_2021.nc'
     obspackdir = '/lunarc/nobackup/projects/ghg_inv/michael/FIT-IC/obspack_ch4_1_GLOBALVIEWplus_v6.0_2023-12-01/data/nc'
@@ -283,27 +283,17 @@ def obspack_load_conctseries( obspackdir :  Union[str, Path],
                               lonq : float,
                               latq : float,
                               altq : float) -> Union[None,pd.DataFrame]:
-    #
-    #-- station tag is like: [id]_[alt]
-    #   (with alt likely level above ground
-    #
-    dfobs = None
-    id_tag,alt_tag = sta_tag.split('_')
-    fptn = f'ch4_{id_tag}*.nc'
-    file_lst = list(Path(obspackdir).glob(fptn))
-    if len(file_lst)==0:
-        msg = f"...@{sta_tag} no matching obspack files found."
-        logger.warning(msg)
-        return dfobs
-    else:
+    def _get_obspack(file_lst):
         nfiles = len(file_lst)
-        # msg = f"...@{sta_tag}, {len(file_lst)} candidate files " \
-        #     f"(***{[_.name for _ in file_lst]}***)"
-        # logger.info(msg)
-        obspack_dict = None
+        obspack_dict  = None
         obspack_fpath = None
+        dfobs         = None
         obspack_ch4_lst = [None]*nfiles
-        altdif_lst = np.full(nfiles, np.inf)
+        altdif_lst      = np.full(nfiles, np.inf)
+        altobs_lst      = np.full(nfiles, np.inf)
+        #
+        #--
+        #
         for ipath,fpath in enumerate(file_lst):
             ch4_dict = load_obspack_ch4(fpath,
                                         date_first=tcover_start,
@@ -319,19 +309,28 @@ def obspack_load_conctseries( obspackdir :  Union[str, Path],
                 continue #-- Hmm, obspack data file without measurement height...
             elif len(alt)==0:
                 continue #-- Hmm, obspack data file without measurement height...
+            #
+            #-- maximal difference between site and altitudes in obspack time-series
+            #
+            altobs_lst[ipath] = alt.mean()
             alt_dif = np.max(np.abs(altq-alt))
             altdif_lst[ipath] = alt_dif
-            # if alt_dif<=1: #-- less than 1meter difference
-            #     obspack_fpath = fpath
-            #     obspack_dict = ch4_dict
-            #     msg = f"...@{sta_tag} (height={altq}), selected file ***{obspack_fpath}*** (alt_dif={alt_dif}[m])"
-            #     logger.debug(msg)
-            #     break
-        ialtmin = np.argmin(altdif_lst)
-        altdif_min = altdif_lst[ialtmin]
+        #
+        #--
+        #
+        # print(f"***{altdif_lst}***")
+        ialtmin       = np.argmin(altdif_lst)
+        altdif_min    = altdif_lst[ialtmin]
+        altobs_at_min = altobs_lst[ialtmin]
         msg = f"minimal difference in altitude at file ***{file_lst[ialtmin]}***, minimal difference in altitude -->{altdif_min}<--"
         logger.info(msg)
-        if altdif_min<10: #
+        #
+        #--
+        #
+        if altdif_min/altobs_at_min<0.05:
+            obspack_fpath = file_lst[ialtmin]
+            obspack_dict  = obspack_ch4_lst[ialtmin]
+        elif altdif_min<10: #
             obspack_fpath = file_lst[ialtmin]
             obspack_dict  = obspack_ch4_lst[ialtmin]
         if obspack_fpath==None:
@@ -342,6 +341,39 @@ def obspack_load_conctseries( obspackdir :  Union[str, Path],
             logger.info(msg)
             dfobs = pd.DataFrame.from_dict({'time':obspack_dict['time'],
                                             'obspack_ch4':obspack_dict['ch4']})
+        return dfobs
+
+    #
+    #-- station tag is like: [id]_[alt]
+    #   (with alt likely level above ground
+    #
+    dfobs = None
+    id_tag,alt_tag = sta_tag.split('_')
+    fptn = f'ch4_{id_tag}*.nc'
+    insitu_fptn = f'ch4_{id_tag}*insitu*.nc'
+    file_lst = list(Path(obspackdir).glob(fptn))
+    noflask_file_lst = [ _ for _ in file_lst if _.stem.find('flask')<0 ]
+    if len(file_lst)==0:
+        msg = f"...@{sta_tag} no matching obspack files found."
+        logger.warning(msg)
+        return dfobs
+    #
+    #-- check non-flask files first
+    #
+    nfiles = len(noflask_file_lst)
+    if nfiles>0:
+        msg = f"...@{sta_tag}, {nfiles} candidate files " \
+            f"(***{[_.name for _ in noflask_file_lst]}***)"
+        logger.info(msg)
+        dfobs = _get_obspack(noflask_file_lst)
+    #
+    #-- none of those matched criteria
+    #
+    if dfobs is None:
+        flask_file_lst = [_ for _ in file_lst if not _ in noflask_file_lst]
+        if len(flask_file_lst) > 0:
+            dfobs = _get_obspack(flask_file_lst)
+
     return dfobs
 
 

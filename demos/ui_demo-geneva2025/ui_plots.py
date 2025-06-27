@@ -379,6 +379,8 @@ class StationExplorer(pn.viewable.Viewer):
         #   currently limited to single level (no button yet to set level)
         #
         self.vlevel = 'lowest'
+        self.fitic_comparison = 'flat'
+        self.default_site = None
         #
         #-- directories with pre-computed output
         #
@@ -400,20 +402,21 @@ class StationExplorer(pn.viewable.Viewer):
             msg =f"file with simulated concentrations at stations " \
                 f"==>{self.stations_file_flat}<== is not accessible."
             raise RuntimeError(msg)
-        # elif not self.stations_file_ovr.exists():
-        #     msg =f"file with simulated concentrations at stations " \
-        #         f"==>{self.stations_file_ovr}<== is not accessible."
-        #     raise RuntimeError(msg)
-        #
+        elif not self.stations_file_ovr.exists():
+            msg =f"file with simulated concentrations at stations " \
+                f"==>{self.stations_file_ovr}<== is not accessible."
+            raise RuntimeError(msg)
+        
         #-- open station NetCDF files
         #
         self.data_default = nc4.Dataset(str(self.stations_file_default))
         self.data_flat    = nc4.Dataset(str(self.stations_file_flat))
-        # self.data_ovr     = nc4.Dataset(str(self.stations_file_ovr))
+        self.data_ovr     = nc4.Dataset(str(self.stations_file_ovr))
         #
         #--
         #
         assert np.all(self.data_default['date_midpoints'][:]==self.data_flat['date_midpoints'][:])
+        assert np.all(self.data_default['date_midpoints'][:]==self.data_ovr['date_midpoints'][:])
         #
         #-- store concentration dates
         #
@@ -432,7 +435,22 @@ class StationExplorer(pn.viewable.Viewer):
         #
         stations = sorted(set([self.data_default[_].getncattr('name') for _ in self.data_default.groups]))
         self.param.station.objects = sorted(stations)
-        self.station = stations[-1]
+        #
+        #-- defaults to last site in list
+        #
+        if self.default_site==None:
+            try:
+                idx = stations.index("Mauna Loa, Hawaii")
+                # idx = stations.index("Palmer Station, Antarctica")
+            except ValueError:
+                idx = -1
+            self.station = stations[idx]
+        else:
+            try:
+                idx = self.station.index(self.default_site)
+            except ValueError:
+                idx = -1
+            self.station = stations[idx]
         
     def __panel__(self):
         return pn.Column(
@@ -441,6 +459,21 @@ class StationExplorer(pn.viewable.Viewer):
             hv.DynamicMap(self.plot_timeseries),
         )
 
+    def set_vertical_level(self, level : str = 'lowest'):
+        if not level in ['highest','lowest']:
+            msg = f"unsupported level -->{level}<--"
+            raise RuntimeError(msg)
+        self.vlevel = level
+
+    def set_fitic_comparison(self, cmptag : str = 'flat'):
+        if not cmptag in ['flat','regional',]:
+            msg = f"comparison mode -->{cmptag}<-- not supported yet."
+            raise RuntimeError(msg)
+        self.fitic_comparison = cmptag
+
+    def set_default_site(self, site_name):
+        self.default_site = site_name
+        
     def _get_unit(self, station_id):
         #
         #-- mixing unit is equal among default/overwrite/edgarflat
@@ -502,11 +535,16 @@ class StationExplorer(pn.viewable.Viewer):
         #
         #-- add simulation with flat profile
         #
-        stagrp_flat = self.data_flat[station_ids]
-        ncmix_flat = stagrp_flat['mixing_ratio']
+        if self.fitic_comparison=='flat':
+            stagrp_cmp = self.data_flat[station_ids]
+            fitic_cmp_column = 'FIT-IC (flat anthropogenic)'
+        else:
+            stagrp_cmp = self.data_ovr[station_ids]
+            fitic_cmp_column = 'FIT-IC (regional emissions)'
+        ncmix_cmp = stagrp_cmp['mixing_ratio']
         itrac = self.param.tracer.objects.index(self.tracer)
-        staconc_flat = ncmix_flat[itrac,:].data
-        df['FIT-IC (flat anthropogenic)'] = staconc_flat[:]
+        staconc_cmp = ncmix_cmp[itrac,:].data
+        df[fitic_cmp_column] = staconc_cmp[:]
         #-- MVO-20250622:don't show CAMS in Geneva demo
         # #
         # #-- compare against cams
@@ -548,9 +586,9 @@ class StationExplorer(pn.viewable.Viewer):
             #-- there seem to be simulated stations
             #   where no appropriate obspack counterpart is available...
             if not dfobspack is None:
-                # msg = f"DEBUG @{abbr_tag}, obspack preparation ({dfobspack.shape}), " \
-                #     f"{dfobspack['time'].min()} to {dfobspack['time'].max()}"
-                # print(msg)
+                msg = f"DEBUG @{abbr_tag}, obspack preparation ({dfobspack.shape}), " \
+                    f"{dfobspack['time'].min()} to {dfobspack['time'].max()}"
+                print(msg)
                 #
                 #-- for now comparison only with daily averages
                 #
@@ -606,8 +644,8 @@ class StationExplorer(pn.viewable.Viewer):
 
         #--
         plot_columns = ['time', rename_map[self.tracer], ]
-        if 'FIT-IC (flat anthropogenic)' in dfplot.columns:
-            plot_columns += ['FIT-IC (flat anthropogenic)',]
+        if fitic_cmp_column in dfplot.columns:
+            plot_columns += [fitic_cmp_column,]
         for _c in dfplot.columns:
             if _c.startswith('cams') or _c.startswith('obspack'):
                 plot_columns.append(_c)
