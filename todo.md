@@ -1,9 +1,9 @@
 # Tasks (by order of priority)
 
 - prior
-    - [ ] add comment or extend long name forfield "fossil" in EDGAR files to clarify that this is the sum of a number of fields in the same file(s)
+    - [x] add comment or extend long name forfield "fossil" in EDGAR files to clarify that this is the sum of a number of fields in the same file(s)
 - GUI (setup)
-    - (6) [ ] MV: change: "Use different emissions for the zoom domain" -> "Use different regional emissions"
+    - (6) [x] MV: change: "Use different emissions for the zoom domain" -> "Use different regional emissions"
     - [ ] implement only configuration with 3 level zoom "avengers-1", i.e global/Europe/NL+D+CH
     - [2] GM to replace continuous line for obspack by dots or crosses 
     - [3] GM to check again unit conversion for zoom region emissions
