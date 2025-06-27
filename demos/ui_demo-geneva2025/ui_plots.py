@@ -586,9 +586,9 @@ class StationExplorer(pn.viewable.Viewer):
             #-- there seem to be simulated stations
             #   where no appropriate obspack counterpart is available...
             if not dfobspack is None:
-                msg = f"DEBUG @{abbr_tag}, obspack preparation ({dfobspack.shape}), " \
-                    f"{dfobspack['time'].min()} to {dfobspack['time'].max()}"
-                print(msg)
+                # msg = f"DEBUG @{abbr_tag}, obspack preparation ({dfobspack.shape}), " \
+                #     f"{dfobspack['time'].min()} to {dfobspack['time'].max()}"
+                # print(msg)
                 #
                 #-- for now comparison only with daily averages
                 #
