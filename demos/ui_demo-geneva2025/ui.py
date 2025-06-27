@@ -132,7 +132,7 @@ class FieldSelector(pn.viewable.Viewer):
         if len(available_files) > 0:
             ds = xr.open_dataset(available_files[0])
 
-            if 'comment' in ds.attrs:
+            if 'comment' in ds[self.fieldname].attrs:
                 self.widgets['info'].object = f"""
                 {ds.attrs.get('description', '`file description missing`')}
                 
