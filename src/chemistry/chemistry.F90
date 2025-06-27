@@ -25,6 +25,10 @@ module chemistry
 
     character(len=*), parameter   ::  mname = 'chemistry'
 
+
+    ! Internal variables
+    integer     :: cur_year=-1, i_period   ! Counters for get_conc_field_cams
+
     contains
 
         subroutine chemistry_init(status)
