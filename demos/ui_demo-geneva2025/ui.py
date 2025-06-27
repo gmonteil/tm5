@@ -132,13 +132,23 @@ class FieldSelector(pn.viewable.Viewer):
         if len(available_files) > 0:
             ds = xr.open_dataset(available_files[0])
 
-            self.widgets['info'].object = f"""
-            {ds.attrs.get('description', '`file description missing`')}
-            
-            **{self.fieldname}**
-            - *long_name*\t: {ds[self.fieldname].long_name}
-            - *units*\t: {ds[self.fieldname].units}
-            """
+            if 'comment' in ds.attrs:
+                self.widgets['info'].object = f"""
+                {ds.attrs.get('description', '`file description missing`')}
+                
+                **{self.fieldname}**
+                - *long_name*\t: {ds[self.fieldname].long_name}
+                - *units*\t: {ds[self.fieldname].units}
+                - *comment*\t: {ds[self.fieldname].comment}
+                """
+            else:
+                self.widgets['info'].object = f"""
+                {ds.attrs.get('description', '`file description missing`')}
+                
+                **{self.fieldname}**
+                - *long_name*\t: {ds[self.fieldname].long_name}
+                - *units*\t: {ds[self.fieldname].units}
+                """
 
     @param.depends('desc', watch=True)
     def update_desc(self):
