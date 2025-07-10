@@ -248,7 +248,7 @@ module chemistry
 
             integer             :: ncf
             integer             :: status
-            character(len=60)   :: reacfile
+            character(len=256)  :: reacfile
             type(tllgridinfo)   :: lli_in
             type(tlevelinfo)    :: levi_in
             integer             :: nlay
