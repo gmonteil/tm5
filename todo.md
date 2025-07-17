@@ -18,17 +18,17 @@
     - [ ] GM: speedup reading emissions
 - TM5 analyses, open questions regarding our initial TM5 runs with prior emission fields: to be addressed with long run on COSMOS:
     - [ ] implement and test reading of the CAMS reanalysis OH field (to be used for the troposhere, for the stratosphere we'll rather use Bruehl et al.), this should be the default, Spivakovsky is kept-
-    - (1) [ ] MV: with addition build flag make comparison at Cabauw and simulated value at same time of day
+    - (0) [ ] MV: to try global 1 x 1 run with different day, otherwise don't waste time, GM will look at it this week
+    - (1) [ ] GM: to look at global 1 x 1 problem this week
     - (2) [ ] MV: make comparison between 3 pm obs at Cabauw and simulated value at same time of day
-    - (3) [ ] GM to send script for run on COSMOS
-    - (4) [ ] MV: check how Vaganovo looks now in global 1 by 1 run (launch on COSMOS)
-    - (5) [ ] GM to Send to Arjo with the macros with use, and get him to confirm 
+    - (4) [ ] MV: check how Vaganovo looks now in global 1 by 1 run (launch on COSMOS), not too urgent
+    - (5) [ ] GM to send to Arjo email with the macros with use, and get him to confirm 
 - Documentation
     - [ ] properly setup github pages with mkdocs
 - Inversion
     - [ ] implement dummy inversion based on Jacobians to test computational performance -> txk
-    - [9] adapt adjoint to run with the simplified emission preparation -> gm
-    - [ ] adapt adjoint to run with the OH field (to Spivakovsky first, which is enough for the Jacobian computations, possibly later CAMS OH) -> gm
+    - [9] GM: adapt adjoint to run with the simplified emission preparation 
+    - [ ] GM: adapt adjoint to run with the OH field (to Spivakovsky first, which is enough for the Jacobian computations, possibly later CAMS OH) 
  
 # Task ideas / discussion
 - avoid misuse through implementation of "accepted ranges" => *That's essentially built-in the GUI*
