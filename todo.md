@@ -18,11 +18,14 @@
     - [ ] GM: speedup reading emissions
 - TM5 analyses, open questions regarding our initial TM5 runs with prior emission fields: to be addressed with long run on COSMOS:
     - [ ] implement and test reading of the CAMS reanalysis OH field (to be used for the troposhere, for the stratosphere we'll rather use Bruehl et al.), this should be the default, Spivakovsky is kept-
-    - (0) [ ] MV: to try global 1 x 1 run with different day, otherwise don't waste time, GM will look at it this week
-    - (1) [ ] GM: to look at global 1 x 1 problem this week
-    - (2) [ ] MV: make comparison between 3 pm obs at Cabauw and simulated value at same time of day
-    - (4) [ ] MV: check how Vaganovo looks now in global 1 by 1 run (launch on COSMOS), not too urgent
-    - (5) [ ] GM to send to Arjo email with the macros with use, and get him to confirm 
+    - (3) [ ] MV: check seasonality in EDGAR anthopogenic to confirm that it should have little impact on simultion (as seen in difference to flat profile)
+    - (2) [ ] GM: to look at global 1 x 1 problem this week
+    - (4a) [ ] MV: include posterior concentration of CAMS inversion into Cabauw Plot at the same time (defined by the CAMS concentration output),
+      use dots rather than lines, 
+    - (4b) [ ] Check, why obs does not change from 27 to 35m.
+    - (4c) [ ] GM: Check why conc does not change from 27 to 107m.
+    - (5) [ ] MV: check how Vaganovo looks now in global 1 by 1 run (launch on COSMOS), not too urgent
+    - (1) [ ] GM to send to Arjo email with the macros with use, and get him to confirm 
 - Documentation
     - [ ] properly setup github pages with mkdocs
 - Inversion
