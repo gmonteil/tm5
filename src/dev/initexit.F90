@@ -189,7 +189,8 @@ contains
     write (gol,'(a," : entering")') trim(rname) ; call goPr
 
 
-    call init_chem
+    call init_chem(status)
+    IF_NOTOK_RETURN(status=status)
 
     !===============================
     ! init parallelisation

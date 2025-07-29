@@ -123,12 +123,12 @@ module chem_param
 
     contains
 
-    subroutine init_chem
+    subroutine init_chem(status)
 
         use global_data, only : rcf
         use go, only : readrc
 
-        integer :: status
+        integer, intent(out) :: status
         integer :: itrac, ireac, nreac
         character(len=500) :: rcval
         character(len=*), parameter                 :: rname = 'chem_param/init_chem'
@@ -146,6 +146,8 @@ module chem_param
 
         allocate(tracers(ntrace))
 
+        status = 0
+
         ntracet = ntrace
         ntrace_chem = ntrace - ntracet
         maxtrace = ntrace
@@ -154,38 +156,38 @@ module chem_param
 
         do itrac = 1, ntrace
             call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.molar_mass', ra(itrac), status)
-            IF_NOTOK_RETURN(status=1)
+            IF_ERROR_RETURN(status=1)
 
             ! mixrat_unit_value should be 1.e6 for ppm, 1.e9 for ppb, etc.
             call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.mixrat_unit_value', mixrat_unit(itrac), status)
-            IF_NOTOK_RETURN(status=1)
+            IF_ERROR_RETURN(status=1)
             call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.mixrat_unit_name', mixrat_unit_name(itrac), status)
-            IF_NOTOK_RETURN(status=1)
+            IF_ERROR_RETURN(status=1)
             ! emis_unit_value should enable conversion from kg(tracer) to unit(tracer), e.g. if we want PgC for a CO2
             ! tracer, then it should be ~(12/44)*1.e-12.
             ! The unit names can be arbitrary (no check on that ...)
             call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.emis_unit_value', emis_unit(itrac), status)
-            IF_NOTOK_RETURN(status=1)
+            IF_ERROR_RETURN(status=1)
             call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.emis_unit_name', emis_unit_name(itrac), status)
-            IF_NOTOK_RETURN(status=1)
+            IF_ERROR_RETURN(status=1)
 
             ! Initialize the "tracers" object
             call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.chemistry', tracers(itrac)%has_chem, status)
-            IF_NOTOK_RETURN(status=1)
+            IF_ERROR_RETURN(status=1)
             call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.species', tracers(itrac)%species, status)
-            IF_NOTOK_RETURN(status=1)
+            IF_ERROR_RETURN(status=1)
 
             if (tracers(itrac)%has_chem) then
 
                 ! Number of reactions
                 call readrc(rcf, 'tracers.' //trim(names(itrac)) // '.nreac', nreac, status, 0)
-                IF_NOTOK_RETURN(status=1)
+                IF_ERROR_RETURN(status=1)
                 tracers(itrac)%nreact = nreac
                 allocate(reacnames_tmp(nreac))
 
                 ! Reaction names
                 call readrc(rcf, 'tracers.' //trim(names(itrac)) //'.reaction_names', rcval, status)
-                IF_NOTOK_RETURN(status=1)
+                IF_ERROR_RETURN(status=1)
                 read(rcval, *) reacnames_tmp
 
                 ! Read reaction parameters
@@ -193,13 +195,13 @@ module chem_param
                 do ireac = 1, nreac
                     tracers(itrac)%reactions(ireac)%name = reacnames_tmp(ireac)
                     call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.' // trim(reacnames_tmp(ireac)) // '.file', tracers(itrac)%reactions(ireac)%file, status)
-                    IF_NOTOK_RETURN(status=1)
+                    IF_ERROR_RETURN(status=1)
                     call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.' // trim(reacnames_tmp(ireac)) // '.domain', tracers(itrac)%reactions(ireac)%domain, status)
-                    IF_NOTOK_RETURN(status=1)
+                    IF_ERROR_RETURN(status=1)
                     call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.' // trim(reacnames_tmp(ireac)) // '.rate', tracers(itrac)%reactions(ireac)%parameters, status)
-                    IF_NOTOK_RETURN(status=1)
-                    call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.' // trim(reacnames_tmp(ireac)) // '.scaling_factor', tracers(itrac)%reactions(ireac)%scalef, status)
-                    IF_NOTOK_RETURN(status=1)
+                    IF_ERROR_RETURN(status=1)
+                    call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.' // trim(reacnames_tmp(ireac)) // '.scaling_factor', tracers(itrac)%reactions(ireac)%scalef, status, default=1.)
+                    IF_ERROR_RETURN(status=1)
                     call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.' // trim(reacnames_tmp(ireac)) // '.version', tracers(itrac)%reactions(ireac)%version, status)
                     call init_reaction(tracers(itrac)%reactions(ireac))
                 end do

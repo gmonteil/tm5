@@ -906,32 +906,32 @@ contains
     !$omp parallel
     !$omp sections
     !$omp section
-    am(0:imr,1:jmr,1:lmr) = dtu * pu(0:imr,1:jmr,1:lmr)
-    !do l=1,lmr
-       !do j=1,jm(region)
-          !do i=0,im(region)
-             !am(i,j,l)=dtu*pu(i,j,l)
-          !end do
-       !end do
-    !end do
+    !am(0:imr,1:jmr,1:lmr) = dtu * pu(0:imr,1:jmr,1:lmr)
+    do l=1,lmr
+       do j=1,jm(region)
+          do i=0,im(region)
+             am(i,j,l)=dtu*pu(i,j,l)
+          end do
+       end do
+    end do
     !$omp section
-    bm(1:imr,1:jmr+1,1:lmr) = dtv * pv(1:imr,1:jmr+1,1:lmr)
-    !do l=1,lmr
-       !do j=1,jm(region)+1
-          !do i=1,im(region)
-             !bm(i,j,l)=dtv*pv(i,j,l)
-          !end do
-       !end do
-    !end do
+    !bm(1:imr,1:jmr+1,1:lmr) = dtv * pv(1:imr,1:jmr+1,1:lmr)
+    do l=1,lmr
+       do j=1,jm(region)+1
+          do i=1,im(region)
+             bm(i,j,l)=dtv*pv(i,j,l)
+          end do
+       end do
+    end do
     !$omp section
-    cm(1:imr,1:jmr,1:lmr-1) = -dtw * sd(1:imr,1:jmr,1:lmr-1)
-    !do l=1,lmr-1
-       !do j=1,jm(region)
-          !do i=1,im(region)
-             !cm(i,j,l)=-dtw*sd(i,j,l)
-          !end do
-       !end do
-    !end do
+!    cm(1:imr,1:jmr,1:lmr-1) = -dtw * sd(1:imr,1:jmr,1:lmr-1)
+    do l=1,lmr-1
+       do j=1,jm(region)
+          do i=1,im(region)
+             cm(i,j,l)=-dtw*sd(i,j,l)
+          end do
+       end do
+    end do
     !$omp end sections
     !$omp end parallel
 

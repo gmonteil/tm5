@@ -65,7 +65,7 @@ module tmm_mf_tm5_nc
     real, pointer          ::  field(:,:,:,:)  ! (nx,ny,nz,nt)
     real, pointer          ::  sp   (:,:  ,:)  ! (nx,ny   ,nt)
   end type T_Cache_Field
-
+  
   ! *
 
   type TMeteoFile_tm5_nc
@@ -267,7 +267,7 @@ contains
     integer               ::  iparam
 
     ! --- begin --------------------------------
-
+    
 
     ! store i/o :
     mf%io = io
@@ -460,7 +460,7 @@ contains
     ! number of expected time records in a file:
     call GetTime( mf_filekey, mf%tres, tref, t1, t2, status, nrec=mf%output_ntrec )
     IF_NOTOK_RETURN(status=1)
-
+    
     ! no chached file content yet:
     mf%cache_fname = ''
     ! no time info yet:
@@ -500,16 +500,16 @@ contains
     character(len=*), parameter  ::  rname = mname//'/mf_Done'
 
     ! --- local -------------------------------------
-
+    
     integer          ::  iparam
 
     ! --- begin -------------------------------------
-
+    
     !! info ...
     !write (gol,'("<",a,">")') trim(rname); call goPr
 
     !! info ..
-    !write (gol,'(a,": done for ",a)') rname, trim(mf%fname); call goPr
+    !write (gol,'(a,": done for ",a)') rname, trim(mf%fname); call goPr    
     ! clear time info:
     call pa_Done( mf%cache_timevalues_bounds )
     ! clear cache:
@@ -787,7 +787,7 @@ contains
               else
                 nrec = 3
               end if
-            case ( '_00p01'       ) ; nrec = 24/1
+            case ( '_00p01'       ) ; nrec = 24/1 ! TODO: older versions of this file have "24/24". Doesn't make much sense to me, but we need to check the impact
             case default
               write (gol,'("unsupported tres for setting nrec : ",a)') tres; call goErr
               TRACEBACK; status=1; return
@@ -1181,15 +1181,15 @@ contains
       write (gol,'("file should have been opened for input, but io=",a)') mf%io; call goErr
       TRACEBACK; status=1; return
     end if
-
+    
     ! *** chache
-
+    
     ! input file not cached?
     if ( trim(mf%fname) /= trim(mf%cache_fname) ) then
-
+    
       ! ! info ...
       ! write (gol,'("fill cache with ",a)') trim(mf%fname); call goPr
-
+      
       ! store name:
       mf%cache_fname = trim(mf%fname)
 
@@ -1210,11 +1210,11 @@ contains
       line = mf%paramkeys(2:l)
       ! loop over all parameters:
       do iparam = 1, mf%nparam
-
+    
         ! split at '-', read first part:
         call goReadFromLine( line, vname, status, sep='-' )
         IF_NOTOK_RETURN(status=1)
-
+        
         !! info ...
         !write (gol,'("  param ",a," ...")') trim(vname); call goPr
 
@@ -1233,7 +1233,7 @@ contains
         ! reset first dimensions to actual shape:
         call MDF_Inquire_Variable( mf%hid, varid, status, shp=shp(1:ndims) )
         IF_NOTOK_RETURN(status=1)
-
+        
         ! set shape:
         !if ( associated(mf%cache_field(iparam)%field) ) then
         !  print *, 'xxx1 ', shape(mf%cache_field(iparam)%field)
@@ -1313,8 +1313,8 @@ contains
           !write (gol,'("      convert `",a,"` from `",a,"` to `",a,"` with factor ",f8.2," ; new range ",2f8.2)') &
           !               trim(vname), trim(cfunits), trim(unit), ufac, minval(ll), maxval(ll); call goPr
         end if
-
-        ! ~
+        
+        ! ~ 
 
         ! surface pressure required ?
         if ( mf%rnk == 3 ) then
@@ -1353,13 +1353,13 @@ contains
       ! close
       call MDF_Close( mf%hid, status )
       IF_NOTOK_RETURN(status=1)
-
+      
     end if  ! fill cache
 
 
     ! *** variable id
 
-
+    
     ! init varid (index of chached field):
     varid = -999
     ! loop:
@@ -1383,7 +1383,7 @@ contains
     ! always regular lat/lon grid ..
     gridtype = 'll'
 
-
+    
     ! setup grid definition as copy:
     call Init( lli, mf%cache_lli%lon_deg(1), mf%cache_lli%dlon_deg, mf%cache_lli%im, &
                     mf%cache_lli%lat_deg(1), mf%cache_lli%dlat_deg, mf%cache_lli%jm, status  )
@@ -1394,7 +1394,7 @@ contains
     call Init( levi, mf%cache_levi, status )
     IF_NOTOK_RETURN(status=1)
 
-
+    
     ! get dimensions:
     shp = 1
     shp(1:4) = shape(mf%cache_field(varid)%field)
