@@ -2,11 +2,11 @@
 
 - GUI (setup)
     - [ ] implement only configuration with 3 level zoom "avengers-1", i.e global/Europe/NL+D+CH
-    - [6] GM to replace continuous line for obspack by dots or crosses 
+    - [ ] (9) GM to replace continuous line for obspack by dots or crosses 
 - GUI (analysis)
-    - (8) [ ] GM: check domain size on plot after change of region
+    - [ ] (8) GM: check domain size on plot after change of region
     - [ ] Automated observation fit statistics (RMSE, maybe as table)
-    - (7) [ ] GM: Integrate some visualisation of the emission budget in configuration part of the GUI (to allow perform a quick sanity check)
+    - [ ] (7) GM: Integrate some visualisation of the emission budget in configuration part of the GUI (to allow perform a quick sanity check)
 - GUI (extension)    
     - [ ] (re) implement possibility to pass defaults through a YAML file
     - [ ] implement a few default configurations
@@ -18,20 +18,18 @@
     - [ ] GM: speedup reading emissions
 - TM5 analyses, open questions regarding our initial TM5 runs with prior emission fields: to be addressed with long run on COSMOS:
     - [ ] implement and test reading of the CAMS reanalysis OH field (to be used for the troposhere, for the stratosphere we'll rather use Bruehl et al.), this should be the default, Spivakovsky is kept-
-    - (3) [ ] MV: check seasonality in EDGAR anthopogenic to confirm that it should have little impact on simultion (as seen in difference to flat profile)
-    - (2) [ ] GM: to look at global 1 x 1 problem this week
-    - (4a) [ ] MV: include posterior concentration of CAMS inversion into Cabauw Plot at the same time (defined by the CAMS concentration output),
-      use dots rather than lines, 
-    - (4b) [ ] Check, why obs does not change from 27 to 35m.
-    - (4c) [ ] GM: Check why conc does not change from 27 to 107m.
-    - (5) [ ] MV: check how Vaganovo looks now in global 1 by 1 run (launch on COSMOS), not too urgent
-    - (1) [ ] GM to send to Arjo email with the macros with use, and get him to confirm 
+    - [ ] (4) MV: to find a better format: lines for simulations and dots for obs; also try with dots only but shorter time interval
+    - [ ] (10) MV: check how Vaganovo looks now in global 1 by 1 run (launch on COSMOS), not too urgent
+    - [ ] (1) GM to send to Arjo email with the macros with use, and get him to confirm 
+- Sensitivity Runs
+    - [ ] (5) compare default emissions globally with default emissions only outside zoom region and inside regional emissions
+    - [ ] (6) try cases with the regional emissions where in the sensitivity run emissions from a country (NL or FR)/a sector(Wetland, some component of fossil)/a power plant near a site are removed
 - Documentation
     - [ ] properly setup github pages with mkdocs
 - Inversion
     - [ ] implement dummy inversion based on Jacobians to test computational performance -> txk
-    - [9] GM: adapt adjoint to run with the simplified emission preparation 
-    - [ ] GM: adapt adjoint to run with the OH field (to Spivakovsky first, which is enough for the Jacobian computations, possibly later CAMS OH) 
+    - [ ] (2) GM: adapt adjoint to run with the simplified emission preparation 
+    - [ ] (3) GM: adapt adjoint to run with the OH field (to Spivakovsky first, which is enough for the Jacobian computations, possibly later CAMS OH) 
  
 # Task ideas / discussion
 - avoid misuse through implementation of "accepted ranges" => *That's essentially built-in the GUI*
