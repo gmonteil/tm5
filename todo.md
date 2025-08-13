@@ -21,9 +21,12 @@
     - [ ] (4) MV: to find a better format: lines for simulations and dots for obs; also try with dots only but shorter time interval
     - [ ] (10) MV: check how Vaganovo looks now in global 1 by 1 run (launch on COSMOS), not too urgent
     - [ ] (1) GM to send to Arjo email with the macros with use, and get him to confirm 
-- Sensitivity Runs
+- Sensitivity Runs (the important point is that we want to see an effect)
     - [ ] (5) MV compare default emissions globally with default emissions only outside zoom region and inside regional emissions
-    - [ ] (6) MV try cases with the regional emissions where in the sensitivity run emissions from a country (NL or FR)/a sector(Wetland, some component of fossil)/a power plant near a site are removed
+    - [ ] (6) MV try cases with the regional emissions where in the sensitivity run a part of the emissions are removed:
+                - from a country (NL or FR)
+                - a sector (some component of fossil, e.g. waste, has probably more effect in our zoom region than wetland)
+                - a power plant near a site
 - Documentation
     - [ ] properly setup github pages with mkdocs
 - Inversion
