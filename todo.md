@@ -21,7 +21,7 @@
     - [ ] (4) MV: to find a better format: lines for simulations and dots for obs; also try with dots only but shorter time interval
     - [ ] (10) MV: check how Vaganovo looks now in global 1 by 1 run (launch on COSMOS), not too urgent
     - [ ] (1) GM to send to Arjo email with the macros with use, and get him to confirm 
-- Sensitivity Runs (the important point is that we want to see an effect)
+- Sensitivity Runs (the important point is that we want to see an effect and the comparison with CAMS clearly shows us which run is more consistent)
     - [ ] (5) MV compare default emissions globally with default emissions only outside zoom region and inside regional emissions
     - [ ] (6) MV try cases with the regional emissions where in the sensitivity run we remove the emissions from:
                 (a) a country (NL or FR)
