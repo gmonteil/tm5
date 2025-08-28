@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""simple interface(s) to read CAMS posterior concentrations."""
+"""simple interface(s) to read CAMS posterior concentrations at obspack locations. The hat were extracted at 1x1 degree ."""
 
 #-- system packages
 import os
@@ -13,6 +13,7 @@ from loguru import logger
 from typing import Union, List, Tuple
 #-- local packages
 from tm5.post.utilities import sphere_grid_find_close
+
 
 def camsdir_load_concentrations( cams_dir : Union[str, Path],
                                  year     : int = 2021 ) -> xr.Dataset:
@@ -34,10 +35,10 @@ def cams_at_obspack_load_conctseries( camsfile : str,
                                       latq : float,
                                       altq : float ) -> pd.DataFrame:
     """Read concentration time-series from a dedicated NetCDF file
-    providing CAMS concentrations extracted at a list of obspack station
-    locations.
-    Concentrations are extracted for specific spatial coordinates,
-    including altitude (to be provided in [m]).
+    providing CAMS (posterior) concentrations extracted from a global
+    CAMS inversion (at 1x1 degree) from where the concentrations at a list
+    of obspack station locations were picked from the grid-cells of the
+    station location.
     """
     cams_path = Path(camsfile)
     if not cams_path.exists():
