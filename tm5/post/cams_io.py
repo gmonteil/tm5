@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Miscallaneous plot utility functions."""
+"""simple interface(s) to read CAMS posterior concentrations."""
 
 #-- system packages
 import os
