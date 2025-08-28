@@ -81,7 +81,6 @@ def cams_at_obspack_load_conctseries( camsfile : str,
     #
     cams_alt = cams_loc.altitude
     cams_conc = cams_loc.CH4
-
     #
     #-- altitude provides the layer-to-layer values
     #   (i.e. should be on the vertical box boundaries)
@@ -96,14 +95,24 @@ def cams_at_obspack_load_conctseries( camsfile : str,
     #
     cams_alt  = cams_alt.data
     cams_conc = cams_conc.data
+    msg = f"...requested altq={altq}, average cams_alt[0] = {cams_alt[0,:].mean()}"
+    logger.debug(msg)
     #
     #-- determine level (and time) indices with
     #   cams_lower<=altq<=cams_upper
     #
     cnd_alt = (altq>=cams_alt[:,:nlev])&(altq<=cams_alt[:,1:nlev+1])
     iit,iilev = np.where(cnd_alt)
-    #-- very likely the level index will not change over time...
-    assert np.all(np.diff(iilev)==0)
+    #
+    #-- ATTENTION: very likely the level index will not change over time...
+    #
+    # assert np.all(np.diff(iilev)==0)
+    if len(iit)!=nt:
+        msg = f"...requested altitude altq={altq} did not match with properly " \
+            f"with altitude of CAMS concentrations. CAMS will be discarded."
+        logger.warning(msg)
+        cams_xds.close()
+        return None
     #
     #--
     #
