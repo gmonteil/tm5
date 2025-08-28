@@ -280,8 +280,8 @@ def subcmd_stations_visu(args):
                 if curtrac=='time':
                     continue
                 dfplot = df[['time',curtrac]]
-                tracer_tag = f"tm5-simu-{curtrac.lower()}"
-                if with_cams and len(cams_df)>0:
+                tracer_tag = f"tm5-simu-{curtrac.lower()}".replace(' ','-')
+                if (not cams_df is None) and len(cams_df)>0:
                     tracer_tag += '-vs-cams'
                 if obspackdir!=None:
                     tracer_tag += '-vs-obspack'
