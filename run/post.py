@@ -556,7 +556,7 @@ def subcmd_stations_cmpvisu(args):
                     # print(f"obspack")
                     # print(dfobspack.head())
             #
-            #-- currently one plot per tracer
+            #-- currently only plotting per tracer
             #
             tracer_plot_lst = [ _.replace(f'{tag1} ','').replace(f'{tag2} ','') for _ in df.columns if _!='time' ]
             for curtrac in tracer_plot_lst:
@@ -567,7 +567,8 @@ def subcmd_stations_cmpvisu(args):
                 outname_tokens = [abbr_tag, tracer_tag, tcover_tag,]
                 fig = plt.figure(figsize=figsize, dpi=dpi)#, tight_layout=True)
                 ax = fig.add_subplot(111)
-                dfplot.plot(ax=ax, x='time', grid=True)#,color='blue')# ,
+                dfplot.plot(ax=ax, x='time', grid=True,
+                            color=args.exp_colors)
                             # ylabel=','.join(tracers), xlabel='time')
                 #
                 #-- plot obspack
@@ -791,11 +792,17 @@ def parser():
     #
     xparser = subparsers.add_parser('stations_cmpvisu',
                                     help="""showing concentration time-series at stations.""")
-    xparser.add_argument('expdir', nargs=2,
+    xparser.add_argument('expdir',
+                         nargs=2,
                          help="""directory from two similar TM5 simulations""")
-    xparser.add_argument('--exptag', nargs=2,
+    xparser.add_argument('--exptag',
+                         nargs=2,
                          default=['exp1','exp2'],
                          help="""descriptive tags for experiments (default: %(default)s).""")
+    xparser.add_argument('--exp_colors',
+                         nargs=2,
+                         default=['#BB0000', '#0000BB',],
+                         help="""colors used for the experiments (default: %(default)s).""")
     xparser.add_argument('--station',
                          nargs='+',
                          help="""select stations by name.""")
