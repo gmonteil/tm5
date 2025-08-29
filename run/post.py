@@ -203,14 +203,15 @@ def subcmd_stations_visu(args):
             dfobspack = None
             obspack_info = None
             if obspackdir!=None:
-                obspack_info = obspack_load_conctseries(obspackdir,
-                                                        tcover_start,
-                                                        tcover_end,
-                                                        abbr_tag,
-                                                        stalon,
-                                                        stalat,
-                                                        sta_alt,
-                                                        altdif_threshold)
+                obspack_info = \
+                    obspack_load_conctseries(obspackdir,
+                                             tcover_start,
+                                             tcover_end,
+                                             abbr_tag,
+                                             stalon,
+                                             stalat,
+                                             sta_alt,
+                                             altdif_threshold)
                 if obspack_info==None:
                     msg = f"...no matching obspack data found"
                     logger.warning(msg)
@@ -281,15 +282,6 @@ def subcmd_stations_visu(args):
                     continue
                 dfplot = df[['time',curtrac]]
                 tracer_tag = f"tm5-simu-{curtrac.lower()}".replace(' ','-')
-                if (not cams_df is None) and len(cams_df)>0:
-                    tracer_tag += '-vs-cams'
-                if obspackdir!=None:
-                    tracer_tag += '-vs-obspack'
-                outname_tokens = [abbr_tag, tracer_tag, tcover_tag,]
-                if args.hour!=None:
-                    outname_tokens.append(f'hour{args.hour:02d}')
-                outname = '_'.join(outname_tokens) + '.csv'
-                outname = set_outname(args, outname)
                 fig = plt.figure(figsize=figsize, dpi=dpi)#, tight_layout=True)
                 ax = fig.add_subplot(111)
                 #
@@ -311,6 +303,7 @@ def subcmd_stations_visu(args):
                 #-- plot obspack concentrations
                 #
                 if not dfobspack is None:
+                    tracer_tag += '-vs-obspack'
                     if  args.style=='line':
                         dfobspack.plot(ax=ax, x='time', grid='true', alpha=0.5)
                     elif args.style=='marker':
@@ -321,6 +314,7 @@ def subcmd_stations_visu(args):
                 #-- plot CAMS concentrations
                 #
                 if not cams_df is None and len(cams_df)>0:
+                    tracer_tag += '-vs-cams'
                     #-- 2025-07-30: switched back to only line plot
                     cams_df.plot(ax=ax, x='time', grid=True,
                                  color='green', alpha=0.5, )
@@ -346,6 +340,12 @@ def subcmd_stations_visu(args):
                 ax.set_title(title)
                 ax.set_xlabel('time')
                 ax.set_ylabel(f"conc [{mix_unit}]")
+                #
+                #-- output file generation
+                #
+                outname_tokens = [abbr_tag, tracer_tag, tcover_tag,]
+                if args.hour!=None:
+                    outname_tokens.append(f'hour{args.hour:02d}')
                 outname = '_'.join(outname_tokens) + '.png'
                 outname = set_outname(args, outname)
                 plt.savefig(outname, dpi=dpi)
@@ -362,8 +362,10 @@ def subcmd_stations_cmpvisu(args):
     exptag_lst = args.exptag
     station = args.station
     obspackdir = args.obspackdir
+    altdif_threshold = args.altdif_threshold
     figsize = args.figsize
     dpi     = args.dpi
+    markersize = args.markersize
 
     tag1,tag2 = exptag_lst
     exp_map = OrderedDict()
@@ -392,8 +394,8 @@ def subcmd_stations_cmpvisu(args):
         tracers = [getattr(ds, f'tracer_{itrac+1:03d}') for itrac in range(ntrac)]
         tcover_start = pd.Timestamp(ds.getncattr('starting time'))
         tcover_end   = pd.Timestamp(ds.getncattr('ending time'))
-        msg = f"detected temporal coverage {tcover_start} -- {tcover_end}"
-        logger.info(msg)
+        # msg = f"detected temporal coverage {tcover_start} -- {tcover_end}"
+        # logger.info(msg)
         tcover_tag = f"{tcover_start.strftime('%Y%m%d')}-{tcover_end.strftime('%Y%m%d')}"
         #
         #-- each station time-serious is in separate NetCDF group
@@ -406,12 +408,18 @@ def subcmd_stations_cmpvisu(args):
         exp_map[_tag]['ngrp'] = ngrp
         exp_map[_tag]['date_lst'] = date_lst
         exp_map[_tag]['tracers'] = tracers
+        exp_map[_tag]['tcover_start'] = tcover_start
+        exp_map[_tag]['tcover_end'] = tcover_end
         exp_map[_tag]['tcover_tag'] = tcover_tag
         exp_map[_tag]['stations'] = stations
+    #
+    #-- consistency check between experiments
     #
     assert exp_map[tag1]['ngrp']==exp_map[tag2]['ngrp']
     assert exp_map[tag1]['stations']==exp_map[tag2]['stations']
     assert exp_map[tag1]['tracers']==exp_map[tag2]['tracers']
+    assert exp_map[tag1]['tcover_start']==exp_map[tag2]['tcover_start']
+    assert exp_map[tag1]['tcover_end']==exp_map[tag2]['tcover_end']
     stations = exp_map[tag1]['stations']
     nsta = len(stations)
     msg = f"detected {ngrp} NetCDF groups with {nsta} different station names"
@@ -420,10 +428,11 @@ def subcmd_stations_cmpvisu(args):
     ntrac = len(tracers)
     msg = f"detected {ntrac} tracers in file -->{tracers}<--"
     logger.info(msg)
-    #
-    #-- comparison against CAMS concentrations (?)
-    #
-    with_cams = (args.camsfile!=None)
+    tcover_start = exp_map[tag1]['tcover_start']
+    tcover_end   = exp_map[tag1]['tcover_end']
+    msg = f"detected temporal coverage {tcover_start} -- {tcover_end}"
+    logger.info(msg)
+    tcover_tag = f"{tcover_start.strftime('%Y%m%d')}-{tcover_end.strftime('%Y%m%d')}"
     #
     #-- comparison against obspack (?)
     #
@@ -438,21 +447,6 @@ def subcmd_stations_cmpvisu(args):
         sta_lst = station
     else:
         sta_lst = stations
-    # #
-    # #--
-    # #
-    # gns_stations = set()
-    # for _ in ds.groups:
-    #     stagrp = ds[_]
-    #     abbr_tag = stagrp.abbr.replace('FM/','')
-    #     stareg = stagrp.region
-    #     if stareg=='gns100x100':
-    #         gns_stations.add(abbr_tag)
-    # gns_stations = sorted(list(gns_stations))
-    # with open('gns_stations.txt', 'w') as fp:
-    #     for _ in gns_stations:
-    #         fp.write(f"{_}" + '\n')
-    # sys.exit(0)
     #
     #-- loop over stations (station names)
     #
@@ -528,44 +522,39 @@ def subcmd_stations_cmpvisu(args):
             #-- build data frame(s) (per current station and station level)
             #
             df = pd.DataFrame.from_dict(data_dict)
-            cams_df = None
-            if with_cams:
-                cams_df = \
-                    cams_at_obspack_load_conctseries(args.camsfile,
-                                                     stalon,
-                                                     stalat,
-                                                     sta_alt)
+            if args.hour!=None:
+                msg = f"...restrict to simulations in hour={args.hour}"
+                logger.info(msg)
+                df = df[df.time.dt.hour==args.hour]
             #-- obspack(?)
             dfobspack = None
+            obspack_info = None
             if obspackdir!=None:
-                dfobspack = obspack_load_conctseries(obspackdir,
-                                                     tcover_start,
-                                                     tcover_end,
-                                                     abbr_tag,
-                                                     stalon,
-                                                     stalat,
-                                                     sta_alt)
-            #--
-            #
-            #-- export to csv
-            #
-            if args.csv_output:
-                dfcsv = df.copy()
-                dfcsv.index = dfcsv['time']
-                dfcsv = dfcsv.drop(['time',], axis=1)
-                outname_tokens = [abbr_tag, '', tracer_ftag, tcover_tag,]
-                outname = '_'.join(outname_tokens) + '.csv'
-                outname = set_outname(args, outname)
-                with open(outname, 'w') as fp:
-                    fp.write(f"## input_file: {str(stafile.absolute())}" + '\n')
-                    fp.write(f"## station: {sta}" + '\n')
-                    fp.write(f"## longitude: {stalon}" + '\n')
-                    fp.write(f"## latitude:  {stalat}" + '\n')
-                    fp.write(f"## altitude:  {sta_alt}" + '\n')
-                    fp.write(f"## tm5_region: {stareg}" + '\n')
-                    df.to_csv(fp, index=False)
-                    msg = f"generated file ***{outname}***"
-                    logger.info(msg)
+                obspack_info = \
+                    obspack_load_conctseries(obspackdir,
+                                             tcover_start,
+                                             tcover_end,
+                                             abbr_tag,
+                                             stalon,
+                                             stalat,
+                                             sta_alt,
+                                             altdif_threshold)
+                #
+                #-- check whether obspack observations were available
+                #
+                if obspack_info==None:
+                    msg = f"...no matching obspack data found"
+                    logger.warning(msg)
+                else:
+                    msg = f"obspack_info loaded, obsalt={obspack_info['altitude']}"
+                    logger.debug(msg)
+                    dfobspack = obspack_info['df']
+                    if args.hour!=None:
+                        msg = f"...restrict obspack to/in hour={args.hour}"
+                        logger.info(msg)
+                        dfobspack = dfobspack[dfobspack.time.dt.hour==args.hour]
+                    # print(f"obspack")
+                    # print(dfobspack.head())
             #
             #-- currently one plot per tracer
             #
@@ -574,25 +563,46 @@ def subcmd_stations_cmpvisu(args):
                 _c1 = f"{tag1} {curtrac}"
                 _c2 = f"{tag2} {curtrac}"
                 dfplot = df[['time',_c1, _c2]]
-                tracer_tag = f"{curtrac.lower()}-{tag1}-vs-{tag2}"
-                if with_cams:
-                    tracer_tag += '-vs-cams'
-                if obspackdir!=None:
-                    tracer_tag += '-vs-obspack'
+                tracer_tag = f"{curtrac.lower()}-{tag1}-vs-{tag2}".replace(' ','-')
                 outname_tokens = [abbr_tag, tracer_tag, tcover_tag,]
-                outname = '_'.join(outname_tokens) + '.csv'
-                outname = set_outname(args, outname)
                 fig = plt.figure(figsize=figsize, dpi=dpi)#, tight_layout=True)
                 ax = fig.add_subplot(111)
-                dfplot.plot(ax=ax, x='time', grid=True)# ,
+                dfplot.plot(ax=ax, x='time', grid=True)#,color='blue')# ,
                             # ylabel=','.join(tracers), xlabel='time')
-                if not cams_df is None:
-                    cams_df.plot(ax=ax, x='time', grid=True, alpha=0.5)
+                #
+                #-- plot obspack
+                #
                 if not dfobspack is None:
-                    dfobspack.plot(ax=ax, x='time', grid='true', alpha=0.5)
-                ax.set_title(f"CH4@{sta} (alt: {sta_alt}[m], {stareg})")
+                    tracer_tag += '-vs-obspack'
+                    if  args.style=='line':
+                        dfobspack.plot(ax=ax, x='time', grid='true', alpha=0.5)
+                    elif args.style=='marker':
+                        dfobspack.plot(ax=ax, x='time', grid='true',
+                                       ls='', marker='x', markersize=markersize,
+                                       color='orange')
+                #
+                #-- finalise plot
+                #
                 ax.set_xlabel('time')
                 ax.set_ylabel(f"conc [{mix_unit}]")
+                #
+                #-- ylimits
+                #
+                if args.ylimits!=None:
+                    ax.set_ylim(args.ylimits)
+                #
+                #-- title
+                #
+                title = f"CH4@{sta} (alt: {sta_alt}[m], {stareg})"
+                if obspack_info!=None:
+                    obspack_alt = obspack_info['altitude']
+                    if sta_alt!=obspack_alt:
+                        title += f" obspack_alt={obspack_alt}[m]"
+                ax.set_title(title)
+                #
+                #-- output file generation
+                #
+                outname_tokens = [abbr_tag, tracer_tag, tcover_tag,]
                 outname = '_'.join(outname_tokens) + '.png'
                 outname = set_outname(args, outname)
                 plt.savefig(outname, dpi=dpi)
@@ -792,13 +802,32 @@ def parser():
     xparser.add_argument('--tracersum',
                          action='store_true',
                          help="""whether to show sum of simulated tracers (in case of multiple-tracer run.""")
-    xparser.add_argument('--camsfile',
-                         help="""provision of NetCDF file with CAMS concentrations at obspack sites triggers comparison plot.""")
+    # xparser.add_argument('--camsfile',
+    #                      help="""provision of NetCDF file with CAMS concentrations at obspack sites triggers comparison plot.""")
     xparser.add_argument('--obspackdir',
                          help="""comparison against obspack CH4 measurements will be added (if matching obspack file for location is found).""")
+    xparser.add_argument('--altdif_threshold',
+                         type=float,
+                         default=2,
+                         help="""maximal allowed difference in altitude when picking obspack concentrations at station altitude.""")
     xparser.add_argument('--csv_output',
                          action='store_true',
                          help="""whether to write station time-series also to csv file.""")
+    xparser.add_argument('--hour',
+                         type=int,
+                         help="""restrict to simulations/observations at/in this hour.""")
+    xparser.add_argument('--ylimits',
+                         type=float,
+                         nargs=2,
+                         help="""explicitly set limits for the y-axis.""")
+    xparser.add_argument('--style',
+                         choices=['line','marker'],
+                         default='line',
+                         help="""style used for plotting the time-series (default: %(default)s).""")
+    xparser.add_argument('--markersize',
+                         type=float,
+                         default=2,
+                         help="""marker size passed to matplotlib (default: %(default)s).""")
     _add_plot_options(xparser)
     _add_io_options(xparser)
 
