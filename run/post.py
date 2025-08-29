@@ -40,6 +40,45 @@ from tm5.post.cams_io    import cams_at_obspack_load_conctseries
 from tm5.post.obspack_io import obspack_load_conctseries
 
 
+def stagrp_load( ds : nc4.Dataset, staid : str ) -> dict:
+    """Utility function that reads and collects information for selected
+    station group from TM5 generated NetCDF file 'stations/stations.nc4'
+    """
+    #-- group associated to station
+    stagrp = ds[staid]
+    abbr_tag = stagrp.abbr.replace('FM/','')
+    sta_alt = stagrp.altitude
+    stalon = stagrp.longitude
+    stalat = stagrp.latitude
+    stareg = stagrp.region
+    ncmix = stagrp['mixing_ratio']
+    assert ncmix.dimensions==('tracers','samples')
+    mix_unit = ncmix.unit
+    assert mix_unit.startswith('mole fraction (')
+    assert mix_unit.endswith(')')
+    mix_unit = mix_unit[:-1].replace('mole fraction (','')
+    #-- each tracer has (potentially) it' own unit
+    mix_unit = [_.strip() for _ in mix_unit.split(',')]
+    #-- but here make sure all have same unit
+    assert np.all(np.array(mix_unit)==mix_unit[0])
+    mix_unit = mix_unit[0]
+    mix_ratio = ncmix[:]
+    assert ma.count_masked(mix_ratio)==0
+    mix_ratio = mix_ratio.data
+    #
+    #-- collect results
+    #
+    stasimu_dict = {}
+    stasimu_dict['abbr_tag']      = abbr_tag
+    stasimu_dict['longitude']     = stalon
+    stasimu_dict['latitude']      = stalat
+    stasimu_dict['altitude']      = sta_alt
+    stasimu_dict['region']        = stareg
+    stasimu_dict['units']         = mix_unit
+    stasimu_dict['concentration'] = mix_ratio
+    return stasimu_dict
+
+    
 def subcmd_stations_visu(args):
     """Visualisation of TM5 simulated concentrations at stations.
     """
@@ -97,10 +136,15 @@ def subcmd_stations_visu(args):
     nsta = len(stations)
     msg = f"detected {ngrp} NetCDF groups with {nsta} different station names"
     logger.info(msg)
+    #
+    #-- (potential priori) station filtering
+    #
     if station!=None:
         sta_lst = station
     else:
         sta_lst = stations
+    if args.station_location_filter!=None:
+        dom_lonmin, dom_lonmax, dom_latmin, dom_latmax = args.station_location_filter
     # #
     # #--  TESTING/INSPECTION ONLY
     # #
@@ -133,26 +177,28 @@ def subcmd_stations_visu(args):
         msg = f"detected {nstaid} entries for @station -->{sta}<--"
         logger.debug(msg)
         for staid in station_ids:
-            stagrp = ds[staid]
-            abbr_tag = stagrp.abbr.replace('FM/','')
-            sta_alt = stagrp.altitude
-            stalon = stagrp.longitude
-            stalat = stagrp.latitude
-            stareg = stagrp.region
-            ncmix = stagrp['mixing_ratio']
-            assert ncmix.dimensions==('tracers','samples')
-            mix_unit = ncmix.unit
-            assert mix_unit.startswith('mole fraction (')
-            assert mix_unit.endswith(')')
-            mix_unit = mix_unit[:-1].replace('mole fraction (','')
-            #-- each tracer has (potentially) it' own unit
-            mix_unit = [_.strip() for _ in mix_unit.split(',')]
-            #-- but here make sure all have same unit
-            assert np.all(np.array(mix_unit)==mix_unit[0])
-            mix_unit = mix_unit[0]
-            mix_ratio = ncmix[:]
-            assert ma.count_masked(mix_ratio)==0
-            mix_ratio = mix_ratio.data
+            #
+            #-- load simulation@station
+            #
+            stasimu_dict = stagrp_load(ds, staid)
+            abbr_tag  = stasimu_dict['abbr_tag']
+            sta_alt   = stasimu_dict['altitude']
+            stalon    = stasimu_dict['longitude']
+            stalat    = stasimu_dict['latitude']
+            stareg    = stasimu_dict['region']
+            mix_unit  = stasimu_dict['units']
+            mix_ratio = stasimu_dict['concentration']
+            #
+            #-- location filter active (?)
+            #
+            if args.station_location_filter!=None:
+                if (stalon<dom_lonmin) or (stalon>dom_lonmax):
+                    continue
+                elif (stalat<dom_latmin) or (stalat>dom_latmax):
+                    continue
+            #
+            #-- create simulation data dictionary (time,conc)
+            #
             data_dict = {'time': date_lst}
             #
             #-- insert mixing ratio(s)
@@ -420,6 +466,14 @@ def subcmd_stations_cmpvisu(args):
     assert exp_map[tag1]['tracers']==exp_map[tag2]['tracers']
     assert exp_map[tag1]['tcover_start']==exp_map[tag2]['tcover_start']
     assert exp_map[tag1]['tcover_end']==exp_map[tag2]['tcover_end']
+    #
+    #-- nc4 Dataset handles
+    #
+    ds1 = exp_map[tag1]['ds']
+    ds2 = exp_map[tag2]['ds']
+    #
+    #-- collect experiment settings
+    #
     stations = exp_map[tag1]['stations']
     nsta = len(stations)
     msg = f"detected {ngrp} NetCDF groups with {nsta} different station names"
@@ -441,21 +495,23 @@ def subcmd_stations_cmpvisu(args):
         if not obspackdir.is_dir():
             msg = f"provided obspack directory ***{args.obspackdir}*** not accessible"
             raise RuntimeError(msg)
-    with_obspack = (obspackdir!=None)
-
+    #
+    #-- (potential priori) station filtering
+    #
     if station!=None:
         sta_lst = station
     else:
         sta_lst = stations
+    if args.station_location_filter!=None:
+        dom_lonmin, dom_lonmax, dom_latmin, dom_latmax = args.station_location_filter
     #
     #-- loop over stations (station names)
     #
-    ds1 = exp_map[tag1]['ds']
-    ds2 = exp_map[tag2]['ds']
     for sta in sta_lst:
         #
         #-- detect entries starting with station name
         #   -> can take from first experiment directory
+        #
         station_ids = [_ for _ in ds1.groups if ds1[_].getncattr('name').lower().startswith(sta.lower())]
         nstaid = len(station_ids)
         if nstaid==0:
@@ -465,38 +521,44 @@ def subcmd_stations_cmpvisu(args):
         msg = f"detected {nstaid} entries for @station -->{sta}<--"
         logger.debug(msg)
         for staid in station_ids:
-            stagrp1 = ds1[staid]
-            stagrp2 = ds2[staid]
-            abbr_tag = stagrp1.abbr.replace('FM/','')
-            sta_alt = stagrp1.altitude
-            stalon = stagrp1.longitude
-            stalat = stagrp1.latitude
-            stareg = stagrp1.region
-            ncmix1 = stagrp1['mixing_ratio']
-            ncmix2 = stagrp2['mixing_ratio']
-            #-- NOTE: no checking of second experiment outputs yet
-            assert ncmix1.dimensions==('tracers','samples')
-            mix_unit = ncmix1.unit
-            assert mix_unit.startswith('mole fraction (')
-            assert mix_unit.endswith(')')
-            mix_unit = mix_unit[:-1].replace('mole fraction (','')
-            #-- each tracer has (potentially) it' own unit
-            mix_unit = [_.strip() for _ in mix_unit.split(',')]
-            #-- but here make sure all have same unit
-            assert np.all(np.array(mix_unit)==mix_unit[0])
-            mix_unit = mix_unit[0]
-            mix_ratio1 = ncmix1[:]
-            assert ma.count_masked(mix_ratio1)==0
-            mix_ratio1 = mix_ratio1.data
-            mix_ratio2 = ncmix2[:]
-            assert ma.count_masked(mix_ratio2)==0
-            mix_ratio2 = mix_ratio2.data
+            #
+            #-- load simulation@station
+            #
+            stasimu_dict1 = stagrp_load(ds1, staid)
+            stasimu_dict2 = stagrp_load(ds2, staid)
+            abbr_tag  = stasimu_dict1['abbr_tag']
+            sta_alt   = stasimu_dict1['altitude']
+            stalon    = stasimu_dict1['longitude']
+            stalat    = stasimu_dict1['latitude']
+            stareg    = stasimu_dict1['region']
+            mix_unit  = stasimu_dict1['units']
+            #
+            #-- consistency check(s)
+            #
+            for k in ['abbr_tag','altitude','longitude','latitude','units',]:
+                if stasimu_dict1[k]!=stasimu_dict2[k]:
+                    msg = f"...inconsistency @key={k} between experiments, " \
+                        f"exp1 -->{stasimu_dict1[k]}<-- " \
+                        f"exp2 -->{stasimu_dict2[k]}<-- "
+            #
+            #-- location filter active (?)
+            #
+            if args.station_location_filter!=None:
+                if (stalon<dom_lonmin) or (stalon>dom_lonmax):
+                    continue
+                elif (stalat<dom_latmin) or (stalat>dom_latmax):
+                    continue
+            #
+            #-- concentration of both experiments
+            #
+            mix_ratio1 = stasimu_dict1['concentration']
+            mix_ratio2 = stasimu_dict2['concentration']
             #
             #-- build data dictionary
             #
             data_dict = {'time': date_lst}
             #
-            #-- insert mixing ratio(s)
+            #-- insert mixing ratio(s), potentially multiple tracers
             #
             if ntrac==1:
                 tracer_tag = f"{tag1} {tracers[0].lower()}"
@@ -517,16 +579,20 @@ def subcmd_stations_cmpvisu(args):
                     data_dict[tracer_tag] = mix_ratio1[itrac,:]
                     tracer_tag = f"{tag2} {tracer.lower()}"
                     data_dict[tracer_tag] = mix_ratio2[itrac,:]
-
             #
             #-- build data frame(s) (per current station and station level)
             #
             df = pd.DataFrame.from_dict(data_dict)
+            #
+            #-- (potentially) restrict to selected hour
+            #
             if args.hour!=None:
                 msg = f"...restrict to simulations in hour={args.hour}"
                 logger.info(msg)
                 df = df[df.time.dt.hour==args.hour]
-            #-- obspack(?)
+            #
+            #-- obspack observations requested and available(?)
+            #
             dfobspack = None
             obspack_info = None
             if obspackdir!=None:
@@ -752,12 +818,16 @@ def parser():
     xparser = subparsers.add_parser('stations_visu',
                                     help="""showing concentration time-series at stations.""")
     xparser.add_argument('expdir', help="""TM5 simulation directory.""")
-    xparser.add_argument('--station',
-                         nargs='+',
-                         help="""select stations by name.""")
     xparser.add_argument('--tracersum',
                          action='store_true',
                          help="""whether to show sum of simulated tracers (in case of multiple-tracer run.""")
+    xparser.add_argument('--station',
+                         nargs='+',
+                         help="""select stations by name.""")
+    xparser.add_argument('--station_location_filter',
+                         nargs=4,
+                         type=float,
+                         help="""restrict to stations in provided domain specified as West/East/South/North in degree(s).""")
     xparser.add_argument('--camsfile',
                          help="""provision of NetCDF file with CAMS concentrations at obspack sites triggers comparison plot.""")
     xparser.add_argument('--obspackdir',
@@ -806,6 +876,10 @@ def parser():
     xparser.add_argument('--station',
                          nargs='+',
                          help="""select stations by name.""")
+    xparser.add_argument('--station_location_filter',
+                         nargs=4,
+                         type=float,
+                         help="""restrict to stations in provided domain specified as West/East/South/North in degree(s).""")
     xparser.add_argument('--tracersum',
                          action='store_true',
                          help="""whether to show sum of simulated tracers (in case of multiple-tracer run.""")
