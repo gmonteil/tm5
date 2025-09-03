@@ -5,7 +5,8 @@
     - [ ] (9) GM to replace continuous line for obspack by dots or crosses 
 - GUI (analysis)
     - [ ] (8) GM: check domain size on plot after change of region
-    - [ ] Automated observation fit statistics (RMSE, maybe as table)
+    - [ ] (4) MV: Automated observation fit statistics (RMSE, maybe as table), first for pre-computed results, does the statistics adapt when we zoom on the time axis?
+    - [ ] (5) MV: Enable selection between multiple sensitivity experiments
     - [ ] (7) GM: Integrate some visualisation of the emission budget in configuration part of the GUI (to allow perform a quick sanity check)
 - GUI (extension)    
     - [ ] (re) implement possibility to pass defaults through a YAML file
@@ -18,14 +19,10 @@
     - [ ] GM: speedup reading emissions
 - TM5 analyses, open questions regarding our initial TM5 runs with prior emission fields: to be addressed with long run on COSMOS:
     - [ ] implement and test reading of the CAMS reanalysis OH field (to be used for the troposhere, for the stratosphere we'll rather use Bruehl et al.), this should be the default, Spivakovsky is kept-
-    - [ ] (4) MV: to find a better format: lines for simulations and dots for obs; also try with dots only but shorter time interval
     - [ ] (10) MV: check how Vaganovo looks now in global 1 by 1 run (launch on COSMOS), not too urgent
     - [ ] (1) GM to send to Arjo email with the macros with use, and get him to confirm 
 - Sensitivity Runs (the important point is that we want to see an effect and the comparison with CAMS clearly shows us which run is more consistent)
-    - [ ] (5) MV compare default emissions globally with default emissions only outside zoom region and inside regional emissions
     - [ ] (6) MV try cases with the regional emissions where in the sensitivity run we remove the emissions from:
-                (a) a country (NL or FR)
-                (b) a sector (some component of fossil, e.g. waste, has probably more effect in our zoom region than wetland)
                 (c) a power plant near a site
 - Documentation
     - [ ] properly setup github pages with mkdocs
