@@ -379,7 +379,7 @@ class StationExplorer(pn.viewable.Viewer):
         #-- station plot comparison against obspack
         #   currently limited to single level (no button yet to set level)
         #
-        self.vlevel = 'lowest'
+        self.vlevel = 'highest'
         self.fitic_comparison = 'regional'
         self.default_site = None
         #
@@ -461,7 +461,7 @@ class StationExplorer(pn.viewable.Viewer):
         self.vlevel = level
 
     def set_fitic_comparison(self, cmptag : str = 'regional'):
-        if not cmptag in ['regional',]:#['flat','regional',]:
+        if not cmptag in ['regional',]:
             msg = f"comparison mode -->{cmptag}<-- not supported yet."
             raise RuntimeError(msg)
         self.fitic_comparison = cmptag
@@ -545,6 +545,21 @@ class StationExplorer(pn.viewable.Viewer):
         #
         dfplot = df[df['time'].dt.hour==show_hour]
         #
+        #-- make more descriptive name for plotting
+        #
+        if self.tracer==species:
+            rename_map = { self.tracer : 'FIT-IC' }
+        else:
+            rename_map = { self.tracer : f"FIT-IC ({self.tracer})" }
+        dfplot = dfplot.rename(columns=rename_map)
+        sim_columns = [rename_map[self.tracer], fitic_cmp_column,]
+        #
+        #--
+        #
+        title = f"{species}@{self.station} ({sta_region}, {sta_alt}[m])"
+        mixunit = self._get_unit(station_ids)
+        ylabel = f"concentration [{mixunit}]"
+        #
         #-- add comparison against obspack (if available)
         #
         if obspackdir!=None:
@@ -555,8 +570,10 @@ class StationExplorer(pn.viewable.Viewer):
                                                  stalon,
                                                  stalat,
                                                  sta_alt)
+            #
             #-- there seem to be simulated stations
             #   where no appropriate obspack counterpart is available...
+            #
             if not dfobspack is None:
                 # msg = f"DEBUG @{abbr_tag}, obspack preparation ({dfobspack.shape}), " \
                 #     f"{dfobspack['time'].min()} to {dfobspack['time'].max()}"
@@ -577,85 +594,24 @@ class StationExplorer(pn.viewable.Viewer):
                 dfplot = dfplot.drop(['time',], axis=1)
                 dfplot.loc[dfobspack.index,'obspack'] = dfobspack.loc[:,'obspack_ch4']
                 dfplot = dfplot.reset_index()
-        #--
-        title = f"{species}@{self.station} ({sta_region}, {sta_alt}[m])"
-        mixunit = self._get_unit(station_ids)
-        ylabel = f"concentration [{mixunit}]"
+                rmse_title = "RMSE: "
+                for _sim in sim_columns:
+                    rmse = ((dfplot[_sim]-dfplot['obspack'])**2).mean() ** 0.5
+                    rmse_title += f"{_sim}={rmse:.3f} "
+                title += '\n' + rmse_title
 
         #
-        #-- make more descriptive name for plotting
+        #--
         #
-        if self.tracer==species:
-            rename_map = { self.tracer : 'FIT-IC' }
+        simplot = dfplot.hvplot(x='time', y=sim_columns, grid=True,
+                                ylabel=ylabel, xlabel='time', title=title)
+        if 'obspack' in dfplot.columns:
+            obsplot = dfplot.hvplot.points(x='time', y='obspack',
+                                           marker='+',
+                                           color='orange')
+            hvplot = simplot * obsplot
         else:
-            rename_map = { self.tracer : f"FIT-IC ({self.tracer})" }
-        dfplot = dfplot.rename(columns=rename_map)
-
-        #--
-        sim_columns = [rename_map[self.tracer], ]
-        obs_columns = []
-        plot_columns = [rename_map[self.tracer], ]
-        if fitic_cmp_column in dfplot.columns:
-            plot_columns += [fitic_cmp_column,]
-            sim_columns  += [fitic_cmp_column,]
-
-        rmse_lst = []
-        for _c in dfplot.columns:
-            if _c.startswith('obspack'):
-                plot_columns.append(_c)
-                obs_columns.append(_c)
-                for _cc in sim_columns:
-                    rmse = ((dfplot[_cc]-dfplot[_c])**2).mean() ** 0.5
-                    rmse_lst.append(rmse)
-                    # print(f"@_cc={_cc}, rmse={rmse}")
-        #
-        #-- ! ! !   A T T E M P T   N D O V E R L A Y ! ! !
-        #
-        c_1 = plot_columns[0]
-        label = f"{c_1}, rmse={rmse_lst[0]:.4f}"
-        plot_1 = dfplot[['time',c_1]].hvplot.line(x='time', grid=True,
-                                                  ylabel=ylabel, xlabel='time',
-                                                  color='blue', label=label)
-        c_2 = plot_columns[1]
-        label = f"{c_2}, rmse={rmse_lst[1]:.4f}"
-        plot_2 = dfplot[['time',c_2]].hvplot.line(x='time',
-                                                  color='red', label=label)
-        c_3 = plot_columns[2]
-        label = f"{c_3}"
-        #-- MVO-ATTENTION::
-        #   - 'ls' not recognized, yields warning message
-        #   - 'marker' yields runtime exception
-        # plot_3 = dfplot[['time',c_2]].hvplot.line(x='time',
-        #                                           color='orange',# alpha=0.5,
-        #                                           ls='.-',
-        #                                           label=label)
-        # hvplot = plot_1 * plot_2 * plot_3
-        # dfplot = dfplot[['time',]+plot_columns]
-        #
-        #-- show/add RMSE in title
-        #
-        rmse_title = "RMSE: "
-        for _sim,_rmse in zip(sim_columns, rmse_lst):
-            rmse_title += f"{_sim}={_rmse:.3f} "
-        title += '\n' + rmse_title
-        hvplot = dfplot.hvplot(x='time', grid=True,
-                               ylabel=ylabel, xlabel='time', title=title)
-        # print(dfplot.head(n=20))
-        # print("-"*40)
-        # print(f"TM5 entries: {dfplot[self.tracer].notnull().sum()}")
-        # print(f"obspack:     {dfplot['obspack'].notnull().sum()}")
-        # _simplot = dfplot[['time',]+sim_columns].hvplot.line(x='time', grid=True,
-        #                                            ylabel=ylabel, xlabel='time', title=title)
-        # if len(obs_columns)>0:
-        #     _obsplot = dfplot[['time',]+obs_columns].hvplot.line(x='time',
-        #                                                # ls='',
-        #                                                marker='+', ms=2,
-        #                                                markercolor='orange')
-        #     hvplot = _simplot * _obsplot
-        # else:
-        #     hvplot = _simplot
-        # print(f"@plot_timeseries, returning type -->{type(hvplot)}<--")
-        #
+            hvplot = simplot
         #
         #-- autohide toolbar
         #
