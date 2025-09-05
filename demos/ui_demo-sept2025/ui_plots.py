@@ -31,7 +31,7 @@ hv.extension('bokeh')
 from ui_util import fix_env
 from ui_util import cams_at_obspack_load_conctseries
 from ui_util import obspack_load_conctseries
-from ui_util import outdir_default, outdir_regional#, outdir_edgarflat
+from ui_util import outdir_default, outdir_regional
 from ui_util import obspackdir
 
 #
@@ -386,23 +386,17 @@ class StationExplorer(pn.viewable.Viewer):
         #-- directories with pre-computed output
         #
         self.precompoutdir_default    = outdir_default
-        # self.precompoutdir_flat       = outdir_edgarflat
         self.precompoutdir_regional   = outdir_regional
         #
         #-- up to 3 files with simulated concentrations at stations
         #
         self.stations_file_default = self.precompoutdir_default / 'stations' / 'stations.nc4'
-        # self.stations_file_flat    = self.precompoutdir_flat / 'stations' / 'stations.nc4'
         self.stations_file_regional     = self.precompoutdir_regional / 'stations' / 'stations.nc4'
         #-- basic consistency tests
         if not self.stations_file_default.exists():
             msg =f"file with simulated concentrations at stations " \
                 f"==>{self.stations_file_default}<== is not accessible."
             raise RuntimeError(msg)
-        # elif not self.stations_file_flat.exists():
-        #     msg =f"file with simulated concentrations at stations " \
-        #         f"==>{self.stations_file_flat}<== is not accessible."
-        #     raise RuntimeError(msg)
         elif not self.stations_file_regional.exists():
             msg =f"file with simulated concentrations at stations " \
                 f"==>{self.stations_file_regional}<== is not accessible."
@@ -411,12 +405,10 @@ class StationExplorer(pn.viewable.Viewer):
         #-- open station NetCDF files
         #
         self.data_default = nc4.Dataset(str(self.stations_file_default))
-        # self.data_flat    = nc4.Dataset(str(self.stations_file_flat))
         self.data_regional     = nc4.Dataset(str(self.stations_file_regional))
         #
         #--
         #
-        # assert np.all(self.data_default['date_midpoints'][:]==self.data_flat['date_midpoints'][:])
         assert np.all(self.data_default['date_midpoints'][:]==self.data_regional['date_midpoints'][:])
         #
         #-- store concentration dates
@@ -469,7 +461,7 @@ class StationExplorer(pn.viewable.Viewer):
         self.vlevel = level
 
     def set_fitic_comparison(self, cmptag : str = 'regional'):
-        if not cmptag in ['flat','regional',]:
+        if not cmptag in ['regional',]:#['flat','regional',]:
             msg = f"comparison mode -->{cmptag}<-- not supported yet."
             raise RuntimeError(msg)
         self.fitic_comparison = cmptag
@@ -479,7 +471,7 @@ class StationExplorer(pn.viewable.Viewer):
         
     def _get_unit(self, station_id):
         #
-        #-- mixing unit is equal among default/overwrite/edgarflat
+        #-- mixing unit is equal among TM5 simulations
         #
         stagrp = self.data_default[station_id]
         ncmix = stagrp['mixing_ratio']
@@ -537,14 +529,13 @@ class StationExplorer(pn.viewable.Viewer):
         data_dict = {'time':self._dates, self.tracer: staconc}
         df = DataFrame.from_dict(data_dict)
         #
-        #-- add simulation with flat profile
+        #-- add second simulation, currently the one with regional emissions
         #
-        if self.fitic_comparison=='flat':
-            stagrp_cmp = self.data_flat[station_ids]
-            fitic_cmp_column = 'FIT-IC (flat anthropogenic)'
-        else:
+        if self.fitic_comparison=='regional':
             stagrp_cmp = self.data_regional[station_ids]
             fitic_cmp_column = 'FIT-IC (regional emissions)'
+        else:
+            raise RuntimeError(f"unexpeced comparsion -->{self.fitic_comparison}<--")
         ncmix_cmp = stagrp_cmp['mixing_ratio']
         itrac = self.param.tracer.objects.index(self.tracer)
         staconc_cmp = ncmix_cmp[itrac,:].data
@@ -616,9 +607,9 @@ class StationExplorer(pn.viewable.Viewer):
                 for _cc in sim_columns:
                     rmse = ((dfplot[_cc]-dfplot[_c])**2).mean() ** 0.5
                     rmse_lst.append(rmse)
-                    print(f"@_cc={_cc}, rmse={rmse}")
+                    # print(f"@_cc={_cc}, rmse={rmse}")
         #
-        #--
+        #-- ! ! !   A T T E M P T   N D O V E R L A Y ! ! !
         #
         c_1 = plot_columns[0]
         label = f"{c_1}, rmse={rmse_lst[0]:.4f}"
@@ -631,12 +622,18 @@ class StationExplorer(pn.viewable.Viewer):
                                                   color='red', label=label)
         c_3 = plot_columns[2]
         label = f"{c_3}"
-        plot_3 = dfplot[['time',c_2]].hvplot.line(x='time',
-                                                  color='orange',# alpha=0.5,
-                                                  ls='.-',
-                                                  label=label)
-        hvplot = plot_1 * plot_2 * plot_3
-        dfplot = dfplot[['time',]+plot_columns]
+        #-- MVO-ATTENTION::
+        #   - 'ls' not recognized, yields warning message
+        #   - 'marker' yields runtime exception
+        # plot_3 = dfplot[['time',c_2]].hvplot.line(x='time',
+        #                                           color='orange',# alpha=0.5,
+        #                                           ls='.-',
+        #                                           label=label)
+        # hvplot = plot_1 * plot_2 * plot_3
+        # dfplot = dfplot[['time',]+plot_columns]
+        #
+        #-- show/add RMSE in title
+        #
         rmse_title = "RMSE: "
         for _sim,_rmse in zip(sim_columns, rmse_lst):
             rmse_title += f"{_sim}={_rmse:.3f} "
