@@ -2,11 +2,11 @@
 
 - GUI (setup)
     - [ ] implement only configuration with 3 level zoom "avengers-1", i.e global/Europe/NL+D+CH
-    - [ ] (9) GM to replace continuous line for obspack by dots or crosses 
+    - [ ] (1) GM by Wednesday to replace continuous line for obspack by dots or crosses in the GUI and other small things to improve visibitiy
 - GUI (analysis)
     - [ ] (8) GM: check domain size on plot after change of region
-    - [ ] (4) MV: Automated observation fit statistics (RMSE, maybe as table), first for pre-computed results, does the statistics adapt when we zoom on the time axis?
-    - [ ] (5) MV: Enable selection between multiple sensitivity experiments
+    - [ ] (2) GM by Wednesday: Automated observation fit statistics (RMSE, maybe as table), first for pre-computed results, does the statistics adapt when we zoom on the time axis?
+    - [ ] (3) GM after Wednesday: Enable selection between multiple sensitivity experiments (via a rearrangement of current GUI elements)
     - [ ] (7) GM: Integrate some visualisation of the emission budget in configuration part of the GUI (to allow perform a quick sanity check)
 - GUI (extension)    
     - [ ] (re) implement possibility to pass defaults through a YAML file
@@ -28,8 +28,8 @@
     - [ ] properly setup github pages with mkdocs
 - Inversion
     - [ ] implement dummy inversion based on Jacobians to test computational performance -> txk
-    - [ ] (2) GM: adapt adjoint to run with the simplified emission preparation 
-    - [ ] (3) GM: adapt adjoint to run with the OH field (to Spivakovsky first, which is enough for the Jacobian computations, possibly later CAMS OH) 
+    - [ ] (4) GM: adapt adjoint to run with the simplified emission preparation 
+    - [ ] (5) GM: adapt adjoint to run with the OH field (to Spivakovsky first, which is enough for the Jacobian computations, possibly later CAMS OH) 
  
 # Task ideas / discussion
 - avoid misuse through implementation of "accepted ranges" => *That's essentially built-in the GUI*
