@@ -369,7 +369,8 @@ class EmissionExplorer(pn.viewable.Viewer):
 class StationExplorer(pn.viewable.Viewer):
     tracer  = param.Selector()
     station = param.Selector()
-    hour    = param.Selector()
+    #-- swichted back to daily-mean concentration
+    #hour    = param.Selector()
     data    = param.ObjectSelector()
     
     def __init__(self, settings, mode : str = 'precomputed_default'):
@@ -422,8 +423,9 @@ class StationExplorer(pn.viewable.Viewer):
         self.param.tracer.objects = tracers
         self.tracer = tracers[0]
         #
-        self.param.hour.objects = [ _ for _ in range(0,24) ]
-        self.hour = 12
+        #-- swichted back to daily-mean concentration
+        # self.param.hour.objects = [ _ for _ in range(0,24) ]
+        # self.hour = 12
         #
         #-- for the panel
         #
@@ -435,6 +437,7 @@ class StationExplorer(pn.viewable.Viewer):
         if self.default_site==None:
             try:
                 idx = stations.index("Mauna Loa, Hawaii")
+                idx = stations.index("Cabauw")
                 # idx = stations.index("Palmer Station, Antarctica")
             except ValueError:
                 idx = -1
@@ -450,7 +453,7 @@ class StationExplorer(pn.viewable.Viewer):
         return pn.Column(
             pn.widgets.Select.from_param(self.param.tracer),
             pn.widgets.Select.from_param(self.param.station),
-            pn.widgets.Select.from_param(self.param.hour),
+            # pn.widgets.Select.from_param(self.param.hour),
             hv.DynamicMap(self.plot_timeseries),
         )
 
@@ -483,12 +486,16 @@ class StationExplorer(pn.viewable.Viewer):
         return mix_unit
     
     # @pn.depends('tracer', 'station', watch=True)
-    @pn.depends('tracer', 'station', 'hour')
+    #-- switched back to daily mean concentration
+    # @pn.depends('tracer', 'station', 'hour')
+    @pn.depends('tracer', 'station')
     def plot_timeseries(self):
-        if self.tracer is None or self.station is None or self.hour is None:
+        if self.tracer is None or self.station is None:# or self.hour is None:
             return
-        show_hour = self.hour
+        # show_hour = self.hour
+        #
         #-- temporal coverage
+        #
         tcover_start = pd.Timestamp(self.data_default.getncattr('starting time'))
         tcover_end   = pd.Timestamp(self.data_default.getncattr('ending time'))
         # #MVDEBUG
@@ -540,10 +547,19 @@ class StationExplorer(pn.viewable.Viewer):
         itrac = self.param.tracer.objects.index(self.tracer)
         staconc_cmp = ncmix_cmp[itrac,:].data
         df[fitic_cmp_column] = staconc_cmp[:]
+        # #
+        # #-- restrict to selected hour
+        # #
+        # dfplot = df[df['time'].dt.hour==show_hour]
         #
-        #-- restrict to selected hour
+        #-- back again to daily concentrations
         #
-        dfplot = df[df['time'].dt.hour==show_hour]
+        dfd = df.copy()
+        dfd.index = dfd['time']
+        dfd = dfd.drop(['time',], axis=1)
+        dfd = dfd.resample('D').mean()
+        dfd = dfd.reset_index()
+        dfplot = dfd
         #
         #-- make more descriptive name for plotting
         #
@@ -556,20 +572,24 @@ class StationExplorer(pn.viewable.Viewer):
         #
         #--
         #
-        title = f"{species}@{self.station} ({sta_region}, {sta_alt}[m])"
+        title = f"{species}@{self.station} (daily-mean, {sta_region}, {sta_alt}[m])"
         mixunit = self._get_unit(station_ids)
         ylabel = f"concentration [{mixunit}]"
         #
         #-- add comparison against obspack (if available)
         #
         if obspackdir!=None:
-            dfobspack = obspack_load_conctseries(obspackdir,
-                                                 tcover_start,
-                                                 tcover_end,
-                                                 abbr_tag,
-                                                 stalon,
-                                                 stalat,
-                                                 sta_alt)
+            obspack_info = obspack_load_conctseries(obspackdir,
+                                                    tcover_start,
+                                                    tcover_end,
+                                                    abbr_tag,
+                                                    stalon,
+                                                    stalat,
+                                                    sta_alt)
+            if obspack_info!=None:
+                dfobspack = obspack_info['df']
+            else:
+                dfobspack = None
             #
             #-- there seem to be simulated stations
             #   where no appropriate obspack counterpart is available...
@@ -578,22 +598,31 @@ class StationExplorer(pn.viewable.Viewer):
                 # msg = f"DEBUG @{abbr_tag}, obspack preparation ({dfobspack.shape}), " \
                 #     f"{dfobspack['time'].min()} to {dfobspack['time'].max()}"
                 # print(msg)
-                dfobspack = dfobspack[dfobspack['time'].dt.hour==show_hour]
-                # print(dfplot.head(n=5))
-                # print(dfobspack.head(n=5))
-                # print("-"*30)
-                # print(dfplot.tail(n=5))
-                # print(dfobspack.tail(n=5))
+                # #
+                # #-- when selecting hour-of-day
+                # #
+                # dfobspack = dfobspack[dfobspack['time'].dt.hour==show_hour]
+                # dfobspack.index = dfobspack['time']
+                # dfobspack = dfobspack.drop(['time',], axis=1)
                 #
-                #-- insert obspack concentrations
+                #--
+                #
+                dfd_obspack = dfobspack.copy()
+                dfd_obspack.index = dfd_obspack['time']
+                dfd_obspack = dfd_obspack.drop(['time',], axis=1)
+                dfd_obspack = dfd_obspack.resample('D').mean()
+                #
+                #-- insert obspack concentrations as column 'obspack'
                 #   (where available and at correct time-points)
                 #
-                dfobspack.index = dfobspack['time']
-                dfobspack = dfobspack.drop(['time',], axis=1)
                 dfplot.index = dfplot['time']
                 dfplot = dfplot.drop(['time',], axis=1)
-                dfplot.loc[dfobspack.index,'obspack'] = dfobspack.loc[:,'obspack_ch4']
+                # dfplot.loc[dfobspack.index,'obspack'] = dfobspack.loc[:,'obspack_ch4']
+                dfplot.loc[dfd_obspack.index,'obspack'] = dfd_obspack.loc[:,'obspack_ch4']
                 dfplot = dfplot.reset_index()
+                #
+                #-- add RMSE to title
+                #
                 rmse_title = "RMSE: "
                 for _sim in sim_columns:
                     rmse = ((dfplot[_sim]-dfplot['obspack'])**2).mean() ** 0.5
