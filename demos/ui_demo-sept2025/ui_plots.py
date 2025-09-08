@@ -31,7 +31,7 @@ hv.extension('bokeh')
 from ui_util import fix_env
 from ui_util import cams_at_obspack_load_conctseries
 from ui_util import obspack_load_conctseries
-from ui_util import outdir_default, outdir_regional
+from ui_util import get_precomputed_expdirs
 from ui_util import obspackdir
 
 #
@@ -53,11 +53,13 @@ def load_emis(pattern: str) -> xr.Dataset:
 
 class EmissionExplorer(pn.viewable.Viewer):
     time_index = param.Integer()
-    data = param.ObjectSelector()
-    category = param.Selector()
-    region   = param.Selector()
+    data       = param.ObjectSelector()
+    category   = param.Selector()
+    region     = param.Selector()
     
-    def __init__(self, settings, pattern : str = None, mode : str = 'precomputed_default', load_parallel : bool = True):
+    def __init__(self, settings, pattern : str = None,
+                 mode : str = 'precomputed_default',
+                 load_parallel : bool = True):
         super().__init__()
         fix_env()
         self.settings = settings
@@ -65,12 +67,13 @@ class EmissionExplorer(pn.viewable.Viewer):
         #   ch4emis.{species}.{reg}.yyyymmdd.nc
         self.yyyymmdd_ptn = pattern if pattern!=None else '????????'
         #
-        #--
+        #-- directories with pre-computed output
         #
+        precomp_dict = get_precomputed_expdirs()
         if mode=='precomputed_default':
-            self.outdir_precomputed = outdir_default
+            self.outdir_precomputed = precomp_dict['default']
         elif mode=='precomputed_regional':
-            self.outdir_precomputed = outdir_regional
+            self.outdir_precomputed = precomp_dict['regional']
         else:
             msg = f"selected mode -->{mode}<-- not supported."
             raise RuntimeError(msg)
@@ -369,68 +372,87 @@ class EmissionExplorer(pn.viewable.Viewer):
 class StationExplorer(pn.viewable.Viewer):
     tracer  = param.Selector()
     station = param.Selector()
+    vlevel  = param.Selector(label='vertical level at station')
+    exp1 = param.Selector(label='first TM5 simulation')
+    exp2 = param.Selector(label='second TM5 simulation')
     #-- swichted back to daily-mean concentration
     #hour    = param.Selector()
     data    = param.ObjectSelector()
-    
-    def __init__(self, settings, mode : str = 'precomputed_default'):
+
+    def __init__(self, settings):
         super().__init__()
         self.settings = settings
         #
         #-- station plot comparison against obspack
-        #   currently limited to single level (no button yet to set level)
+        #   currently limited to single level (no button yet to set/select level)
         #
         self.vlevel = 'highest'
-        self.fitic_comparison = 'regional'
-        self.default_site = None
+        self.default_site = 'Cabauw' #None
         #
         #-- directories with pre-computed output
         #
-        self.precompoutdir_default    = outdir_default
-        self.precompoutdir_regional   = outdir_regional
+        precomp_dict = get_precomputed_expdirs()
         #
-        #-- up to 3 files with simulated concentrations at stations
+        #-- build table of station-simulation file handles
         #
-        self.stations_file_default = self.precompoutdir_default / 'stations' / 'stations.nc4'
-        self.stations_file_regional     = self.precompoutdir_regional / 'stations' / 'stations.nc4'
-        #-- basic consistency tests
-        if not self.stations_file_default.exists():
-            msg =f"file with simulated concentrations at stations " \
-                f"==>{self.stations_file_default}<== is not accessible."
-            raise RuntimeError(msg)
-        elif not self.stations_file_regional.exists():
-            msg =f"file with simulated concentrations at stations " \
-                f"==>{self.stations_file_regional}<== is not accessible."
-            raise RuntimeError(msg)
-        
-        #-- open station NetCDF files
+        self.precomp_table = OrderedDict()
+        simu_dates = None
+        tcover_start = None
+        tcover_end   = None
+        tracers    = None
+        stations   = None
+        for tag,expdir in precomp_dict.items():
+            stations_file = precomp_dict[tag] / 'stations' / 'stations.nc4'
+            if not stations_file.exists():
+                msg = f"@{tag}, did not find 'stations.nc4' in simulation directory"
+                logger.warn(msg)
+                continue
+            else:
+                #-- NetCDF file handle
+                _cur_handle = nc4.Dataset(str(stations_file))
+                self.precomp_table[tag] = _cur_handle
+            #
+            #-- save simulation dates, assure consinstency among simulations
+            #
+            _cur_tstart = _cur_handle.getncattr('starting time')
+            _cur_tend   = _cur_handle.getncattr('ending time')
+            _cur_dates = _cur_handle['date_midpoints'][:]
+            if len(self.precomp_table)==1:
+                simu_dates = np.copy(_cur_dates)
+                tcover_start = _cur_tstart
+                tcover_end   = _cur_tend
+            else:
+                assert np.all(simu_dates[:]==_cur_dates[:])
+            #
+            #-- make sure all simulations are for the same (list of) tracers
+            #
+            _cur_tracers = [getattr(_cur_handle, f'tracer_{itrac+1:03.0f}') for itrac in range(_cur_handle.dimensions['tracers'].size)]
+            if len(self.precomp_table)==1:
+                tracers = _cur_tracers
+            else:
+                assert _cur_tracers==tracers
+            #
+            #-- build list of stations
+            #
+            _cur_stations = sorted(set([_cur_handle[_].getncattr('name') for _ in _cur_handle.groups]))
+            if len(self.precomp_table)==1:
+                stations = _cur_stations
+            else:
+                assert _cur_stations==stations
         #
-        self.data_default = nc4.Dataset(str(self.stations_file_default))
-        self.data_regional     = nc4.Dataset(str(self.stations_file_regional))
+        #-- store temporal settings
         #
-        #--
+        self._dates = [Timestamp(*_) for _ in simu_dates]
+        self.tcover_start = pd.Timestamp(tcover_start)
+        self.tcover_end   = pd.Timestamp(tcover_end)
         #
-        assert np.all(self.data_default['date_midpoints'][:]==self.data_regional['date_midpoints'][:])
+        #-- set widget selectors
         #
-        #-- store concentration dates
-        #
-        self._dates = [Timestamp(*_) for _ in self.data_default['date_midpoints'][:]]
-        #
-        #-- store tracer names (expected to be equal among simulations)
-        #
-        ntrac = self.data_default.dimensions['tracers']
-        tracers = [getattr(self.data_default, f'tracer_{itrac+1:03.0f}') for itrac in range(self.data_default.dimensions['tracers'].size)]
         self.param.tracer.objects = tracers
         self.tracer = tracers[0]
-        #
-        #-- swichted back to daily-mean concentration
-        # self.param.hour.objects = [ _ for _ in range(0,24) ]
-        # self.hour = 12
-        #
-        #-- for the panel
-        #
-        stations = sorted(set([self.data_default[_].getncattr('name') for _ in self.data_default.groups]))
         self.param.station.objects = sorted(stations)
+        self.param.vlevel.objects  = ['highest','lowest']
+        self.vlevel                = 'highest'
         #
         #-- defaults to last site in list
         #
@@ -444,39 +466,46 @@ class StationExplorer(pn.viewable.Viewer):
             self.station = stations[idx]
         else:
             try:
-                idx = self.station.index(self.default_site)
+                idx = stations.index(self.default_site)
             except ValueError:
                 idx = -1
             self.station = stations[idx]
+        #
+        exp_list = list( self.precomp_table.keys())
+        self.param.exp1.objects = self.precomp_table.keys()
+        self.param.exp2.objects = self.precomp_table.keys()
+        iexp1 = exp_list.index('default')
+        iexp2 = exp_list.index('regional')
+        self.exp1 = exp_list[iexp1]
+        self.exp2 = exp_list[iexp2]
         
     def __panel__(self):
         return pn.Column(
             pn.widgets.Select.from_param(self.param.tracer),
-            pn.widgets.Select.from_param(self.param.station),
+            # pn.widgets.Select.from_param(self.param.station),
+            pn.Row(pn.widgets.Select.from_param(self.param.station),
+                   pn.widgets.Select.from_param(self.param.vlevel)),
+            pn.Row(pn.widgets.Select.from_param(self.param.exp1),
+                   pn.widgets.Select.from_param(self.param.exp2)),
             # pn.widgets.Select.from_param(self.param.hour),
             hv.DynamicMap(self.plot_timeseries),
         )
 
-    def set_vertical_level(self, level : str = 'lowest'):
-        if not level in ['highest','lowest']:
-            msg = f"unsupported level -->{level}<--"
-            raise RuntimeError(msg)
-        self.vlevel = level
-
-    def set_fitic_comparison(self, cmptag : str = 'regional'):
-        if not cmptag in ['regional',]:
-            msg = f"comparison mode -->{cmptag}<-- not supported yet."
-            raise RuntimeError(msg)
-        self.fitic_comparison = cmptag
-
-    def set_default_site(self, site_name):
-        self.default_site = site_name
-        
     def _get_unit(self, station_id):
+        def first(s):
+            '''Return the first element from an ordered collection
+            or an arbitrary element from an unordered collection.
+            Raise StopIteration if the collection is empty.
+            '''
+            return next(iter(s))
+
         #
         #-- mixing unit is equal among TM5 simulations
         #
-        stagrp = self.data_default[station_id]
+        #-> Note: expected to be equal for all simulations,
+        #         so can be extracted from any of the table entries
+        exp1 = first(self.precomp_table.keys())
+        stagrp = self.precomp_table[exp1][station_id]
         ncmix = stagrp['mixing_ratio']
         assert ncmix.dimensions==('tracers','samples')
         mix_unit = ncmix.unit
@@ -488,27 +517,42 @@ class StationExplorer(pn.viewable.Viewer):
     # @pn.depends('tracer', 'station', watch=True)
     #-- switched back to daily mean concentration
     # @pn.depends('tracer', 'station', 'hour')
-    @pn.depends('tracer', 'station')
+    #-- added selection of experiments
+    @pn.depends('tracer', 'station','vlevel','exp1','exp2')
     def plot_timeseries(self):
         if self.tracer is None or self.station is None:# or self.hour is None:
             return
+        elif self.exp1 is None or self.exp2 is None:
+            return
+        # #-- yields exception, so better keep out currently
+        # elif self.exp1==self.exp2:
+        #     msg = f"comparison of identical TM5 simulations not supported."
+        #     logger.warning(msg)
+        #     return
         # show_hour = self.hour
+        simu_colors = ['red','blue',]
+        obs_color   = ['orange',]
+        obs_marker  = '+'
         #
         #-- temporal coverage
         #
-        tcover_start = pd.Timestamp(self.data_default.getncattr('starting time'))
-        tcover_end   = pd.Timestamp(self.data_default.getncattr('ending time'))
-        # #MVDEBUG
-        # # print(tcover_start)
-        # # print(tcover_end)
+        tcover_start = self.tcover_start
+        tcover_end   = self.tcover_end
+        #
+        #--
+        #
+        simu_tag1 = self.exp1
+        simu_tag2 = self.exp2
+        simu1 = self.precomp_table[simu_tag1]
+        simu2 = self.precomp_table[simu_tag2]
         #
         #-- pick stations with matching name
         #
-        station_ids = [_ for _ in self.data_default.groups if self.data_default[_].getncattr('name') == self.station]
+        station_ids = [_ for _ in simu1.groups if simu1[_].getncattr('name') == self.station]
         #
         #-- vertical level of simulation
         #
-        station_level = [self.data_default[_].getncattr('altitude') for _ in station_ids]
+        station_level = [simu1[_].getncattr('altitude') for _ in station_ids]
         #
         #-- currently restrict to upper-most vertical level
         #
@@ -520,7 +564,7 @@ class StationExplorer(pn.viewable.Viewer):
         #--
         #
         # print(f"DEBUG ***{station_ids}***")
-        stagrp = self.data_default[station_ids]
+        stagrp = simu1[station_ids]
         abbr_tag = stagrp.abbr.replace('FM/','')
         sta_alt = stagrp.altitude
         stalon = stagrp.longitude
@@ -533,20 +577,18 @@ class StationExplorer(pn.viewable.Viewer):
         ncmix = stagrp['mixing_ratio']
         itrac = self.param.tracer.objects.index(self.tracer)
         staconc = ncmix[itrac,:].data
-        data_dict = {'time':self._dates, self.tracer: staconc}
+        coltag = f"{self.tracer}_simu1"
+        data_dict = {'time':self._dates, coltag: staconc}
         df = DataFrame.from_dict(data_dict)
         #
         #-- add second simulation, currently the one with regional emissions
         #
-        if self.fitic_comparison=='regional':
-            stagrp_cmp = self.data_regional[station_ids]
-            fitic_cmp_column = 'FIT-IC (regional emissions)'
-        else:
-            raise RuntimeError(f"unexpeced comparsion -->{self.fitic_comparison}<--")
+        stagrp_cmp = simu2[station_ids]
         ncmix_cmp = stagrp_cmp['mixing_ratio']
         itrac = self.param.tracer.objects.index(self.tracer)
         staconc_cmp = ncmix_cmp[itrac,:].data
-        df[fitic_cmp_column] = staconc_cmp[:]
+        coltag = f"{self.tracer}_simu2"
+        df[coltag] = staconc_cmp[:]
         # #
         # #-- restrict to selected hour
         # #
@@ -564,16 +606,27 @@ class StationExplorer(pn.viewable.Viewer):
         #-- make more descriptive name for plotting
         #
         if self.tracer==species:
-            rename_map = { self.tracer : 'FIT-IC' }
+            if simu_tag1!=simu_tag2:
+                simu_columns = [f'FIT-IC-{simu_tag1}', f'FIT-IC-{simu_tag2}',]
+            else:
+                simu_columns = [f'FIT-IC-{simu_tag1}', f'FIT-IC-also-{simu_tag2}',]
         else:
-            rename_map = { self.tracer : f"FIT-IC ({self.tracer})" }
-        dfplot = dfplot.rename(columns=rename_map)
-        sim_columns = [rename_map[self.tracer], fitic_cmp_column,]
-        #
+            if simu_tag1!=simu_tag2:
+                simu_columns = [f'FIT-IC-{simu_tag1} (f{self.tracer}',
+                                f'FIT-IC-{simu_tag2} (f{self.tracer}',]
+            else:
+                simu_columns = [f'FIT-IC-{simu_tag1} (f{self.tracer}',
+                                f'FIT-IC-also-{simu_tag2} (f{self.tracer}',]
         #--
+        rename_map = { f"{self.tracer}_simu1" : simu_columns[0],
+                       f"{self.tracer}_simu2" : simu_columns[1]  }
+        dfplot = dfplot.rename(columns=rename_map)
+        #
+        #--     title and unit
         #
         title = f"{species}@{self.station} (daily-mean, {sta_region}, {sta_alt}[m])"
         mixunit = self._get_unit(station_ids)
+        xlabel = 'time'
         ylabel = f"concentration [{mixunit}]"
         #
         #-- add comparison against obspack (if available)
@@ -624,7 +677,7 @@ class StationExplorer(pn.viewable.Viewer):
                 #-- add RMSE to title
                 #
                 rmse_title = "RMSE: "
-                for _sim in sim_columns:
+                for _sim in simu_columns:
                     rmse = ((dfplot[_sim]-dfplot['obspack'])**2).mean() ** 0.5
                     rmse_title += f"{_sim}={rmse:.3f} "
                 title += '\n' + rmse_title
@@ -632,12 +685,14 @@ class StationExplorer(pn.viewable.Viewer):
         #
         #--
         #
-        simplot = dfplot.hvplot(x='time', y=sim_columns, grid=True,
-                                ylabel=ylabel, xlabel='time', title=title)
+        # print(f"prior plotting, columns -->{simu_columns}<--, colors -->{simu_colors}<--")
+        simplot = dfplot.hvplot(x='time', y=simu_columns,
+                                color=simu_colors,grid=True,
+                                ylabel=ylabel, xlabel=xlabel, title=title)
         if 'obspack' in dfplot.columns:
             obsplot = dfplot.hvplot.points(x='time', y='obspack',
-                                           marker='+',
-                                           color='orange')
+                                           marker=obs_marker,
+                                           color=obs_color)
             hvplot = simplot * obsplot
         else:
             hvplot = simplot

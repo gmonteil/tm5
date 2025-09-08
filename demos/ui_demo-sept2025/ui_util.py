@@ -63,18 +63,12 @@ def fix_env() -> None:
 #
 if get_hostname().find('cosmos')>=0:
     #
-    #-- 2025-06-22:: updated for Geneva25 presentation
-    #                results based on TM5 code including fix for chemistry applied by Guillaume
+    #-- top-level directory with pre-computed TM5 simulations
+    #
     demo_precompdir = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir/runs_with-convdiff_repeated')
     if not demo_precompdir.exists():
         msg = f"directory with pre-computed simulations not found -->{demo_precompdir}<--"
         raise RuntimeError(msg)
-    outdir_default = demo_precompdir / 'fitic-simu-default_oh-cams/output_2021-01-01--2022-01-01'
-    #
-    #-- various TM5 simulations
-    #
-    outdir_default  = demo_precompdir / 'fitic-simu-default_oh-cams/output_2021-01-01--2022-01-01'
-    outdir_regional = demo_precompdir / 'fitic-simu-regional_oh-cams/output_2021-01-01--2022-01-01'
     #
     #--  CAMS/obspack concentrations
     #
@@ -89,17 +83,12 @@ if get_hostname().find('cosmos')>=0:
 #
 elif is_jupyterhub(): #-- ICOS jupyter lab
     #
-    #-- 2025-06-22:: updated for Geneva25 presentation
-    #                results based on TM5 code including fix for chemistry applied by Guillaume
+    #-- top-level directory with pre-computed TM5 simulations
+    #
     demo_precompdir = Path('/data/avengers/precomputed_output_sept2025')
     if not demo_precompdir.exists():
         msg = f"directory with pre-computed simulations not found -->{demo_precompdir}<--"
         raise RuntimeError(msg)
-    #
-    #-- various TM5 simulations
-    #
-    outdir_default  = demo_precompdir / 'fitic-simu-default_oh-cams/output_2021-01-01--2022-01-01'
-    outdir_regional = demo_precompdir / 'fitic-simu-regional_oh-cams/output_2021-01-01--2022-01-01'
     #
     #--  CAMS/obspack concentrations
     #
@@ -114,13 +103,13 @@ elif is_jupyterhub(): #-- ICOS jupyter lab
 #
 #
 elif get_hostname().find('mvobook2')>=0:
+    #
+    #-- top-level directory with pre-computed TM5 simulations
+    #
     demo_precompdir = Path('/srv/data/avengers/geneva2025/fit-ic_precomputed-output')
     if not demo_precompdir.exists():
         msg = f"directory with pre-computed simulations not found -->{demo_precompdir}<--"
         raise RuntimeError(msg)
-    outdir_default   = demo_precompdir / 'fitic-simu-default/output_2021-01-01--2022-01-01'
-    outdir_overwrite = demo_precompdir / 'fitic-simu-overwrite/output_2021-01-01--2022-01-01'
-    outdir_edgarflat = demo_precompdir / 'fitic-simu-edgarflat/output_20210101--20220101'
     camsfile = '/data/avengers/fit_ic/validation/cams_ch4conc_at-obspack-locations_2021.nc'
     obspackdir = '/data/avengers/fit_ic/validation/obspack_ch4_1_GLOBALVIEWplus_v6.0_2023-12-01/data/nc'
 else:
@@ -128,7 +117,54 @@ else:
     raise RuntimeError(msg)
 
 
-def fitic_inputemisdir():
+def get_precomputed_expdirs() -> OrderedDict:
+    """preliminary ad-hoc routine that builds a dictionary
+    of tags (identifying the experiment) to the output directory
+    of the associated TM5 simulation.
+
+    The current listing looks like this (Sep 8, 2025):
+    ------------------------------------
+    fitic-simu-default_oh-cams
+    fitic-simu-edgarflat_oh-cams
+    fitic-simu-regional_anthro-no-agri_oh-cams
+    fitic-simu-regional_anthro-no-fossil_oh-cams
+    fitic-simu-regional_anthro-no-france_oh-cams
+    fitic-simu-regional_anthro-no-netherlands_oh-cams
+    fitic-simu-regional_anthro-no-waste_oh-cams
+    fitic-simu-regional_oh-cams
+    """
+    exp_dict = OrderedDict()
+    #-- first level:
+    exp_dirs = sorted(demo_precompdir.glob('fitic-simu-*'))
+    for _d in exp_dirs:
+        # print(f"-->{_d}<--")
+        exp_outdir = _d / 'output_2021-01-01--2022-01-01'
+        if not exp_outdir.is_dir():
+            #-- expected simulation does not exist
+            msg = f"expected TM5 simulation output directory " \
+                f"***{str(exp_outdir)}*** does not exist, skipping..."
+            logger.warn(msg)
+            continue
+        _basename = _d.stem.replace('fitic-simu-','').replace('_oh-cams','')
+        # print(f"-->{_basename}<--")
+        if _basename.startswith('regional_'):
+            if _basename.find('anthro-no'):
+                exp_tag = 'regional,' + \
+                    _basename.replace('regional_','').replace('anthro-','')
+                exp_tag = 'regional_' + \
+                    _basename.replace('regional_','').replace('anthro-','')
+            else:
+                exp_tag = 'regional'
+        else:
+            exp_tag = _basename
+        exp_dict[exp_tag] = exp_outdir
+    # #-- DEBUG only
+    # for k,v in exp_dict.items():
+    #     print(f"{k} --> {v}")
+    return exp_dict
+
+
+def fitic_inputemisdir() -> str:
     if get_hostname().find('cosmos')>=0:
         emisdir = '/lunarc/nobackup/projects/ghg_inv/michael/TM5/input/ch4/emissions_fitic'
         emisdir = '/lunarc/nobackup/projects/ghg_inv/michael/TM5/input/ch4/emissions'
