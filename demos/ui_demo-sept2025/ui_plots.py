@@ -372,7 +372,8 @@ class EmissionExplorer(pn.viewable.Viewer):
 class StationExplorer(pn.viewable.Viewer):
     tracer  = param.Selector()
     station = param.Selector()
-    vlevel  = param.Selector(label='vertical level at station')
+    #-- 2025-09-09: vertical level not selectable anymore
+    # vlevel  = param.Selector(label='vertical level at station')
     exp1 = param.Selector(label='first TM5 simulation')
     exp2 = param.Selector(label='second TM5 simulation')
     #-- swichted back to daily-mean concentration
@@ -451,8 +452,9 @@ class StationExplorer(pn.viewable.Viewer):
         self.param.tracer.objects = tracers
         self.tracer = tracers[0]
         self.param.station.objects = sorted(stations)
-        self.param.vlevel.objects  = ['highest','lowest']
-        self.vlevel                = 'highest'
+        #-- vertical level not selectable anymore
+        # self.param.vlevel.objects  = ['highest','lowest']
+        # self.vlevel                = 'highest'
         #
         #-- defaults to last site in list
         #
@@ -482,9 +484,10 @@ class StationExplorer(pn.viewable.Viewer):
     def __panel__(self):
         return pn.Column(
             pn.widgets.Select.from_param(self.param.tracer),
-            # pn.widgets.Select.from_param(self.param.station),
-            pn.Row(pn.widgets.Select.from_param(self.param.station),
-                   pn.widgets.Select.from_param(self.param.vlevel)),
+            pn.widgets.Select.from_param(self.param.station),
+            #-- 2025-09-09: vertical level not selectable anymore
+            # pn.Row(pn.widgets.Select.from_param(self.param.station),
+            #        pn.widgets.Select.from_param(self.param.vlevel)),
             pn.Row(pn.widgets.Select.from_param(self.param.exp1),
                    pn.widgets.Select.from_param(self.param.exp2)),
             # pn.widgets.Select.from_param(self.param.hour),
@@ -518,7 +521,9 @@ class StationExplorer(pn.viewable.Viewer):
     #-- switched back to daily mean concentration
     # @pn.depends('tracer', 'station', 'hour')
     #-- added selection of experiments
-    @pn.depends('tracer', 'station','vlevel','exp1','exp2')
+    # @pn.depends('tracer', 'station','vlevel','exp1','exp2')
+    #-- 2025-09-09: disabled vertical level
+    @pn.depends('tracer', 'station','exp1','exp2')
     def plot_timeseries(self):
         if self.tracer is None or self.station is None:# or self.hour is None:
             return
@@ -692,6 +697,7 @@ class StationExplorer(pn.viewable.Viewer):
         if 'obspack' in dfplot.columns:
             obsplot = dfplot.hvplot.points(x='time', y='obspack',
                                            marker=obs_marker,
+                                           label='obspack',
                                            color=obs_color)
             hvplot = simplot * obsplot
         else:
