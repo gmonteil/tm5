@@ -761,6 +761,7 @@ class StationExplorer(pn.viewable.Viewer):
         # show_hour = self.hour
         simu_colors = ['red','blue',]
         obs_color   = ['orange',]
+        obs_color   = 'k'
         obs_marker  = 'o'#'+'
         obs_ms      = 3 #-- marker size
         legend_loc  = 'top_right'
