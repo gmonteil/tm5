@@ -763,7 +763,7 @@ class StationExplorer(pn.viewable.Viewer):
         obs_color   = ['orange',]
         obs_color   = 'k'
         obs_marker  = 'o'#'+'
-        obs_ms      = 3 #-- marker size
+        obs_ms      = 5 #-- marker size
         legend_loc  = 'top_right'
         #
         #-- temporal coverage
@@ -919,7 +919,10 @@ class StationExplorer(pn.viewable.Viewer):
                 for _sim in simu_columns:
                     rmse = ((dfplot[_sim]-dfplot['obspack'])**2).mean() ** 0.5
                     rmse_title += f"{_sim}={rmse:.3f} "
-                title += '\n' + rmse_title
+                if self.plot_width>=1000:
+                    title += f",   {rmse_title}"
+                else:
+                    title += '\n' + rmse_title
 
         #
         #--
