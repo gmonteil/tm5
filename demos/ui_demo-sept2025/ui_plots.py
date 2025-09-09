@@ -384,8 +384,14 @@ class StationExplorer(pn.viewable.Viewer):
         super().__init__()
         self.settings = settings
         #
+        #--
+        #
+        self.plot_width = 1000
+        self.plot_height = 500
+        #
         #-- station plot comparison against obspack
-        #   currently limited to single level (no button yet to set/select level)
+        #   currently limited to single level
+        #   (no longer switch to select highest/lowest level)
         #
         self.vlevel = 'highest'
         self.default_site = 'Cabauw' #None
@@ -478,7 +484,7 @@ class StationExplorer(pn.viewable.Viewer):
         #     info2 = pn.pane.Markdown(width=250)
         #     )
         self.widgets = dict(
-            info = pn.pane.Markdown(width=500, styles={'font-size': '14px'}),
+            info = pn.pane.Markdown(width=self.plot_width, styles={'font-size': '14px'}),
             )
         exp_list = list( self.precomp_table.keys())
         self.param.exp1.objects = self.precomp_table.keys()
@@ -511,43 +517,48 @@ class StationExplorer(pn.viewable.Viewer):
     @pn.depends('exp1','exp2',watch=True)
     def update_desc_exp(self):
         def _get_desc(exp):
-            desc = f'<span style="text-decoration:underline">**{exp}:**</span> '
+            desc_html = "<dt>"
+            desc_html += '\n' + f'<b><span style="text-decoration:underline">{exp}</span></b> '
+            desc_html += '\n' +"</dt>"
             match exp:
                 case 'default':
-                    desc += f"TM5 run using global prior default emissions"
+                    desc = f"TM5 run using global prior default emissions"
                 case 'edgarflat':
-                    desc += f"similar to the default case, but using a flat " \
+                    desc = f"similar to the default case, but using a flat " \
                         "temporal profile for EDGAR anthropogenic emissions."
                 case 'regional':
-                    desc += f"TM5 run using wetland, mineral-soils, " \
+                    desc = f"TM5 run using wetland, mineral-soils, " \
                         f"and anthropogenic emissions provided by " \
                         f"AVENGERS WP2 over the European domain, " \
                         f"and with the global default emissions elsewhere."
                 case 'regional_no-agri':
-                    desc += f"Prior emissions similar to the regional case " \
+                    desc = f"Prior emissions similar to the regional case " \
                         f"but without emissions from agriculture sector " \
                         f"in the European domain."
                 case 'regional_no-waste':
-                    desc += f"Prior emissions similar to the regional case " \
+                    desc = f"Prior emissions similar to the regional case " \
                         f"but without emissions from waste sector " \
                         f"in the European domain."
                 case 'regional_no-fossil':
-                    desc += f"Prior emissions similar to the regional case " \
+                    desc = f"Prior emissions similar to the regional case " \
                         f"but without emissions from fossil sector " \
                         f"in the European domain."
                 case 'regional_no-france':
-                    desc += f"Prior emissions similar to the regional case " \
+                    desc = f"Prior emissions similar to the regional case " \
                         f"but without anthropogenic emissions over France."
                 case 'regional_no-netherlands':
-                    desc += f"Prior emissions similar to the regional case " \
+                    desc = f"Prior emissions similar to the regional case " \
                         f"but without anthropogenic emissions over the Netherlands. "
                 case _:
-                    desc += f"no description available yet."
-            return desc
+                    desc = f"no description available yet."
+            desc_html += f"<dd>{desc}</dd>"
+            return desc_html
         #--
-        desc = _get_desc(self.exp1)
+        desc = f"<dl>"
+        desc += _get_desc(self.exp1)
         desc += '<br>'
         desc += _get_desc(self.exp2)
+        desc += f"</dl>"
         self.widgets['info'].object = desc
 
     def _get_unit(self, station_id):
@@ -579,21 +590,18 @@ class StationExplorer(pn.viewable.Viewer):
     #-- added selection of experiments
     # @pn.depends('tracer', 'station','vlevel','exp1','exp2')
     #-- 2025-09-09: disabled vertical level
-    @pn.depends('tracer', 'station','exp1','exp2')
+    @pn.depends('tracer', 'station','exp1','exp2', watch=True)
     def plot_timeseries(self):
         if self.tracer is None or self.station is None:# or self.hour is None:
             return
         elif self.exp1 is None or self.exp2 is None:
             return
-        # #-- yields exception, so better keep out currently
-        # elif self.exp1==self.exp2:
-        #     msg = f"comparison of identical TM5 simulations not supported."
-        #     logger.warning(msg)
-        #     return
         # show_hour = self.hour
         simu_colors = ['red','blue',]
         obs_color   = ['orange',]
-        obs_marker  = '+'
+        obs_marker  = 'o'#'+'
+        obs_ms      = 3 #-- marker size
+        legend_loc  = 'top_right'
         #
         #-- temporal coverage
         #
@@ -666,7 +674,7 @@ class StationExplorer(pn.viewable.Viewer):
         dfd = dfd.resample('D').mean()
         dfd = dfd.reset_index()
         dfplot = dfd
-        # print(f"DEBUG: dfplot columns (after creation) ***{dfplot.columns}***")
+
         #
         #-- make more descriptive name for plotting
         #
@@ -694,6 +702,8 @@ class StationExplorer(pn.viewable.Viewer):
         mixunit = self._get_unit(station_id)
         xlabel = 'time'
         ylabel = f"concentration [{mixunit}]"
+        #
+        #--
         #
         #-- add comparison against obspack (if available)
         #
@@ -756,23 +766,40 @@ class StationExplorer(pn.viewable.Viewer):
         #                         color=simu_colors,
         #                         grid=True,
         #                         ylabel=ylabel, xlabel=xlabel, title=title)
-        simplot1 = dfplot.hvplot(x='time', y=simu_columns[0],
-                                 color=simu_colors[0], label=simu_columns[0],
-                                 ylabel=ylabel, xlabel=xlabel, title=title)
-        simplot2 = dfplot.hvplot(x='time', y=simu_columns[1],
-                                 color=simu_colors[1], label=simu_columns[1])
+        #
+        #-- first simulation
+        #
+        p1 = dfplot.hvplot(x='time', y=simu_columns[0],
+                           color=simu_colors[0],
+                           label=simu_columns[0], legend=legend_loc,
+                           width=self.plot_width, height=self.plot_height,
+                           ylabel=ylabel, xlabel=xlabel, title=title)
+        #
+        #-- second simulation
+        #
+        p1 *= dfplot.hvplot(x='time', y=simu_columns[1],
+                            color=simu_colors[1],
+                            label=simu_columns[1], legend=legend_loc)
+        #
+        #-- observations
+        #
         if 'obspack' in dfplot.columns:
             obsplot = dfplot.hvplot.points(x='time', y='obspack',
                                            marker=obs_marker,
                                            label='obspack',
                                            color=obs_color)
-            hvplot = simplot1 * simplot2 * obsplot
-        else:
-            hvplot = simplot1 * simplot2
-        
+            # p1 *= obsplot
+            #
+            #-- update by Guillaume, 2025-09-09
+            #
+            p1 *= dfplot.hvplot.scatter(x='time', y='obspack',
+                                        label='Observations (obspack)',
+                                        color=obs_color,
+                                        marker=obs_marker, s=obs_ms,
+                                        legend=legend_loc)
         #
         #-- autohide toolbar
         #
-        hvplot = hvplot.opts(backend_opts={"plot.toolbar.autohide": True})
+        p1 = p1.opts(backend_opts={"plot.toolbar.autohide": True})
 
-        return hvplot
+        return p1
