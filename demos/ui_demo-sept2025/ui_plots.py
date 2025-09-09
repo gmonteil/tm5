@@ -473,6 +473,13 @@ class StationExplorer(pn.viewable.Viewer):
                 idx = -1
             self.station = stations[idx]
         #
+        # self.widgets = dict(
+        #     info1 = pn.pane.Markdown(width=250),
+        #     info2 = pn.pane.Markdown(width=250)
+        #     )
+        self.widgets = dict(
+            info = pn.pane.Markdown(width=500, styles={'font-size': '14px'}),
+            )
         exp_list = list( self.precomp_table.keys())
         self.param.exp1.objects = self.precomp_table.keys()
         self.param.exp2.objects = self.precomp_table.keys()
@@ -480,6 +487,7 @@ class StationExplorer(pn.viewable.Viewer):
         iexp2 = exp_list.index('regional')
         self.exp1 = exp_list[iexp1]
         self.exp2 = exp_list[iexp2]
+        self.update_desc_exp()
         
     def __panel__(self):
         return pn.Column(
@@ -490,9 +498,57 @@ class StationExplorer(pn.viewable.Viewer):
             #        pn.widgets.Select.from_param(self.param.vlevel)),
             pn.Row(pn.widgets.Select.from_param(self.param.exp1),
                    pn.widgets.Select.from_param(self.param.exp2)),
+            # pn.Row(pn.Column(pn.widgets.Select.from_param(self.param.exp1),
+            #                  self.widgets['info1']),
+            #        pn.Column(pn.widgets.Select.from_param(self.param.exp2),
+            #                  self.widgets['info2'])
+            #        ),
+            self.widgets['info'],
             # pn.widgets.Select.from_param(self.param.hour),
             hv.DynamicMap(self.plot_timeseries),
         )
+
+    @pn.depends('exp1','exp2',watch=True)
+    def update_desc_exp(self):
+        def _get_desc(exp):
+            desc = f'<span style="text-decoration:underline">**{exp}:**</span> '
+            match exp:
+                case 'default':
+                    desc += f"TM5 run using global prior default emissions"
+                case 'edgarflat':
+                    desc += f"similar to the default case, but using a flat " \
+                        "temporal profile for EDGAR anthropogenic emissions."
+                case 'regional':
+                    desc += f"TM5 run using wetland, mineral-soils, " \
+                        f"and anthropogenic emissions provided by " \
+                        f"AVENGERS WP2 over the European domain, " \
+                        f"and with the global default emissions elsewhere."
+                case 'regional_no-agri':
+                    desc += f"Prior emissions similar to the regional case " \
+                        f"but without emissions from agriculture sector " \
+                        f"in the European domain."
+                case 'regional_no-waste':
+                    desc += f"Prior emissions similar to the regional case " \
+                        f"but without emissions from waste sector " \
+                        f"in the European domain."
+                case 'regional_no-fossil':
+                    desc += f"Prior emissions similar to the regional case " \
+                        f"but without emissions from fossil sector " \
+                        f"in the European domain."
+                case 'regional_no-france':
+                    desc += f"Prior emissions similar to the regional case " \
+                        f"but without anthropogenic emissions over France."
+                case 'regional_no-netherlands':
+                    desc += f"Prior emissions similar to the regional case " \
+                        f"but without anthropogenic emissions over the Netherlands. "
+                case _:
+                    desc += f"no description available yet."
+            return desc
+        #--
+        desc = _get_desc(self.exp1)
+        desc += '<br>'
+        desc += _get_desc(self.exp2)
+        self.widgets['info'].object = desc
 
     def _get_unit(self, station_id):
         def first(s):
@@ -559,17 +615,20 @@ class StationExplorer(pn.viewable.Viewer):
         #
         station_level = [simu1[_].getncattr('altitude') for _ in station_ids]
         #
-        #-- currently restrict to upper-most vertical level
+        #-- currently restricted to lowest/highest level
         #
         if self.vlevel=='lowest':
-            station_ids = station_ids[station_level.index(min(station_level))]
+            station_id = station_ids[station_level.index(min(station_level))]
+        elif self.vlevel=='highest':
+            station_id = station_ids[station_level.index(max(station_level))]
         else:
-            station_ids = station_ids[station_level.index(max(station_level))]
+            msg = f"unexpected vertical level -->{self.vlevel}<--"
+            raise RuntimeError(msg)
         #
         #--
         #
-        # print(f"DEBUG ***{station_ids}***")
-        stagrp = simu1[station_ids]
+        # print(f"DEBUG station_id ***{station_id}***")
+        stagrp = simu1[station_id]
         abbr_tag = stagrp.abbr.replace('FM/','')
         sta_alt = stagrp.altitude
         stalon = stagrp.longitude
@@ -588,7 +647,7 @@ class StationExplorer(pn.viewable.Viewer):
         #
         #-- add second simulation, currently the one with regional emissions
         #
-        stagrp_cmp = simu2[station_ids]
+        stagrp_cmp = simu2[station_id]
         ncmix_cmp = stagrp_cmp['mixing_ratio']
         itrac = self.param.tracer.objects.index(self.tracer)
         staconc_cmp = ncmix_cmp[itrac,:].data
@@ -607,6 +666,7 @@ class StationExplorer(pn.viewable.Viewer):
         dfd = dfd.resample('D').mean()
         dfd = dfd.reset_index()
         dfplot = dfd
+        # print(f"DEBUG: dfplot columns (after creation) ***{dfplot.columns}***")
         #
         #-- make more descriptive name for plotting
         #
@@ -626,11 +686,12 @@ class StationExplorer(pn.viewable.Viewer):
         rename_map = { f"{self.tracer}_simu1" : simu_columns[0],
                        f"{self.tracer}_simu2" : simu_columns[1]  }
         dfplot = dfplot.rename(columns=rename_map)
+        # print(f"DEBUG: dfplot columns (after renaming) ***{dfplot.columns}***")
         #
         #--     title and unit
         #
         title = f"{species}@{self.station} (daily-mean, {sta_region}, {sta_alt}[m])"
-        mixunit = self._get_unit(station_ids)
+        mixunit = self._get_unit(station_id)
         xlabel = 'time'
         ylabel = f"concentration [{mixunit}]"
         #
@@ -691,17 +752,24 @@ class StationExplorer(pn.viewable.Viewer):
         #--
         #
         # print(f"prior plotting, columns -->{simu_columns}<--, colors -->{simu_colors}<--")
-        simplot = dfplot.hvplot(x='time', y=simu_columns,
-                                color=simu_colors,grid=True,
-                                ylabel=ylabel, xlabel=xlabel, title=title)
+        # simplot = dfplot.hvplot(x='time', y=simu_columns,
+        #                         color=simu_colors,
+        #                         grid=True,
+        #                         ylabel=ylabel, xlabel=xlabel, title=title)
+        simplot1 = dfplot.hvplot(x='time', y=simu_columns[0],
+                                 color=simu_colors[0], label=simu_columns[0],
+                                 ylabel=ylabel, xlabel=xlabel, title=title)
+        simplot2 = dfplot.hvplot(x='time', y=simu_columns[1],
+                                 color=simu_colors[1], label=simu_columns[1])
         if 'obspack' in dfplot.columns:
             obsplot = dfplot.hvplot.points(x='time', y='obspack',
                                            marker=obs_marker,
                                            label='obspack',
                                            color=obs_color)
-            hvplot = simplot * obsplot
+            hvplot = simplot1 * simplot2 * obsplot
         else:
-            hvplot = simplot
+            hvplot = simplot1 * simplot2
+        
         #
         #-- autohide toolbar
         #
