@@ -486,8 +486,12 @@ class StationExplorer(pn.viewable.Viewer):
         self.widgets = dict(
             info = pn.pane.Markdown(width=self.plot_width, styles={'font-size': '14px'}),
             )
+        #
+        #-- re-order experiments for the selection:
+        #   - ad-hoc solution here, but for the demonstration
+        #     it is favoutable to start with default/edgarflat/regional
+        #
         exp_list = list( self.precomp_table.keys())
-        #-- re-order: force starting with default/edgarflat/regional
         self.exp_list = []
         for exp in ['default','edgarflat','regional']:
             if exp in exp_list:
@@ -503,30 +507,32 @@ class StationExplorer(pn.viewable.Viewer):
         self.exp1 = self.exp_list[iexp1]
         self.exp2 = self.exp_list[iexp2]
         # self.update_desc_exp()
-        # self.set_experiments_desc_list()
         self.set_experiments_desc_table()
         
     def __panel__(self):
-        return pn.Column(
-            self.widgets['info'], #-- list all available experiments
-            pn.widgets.Select.from_param(self.param.tracer),
-            pn.widgets.Select.from_param(self.param.station),
-            #-- 2025-09-09: vertical level not selectable anymore
-            # pn.Row(pn.widgets.Select.from_param(self.param.station),
-            #        pn.widgets.Select.from_param(self.param.vlevel)),
-            pn.Row(pn.widgets.Select.from_param(self.param.exp1),
-                   pn.widgets.Select.from_param(self.param.exp2)),
-            # pn.Row(pn.Column(pn.widgets.Select.from_param(self.param.exp1),
-            #                  self.widgets['info1']),
-            #        pn.Column(pn.widgets.Select.from_param(self.param.exp2),
-            #                  self.widgets['info2'])
-            #        ),
-            #-- was here when 'info' widget only showed the two
-            #   active experiments
-            # self.widgets['info'],
-            # pn.widgets.Select.from_param(self.param.hour),
-            hv.DynamicMap(self.plot_timeseries),
-        )
+        try:
+            return pn.Column(
+                self.widgets['info'], #-- list all available experiments
+                pn.widgets.Select.from_param(self.param.tracer),
+                pn.widgets.Select.from_param(self.param.station),
+                #-- 2025-09-09: vertical level not selectable anymore
+                # pn.Row(pn.widgets.Select.from_param(self.param.station),
+                #        pn.widgets.Select.from_param(self.param.vlevel)),
+                pn.Row(pn.widgets.Select.from_param(self.param.exp1),
+                       pn.widgets.Select.from_param(self.param.exp2)),
+                # pn.Row(pn.Column(pn.widgets.Select.from_param(self.param.exp1),
+                #                  self.widgets['info1']),
+                #        pn.Column(pn.widgets.Select.from_param(self.param.exp2),
+                #                  self.widgets['info2'])
+                #        ),
+                #-- was here when 'info' widget only showed the two
+                #   active experiments
+                # self.widgets['info'],
+                # pn.widgets.Select.from_param(self.param.hour),
+                hv.DynamicMap(self.plot_timeseries),
+            )
+        except ValueError:
+            pass
 
     def set_experiments_desc(self):
         def _get_desc(exp):
@@ -918,7 +924,8 @@ class StationExplorer(pn.viewable.Viewer):
                 rmse_title = "RMSE: "
                 for _sim in simu_columns:
                     rmse = ((dfplot[_sim]-dfplot['obspack'])**2).mean() ** 0.5
-                    rmse_title += f"{_sim}={rmse:.3f} "
+                    exp_tag = _sim.replace('FIT-IC-','')
+                    rmse_title += f"{exp_tag}={rmse:.3f} "
                 if self.plot_width>=1000:
                     title += f",   {rmse_title}"
                 else:
