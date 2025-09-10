@@ -484,7 +484,8 @@ class StationExplorer(pn.viewable.Viewer):
         #     info2 = pn.pane.Markdown(width=250)
         #     )
         self.widgets = dict(
-            info = pn.pane.Markdown(width=self.plot_width, styles={'font-size': '14px'}),
+            info = pn.pane.Markdown(width=self.plot_width,
+                                    styles={'font-size': '14px'}),
             )
         #
         #-- re-order experiments for the selection:
@@ -510,29 +511,26 @@ class StationExplorer(pn.viewable.Viewer):
         self.set_experiments_desc_table()
         
     def __panel__(self):
-        try:
-            return pn.Column(
-                self.widgets['info'], #-- list all available experiments
-                pn.widgets.Select.from_param(self.param.tracer),
-                pn.widgets.Select.from_param(self.param.station),
-                #-- 2025-09-09: vertical level not selectable anymore
-                # pn.Row(pn.widgets.Select.from_param(self.param.station),
-                #        pn.widgets.Select.from_param(self.param.vlevel)),
-                pn.Row(pn.widgets.Select.from_param(self.param.exp1),
-                       pn.widgets.Select.from_param(self.param.exp2)),
-                # pn.Row(pn.Column(pn.widgets.Select.from_param(self.param.exp1),
-                #                  self.widgets['info1']),
-                #        pn.Column(pn.widgets.Select.from_param(self.param.exp2),
-                #                  self.widgets['info2'])
-                #        ),
-                #-- was here when 'info' widget only showed the two
-                #   active experiments
-                # self.widgets['info'],
-                # pn.widgets.Select.from_param(self.param.hour),
-                hv.DynamicMap(self.plot_timeseries),
-            )
-        except ValueError:
-            pass
+        return pn.Column(
+            self.widgets['info'], #-- list all available experiments
+            pn.widgets.Select.from_param(self.param.tracer),
+            pn.widgets.Select.from_param(self.param.station),
+            #-- 2025-09-09: vertical level not selectable anymore
+            # pn.Row(pn.widgets.Select.from_param(self.param.station),
+            #        pn.widgets.Select.from_param(self.param.vlevel)),
+            pn.Row(pn.widgets.Select.from_param(self.param.exp1),
+                   pn.widgets.Select.from_param(self.param.exp2)),
+            # pn.Row(pn.Column(pn.widgets.Select.from_param(self.param.exp1),
+            #                  self.widgets['info1']),
+            #        pn.Column(pn.widgets.Select.from_param(self.param.exp2),
+            #                  self.widgets['info2'])
+            #        ),
+            #-- was here when 'info' widget only showed the two
+            #   active experiments
+            # self.widgets['info'],
+            # pn.widgets.Select.from_param(self.param.hour),
+            hv.DynamicMap(self.plot_timeseries),
+        )
 
     def set_experiments_desc(self):
         def _get_desc(exp):
@@ -681,53 +679,53 @@ class StationExplorer(pn.viewable.Viewer):
         desc += f"</table>"
         self.widgets['info'].object = desc
 
-    @pn.depends('exp1','exp2',watch=True)
-    def update_desc_exp(self):
-        def _get_desc(exp):
-            desc_html = "<dt>"
-            # desc_html += '\n' + f'<b><span style="text-decoration:underline">{exp}</span></b> '
-            desc_html += '\n' + f'<b>{exp}</b>'
-            desc_html += '\n' +"</dt>"
-            match exp:
-                case 'default':
-                    desc = f"TM5 run using global prior default emissions"
-                case 'edgarflat':
-                    desc = f"similar to the default case, but using a flat " \
-                        "temporal profile for EDGAR anthropogenic emissions."
-                case 'regional':
-                    desc = f"TM5 run using wetland, mineral-soils, " \
-                        f"and anthropogenic emissions provided by " \
-                        f"AVENGERS WP2 over the European domain, " \
-                        f"and with the global default emissions elsewhere."
-                case 'regional_no-agri':
-                    desc = f"Prior emissions similar to the regional case " \
-                        f"but without emissions from agriculture sector " \
-                        f"in the European domain."
-                case 'regional_no-waste':
-                    desc = f"Prior emissions similar to the regional case " \
-                        f"but without emissions from waste sector " \
-                        f"in the European domain."
-                case 'regional_no-fossil':
-                    desc = f"Prior emissions similar to the regional case " \
-                        f"but without emissions from fossil sector " \
-                        f"in the European domain."
-                case 'regional_no-france':
-                    desc = f"Prior emissions similar to the regional case " \
-                        f"but without anthropogenic emissions over France."
-                case 'regional_no-netherlands':
-                    desc = f"Prior emissions similar to the regional case " \
-                        f"but without anthropogenic emissions over the Netherlands. "
-                case _:
-                    desc = f"no description available yet."
-            desc_html += f"<dd>{desc}</dd>"
-            return desc_html
-        #--
-        desc = f"<dl>"
-        desc += _get_desc(self.exp1)
-        desc += '<br>'
-        desc += _get_desc(self.exp2)
-        desc += f"</dl>"
-        self.widgets['info'].object = desc
+    # @pn.depends('exp1','exp2',watch=True)
+    # def update_desc_exp(self):
+    #     def _get_desc(exp):
+    #         desc_html = "<dt>"
+    #         # desc_html += '\n' + f'<b><span style="text-decoration:underline">{exp}</span></b> '
+    #         desc_html += '\n' + f'<b>{exp}</b>'
+    #         desc_html += '\n' +"</dt>"
+    #         match exp:
+    #             case 'default':
+    #                 desc = f"TM5 run using global prior default emissions"
+    #             case 'edgarflat':
+    #                 desc = f"similar to the default case, but using a flat " \
+    #                     "temporal profile for EDGAR anthropogenic emissions."
+    #             case 'regional':
+    #                 desc = f"TM5 run using wetland, mineral-soils, " \
+    #                     f"and anthropogenic emissions provided by " \
+    #                     f"AVENGERS WP2 over the European domain, " \
+    #                     f"and with the global default emissions elsewhere."
+    #             case 'regional_no-agri':
+    #                 desc = f"Prior emissions similar to the regional case " \
+    #                     f"but without emissions from agriculture sector " \
+    #                     f"in the European domain."
+    #             case 'regional_no-waste':
+    #                 desc = f"Prior emissions similar to the regional case " \
+    #                     f"but without emissions from waste sector " \
+    #                     f"in the European domain."
+    #             case 'regional_no-fossil':
+    #                 desc = f"Prior emissions similar to the regional case " \
+    #                     f"but without emissions from fossil sector " \
+    #                     f"in the European domain."
+    #             case 'regional_no-france':
+    #                 desc = f"Prior emissions similar to the regional case " \
+    #                     f"but without anthropogenic emissions over France."
+    #             case 'regional_no-netherlands':
+    #                 desc = f"Prior emissions similar to the regional case " \
+    #                     f"but without anthropogenic emissions over the Netherlands. "
+    #             case _:
+    #                 desc = f"no description available yet."
+    #         desc_html += f"<dd>{desc}</dd>"
+    #         return desc_html
+    #     #--
+    #     desc = f"<dl>"
+    #     desc += _get_desc(self.exp1)
+    #     desc += '<br>'
+    #     desc += _get_desc(self.exp2)
+    #     desc += f"</dl>"
+    #     self.widgets['info'].object = desc
 
     def _get_unit(self, station_id):
         def first(s):
