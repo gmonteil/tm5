@@ -2,11 +2,10 @@
 
 - GUI (setup)
     - [ ] implement only configuration with 3 level zoom "avengers-1", i.e global/Europe/NL+D+CH
-    - [ ] (1) GM by Wednesday to replace continuous line for obspack by dots or crosses in the GUI and other small things to improve visibitiy
 - GUI (analysis)
     - [ ] (8) GM: check domain size on plot after change of region
-    - [ ] (2) GM by Wednesday: Automated observation fit statistics (RMSE, maybe as table), first for pre-computed results, does the statistics adapt when we zoom on the time axis?
-    - [ ] (3) GM after Wednesday: Enable selection between multiple sensitivity experiments (via a rearrangement of current GUI elements)
+    - [ ] (1) GM: extract TM5 output and obspack for selected stations averaged over a pre-specified period of the day (as in inversions) at highest level
+    - [ ] (2) GM: Automated observation fit statistics (RMSE, maybe as table with both RMSEs and a map also indicating the relative difference of two RMSEs), first for pre-computed results, does the statistics adapt when we zoom on the time axis?
     - [ ] (7) GM: Integrate some visualisation of the emission budget in configuration part of the GUI (to allow perform a quick sanity check)
 - GUI (extension)    
     - [ ] (re) implement possibility to pass defaults through a YAML file
@@ -20,10 +19,9 @@
 - TM5 analyses, open questions regarding our initial TM5 runs with prior emission fields: to be addressed with long run on COSMOS:
     - [ ] implement and test reading of the CAMS reanalysis OH field (to be used for the troposhere, for the stratosphere we'll rather use Bruehl et al.), this should be the default, Spivakovsky is kept-
     - [ ] (10) MV: check how Vaganovo looks now in global 1 by 1 run (launch on COSMOS), not too urgent
-    - [ ] (1) GM to send to Arjo email with the macros with use, and get him to confirm 
 - Sensitivity Runs (the important point is that we want to see an effect and the comparison with CAMS clearly shows us which run is more consistent)
     - [ ] (6) MV try cases with the regional emissions where in the sensitivity run we remove the emissions from:
-                (c) a power plant near a site
+                (a) all emissions from a country
 - Documentation
     - [ ] properly setup github pages with mkdocs
 - Inversion
