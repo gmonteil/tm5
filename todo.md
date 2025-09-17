@@ -21,7 +21,7 @@
     - [ ] (10) MV: check how Vaganovo looks now in global 1 by 1 run (launch on COSMOS), not too urgent
 - Sensitivity Runs (the important point is that we want to see an effect and the comparison with CAMS clearly shows us which run is more consistent)
     - [ ] (6) MV try cases with the regional emissions where in the sensitivity run we remove the emissions from:
-                (a) all emissions from a country
+                (a) all emissions from a country; other cases: (b) remove emissions from North America, (c) reduce sink
 - Documentation
     - [ ] properly setup github pages with mkdocs
 - Inversion
