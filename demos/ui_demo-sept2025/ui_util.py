@@ -132,6 +132,11 @@ def get_precomputed_expdirs() -> OrderedDict:
     fitic-simu-regional_anthro-no-netherlands_oh-cams
     fitic-simu-regional_anthro-no-waste_oh-cams
     fitic-simu-regional_oh-cams
+
+    Extended by further experiments (Sept 18, 2025)
+    fitic-simu-half-oh_oh-cams
+    fitic-simu-no-germany_oh-cams
+    fitic-simu-no-northamerica_oh-cams
     """
     exp_dict = OrderedDict()
     #-- first level:
