@@ -496,18 +496,28 @@ class StationExplorer(pn.viewable.Viewer):
         self.exp_list = []
         #
         #-- standard simulations first
-        for exp in ['default','edgarflat','regional']:
+        #
+        exp_list_first = ['default','edgarflat','regional',
+                          'half-oh','no-germany','no-northamerica',]
+        for exp in exp_list_first:
             if exp in exp_list:
                 self.exp_list.append(exp)
+        #
         #-- sensitivity experiments based on regional changes
-        for exp in exp_list:
+        #
+        exp_list_regional = ['no-agri','no-fossil','no-waste',
+                             'anthro-no-france','anthro-no-netherlands',]
+        exp_list_regional = [ f'regional_{_}' for _ in exp_list_regional]
+        for exp in exp_list_regional:
             if exp in self.exp_list:
                 continue
-            elif exp.startswith('regional'):
+            elif exp in exp_list:
                 self.exp_list.append(exp)
             else:
                 pass
-        #-- remaining sensitivity experiments
+        #
+        #-- any remaining sensitivity experiments
+        #
         for exp in exp_list:
             if exp in self.exp_list:
                 continue
@@ -558,22 +568,22 @@ class StationExplorer(pn.viewable.Viewer):
                     f"and anthropogenic emissions provided by " \
                     f"AVENGERS WP2 over the European domain, " \
                     f"and with the global default emissions elsewhere."
-            case 'regional_no-agri':
+            case 'regional_no-agri' | 'regional_anthro-no-agri':
                 desc = f"Prior emissions similar to the regional case " \
                     f"but without emissions from agriculture sector " \
                     f"in the European domain."
-            case 'regional_no-waste':
+            case 'regional_no-waste' | 'regional_anthro-no-waste':
                 desc = f"Prior emissions similar to the regional case " \
                     f"but without emissions from waste sector " \
                     f"in the European domain."
-            case 'regional_no-fossil':
+            case 'regional_no-fossil' | 'regional_anthro-no-fossil':
                 desc = f"Prior emissions similar to the regional case " \
                     f"but without emissions from fossil sector " \
                     f"in the European domain."
-            case 'regional_no-france':
+            case 'regional_no-france' | 'regional_anthro-no-france':
                 desc = f"Prior emissions similar to the regional case " \
                     f"but without anthropogenic emissions over France."
-            case 'regional_no-netherlands':
+            case 'regional_no-netherlands' | 'regional_anthro-no-netherlands':
                 desc = f"Prior emissions similar to the regional case " \
                     f"but without anthropogenic emissions over the Netherlands. "
             case 'no-northamerica':

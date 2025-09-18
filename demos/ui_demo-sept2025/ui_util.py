@@ -158,6 +158,11 @@ def get_precomputed_expdirs() -> OrderedDict:
                     _basename.replace('regional_','').replace('anthro-','')
                 exp_tag = 'regional_' + \
                     _basename.replace('regional_','').replace('anthro-','')
+                is_country = _basename.find('france')>=0 or _basename.find('netherlands')>=0
+                if is_country:
+                    exp_tag = _basename
+                else:
+                    exp_tag = _basename.replace('anthro-','')
             else:
                 exp_tag = 'regional'
         else:
