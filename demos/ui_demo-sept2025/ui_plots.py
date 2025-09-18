@@ -412,7 +412,7 @@ class StationExplorer(pn.viewable.Viewer):
             stations_file = precomp_dict[tag] / 'stations' / 'stations.nc4'
             if not stations_file.exists():
                 msg = f"@{tag}, did not find 'stations.nc4' in simulation directory"
-                logger.warn(msg)
+                logger.warning(msg)
                 continue
             else:
                 #-- NetCDF file handle
@@ -458,7 +458,7 @@ class StationExplorer(pn.viewable.Viewer):
         self.param.tracer.objects = tracers
         self.tracer = tracers[0]
         self.param.station.objects = sorted(stations)
-        #-- vertical level not selectable anymore
+        #-- vertical level not selectable anymore (stick with highest level)
         # self.param.vlevel.objects  = ['highest','lowest']
         # self.vlevel                = 'highest'
         #
@@ -494,12 +494,26 @@ class StationExplorer(pn.viewable.Viewer):
         #
         exp_list = list( self.precomp_table.keys())
         self.exp_list = []
+        #
+        #-- standard simulations first
         for exp in ['default','edgarflat','regional']:
             if exp in exp_list:
                 self.exp_list.append(exp)
+        #-- sensitivity experiments based on regional changes
         for exp in exp_list:
-            if not exp in self.exp_list:
+            if exp in self.exp_list:
+                continue
+            elif exp.startswith('regional'):
                 self.exp_list.append(exp)
+            else:
+                pass
+        #-- remaining sensitivity experiments
+        for exp in exp_list:
+            if exp in self.exp_list:
+                continue
+            else:
+                self.exp_list.append(exp)
+
         #
         self.param.exp1.objects = self.exp_list
         self.param.exp2.objects = self.exp_list
@@ -532,42 +546,54 @@ class StationExplorer(pn.viewable.Viewer):
             hv.DynamicMap(self.plot_timeseries),
         )
 
+    def _get_desc(self, exp):
+        match exp:
+            case 'default':
+                desc = f"TM5 run using global prior default emissions"
+            case 'edgarflat':
+                desc = f"Similar to the default case, but using a flat " \
+                    "temporal profile for EDGAR anthropogenic emissions."
+            case 'regional':
+                desc = f"TM5 run using wetland, mineral-soils, " \
+                    f"and anthropogenic emissions provided by " \
+                    f"AVENGERS WP2 over the European domain, " \
+                    f"and with the global default emissions elsewhere."
+            case 'regional_no-agri':
+                desc = f"Prior emissions similar to the regional case " \
+                    f"but without emissions from agriculture sector " \
+                    f"in the European domain."
+            case 'regional_no-waste':
+                desc = f"Prior emissions similar to the regional case " \
+                    f"but without emissions from waste sector " \
+                    f"in the European domain."
+            case 'regional_no-fossil':
+                desc = f"Prior emissions similar to the regional case " \
+                    f"but without emissions from fossil sector " \
+                    f"in the European domain."
+            case 'regional_no-france':
+                desc = f"Prior emissions similar to the regional case " \
+                    f"but without anthropogenic emissions over France."
+            case 'regional_no-netherlands':
+                desc = f"Prior emissions similar to the regional case " \
+                    f"but without anthropogenic emissions over the Netherlands. "
+            case 'no-northamerica':
+                desc = f"Similar to default case " \
+                    f"but without emissions over Northern America."
+            case 'half-oh':
+                desc = f"Similar to default case " \
+                    f"but TM5 only 50% of the CAMS OH field is used chemistry."
+            case _:
+                desc = f"no description available yet."
+
+        return desc
+
+
     def set_experiments_desc(self):
         def _get_desc(exp):
             desc_html = "<dt>"
             desc_html += '\n' + f'<b><span style="text-decoration:underline">{exp}</span></b> '
             desc_html += '\n' +"</dt>"
-            match exp:
-                case 'default':
-                    desc = f"TM5 run using global prior default emissions"
-                case 'edgarflat':
-                    desc = f"similar to the default case, but using a flat " \
-                        "temporal profile for EDGAR anthropogenic emissions."
-                case 'regional':
-                    desc = f"TM5 run using wetland, mineral-soils, " \
-                        f"and anthropogenic emissions provided by " \
-                        f"AVENGERS WP2 over the European domain, " \
-                        f"and with the global default emissions elsewhere."
-                case 'regional_no-agri':
-                    desc = f"Prior emissions similar to the regional case " \
-                        f"but without emissions from agriculture sector " \
-                        f"in the European domain."
-                case 'regional_no-waste':
-                    desc = f"Prior emissions similar to the regional case " \
-                        f"but without emissions from waste sector " \
-                        f"in the European domain."
-                case 'regional_no-fossil':
-                    desc = f"Prior emissions similar to the regional case " \
-                        f"but without emissions from fossil sector " \
-                        f"in the European domain."
-                case 'regional_no-france':
-                    desc = f"Prior emissions similar to the regional case " \
-                        f"but without anthropogenic emissions over France."
-                case 'regional_no-netherlands':
-                    desc = f"Prior emissions similar to the regional case " \
-                        f"but without anthropogenic emissions over the Netherlands. "
-                case _:
-                    desc = f"no description available yet."
+            desc = self._get_desc(exp)
             desc_html += f"<dd>{desc}</dd>"
             return desc_html
 
@@ -576,37 +602,7 @@ class StationExplorer(pn.viewable.Viewer):
             desc_html = "<li>"
             desc_html += f'<b>{exp}: </b>'
             desc_html += '<span style="margin-left:30px">'
-            match exp:
-                case 'default':
-                    desc = f"TM5 run using global prior default emissions"
-                case 'edgarflat':
-                    desc = f"similar to the default case, but using a flat " \
-                        "temporal profile for EDGAR anthropogenic emissions."
-                case 'regional':
-                    desc = f"TM5 run using wetland, mineral-soils, " \
-                        f"and anthropogenic emissions provided by " \
-                        f"AVENGERS WP2 over the European domain, " \
-                        f"and with the global default emissions elsewhere."
-                case 'regional_no-agri':
-                    desc = f"Prior emissions similar to the regional case " \
-                        f"but without emissions from agriculture sector " \
-                        f"in the European domain."
-                case 'regional_no-waste':
-                    desc = f"Prior emissions similar to the regional case " \
-                        f"but without emissions from waste sector " \
-                        f"in the European domain."
-                case 'regional_no-fossil':
-                    desc = f"Prior emissions similar to the regional case " \
-                        f"but without emissions from fossil sector " \
-                        f"in the European domain."
-                case 'regional_no-france':
-                    desc = f"Prior emissions similar to the regional case " \
-                        f"but without anthropogenic emissions over France."
-                case 'regional_no-netherlands':
-                    desc = f"Prior emissions similar to the regional case " \
-                        f"but without anthropogenic emissions over the Netherlands. "
-                case _:
-                    desc = f"no description available yet."
+            desc = self._get_desc(exp)
             desc_html += f"{desc}</span></li>"
             return desc_html
         #
@@ -626,37 +622,7 @@ class StationExplorer(pn.viewable.Viewer):
             
     def set_experiments_desc_table(self):
         def _get_desc(exp):
-            match exp:
-                case 'default':
-                    desc = f"TM5 run using global prior default emissions"
-                case 'edgarflat':
-                    desc = f"similar to the default case, but using a flat " \
-                        "temporal profile for EDGAR anthropogenic emissions."
-                case 'regional':
-                    desc = f"TM5 run using wetland, mineral-soils, " \
-                        f"and anthropogenic emissions provided by " \
-                        f"AVENGERS WP2 over the European domain, " \
-                        f"and with the global default emissions elsewhere."
-                case 'regional_no-agri':
-                    desc = f"Prior emissions similar to the regional case " \
-                        f"but without emissions from agriculture sector " \
-                        f"in the European domain."
-                case 'regional_no-waste':
-                    desc = f"Prior emissions similar to the regional case " \
-                        f"but without emissions from waste sector " \
-                        f"in the European domain."
-                case 'regional_no-fossil':
-                    desc = f"Prior emissions similar to the regional case " \
-                        f"but without emissions from fossil sector " \
-                        f"in the European domain."
-                case 'regional_no-france':
-                    desc = f"Prior emissions similar to the regional case " \
-                        f"but without anthropogenic emissions over France."
-                case 'regional_no-netherlands':
-                    desc = f"Prior emissions similar to the regional case " \
-                        f"but without anthropogenic emissions over the Netherlands. "
-                case _:
-                    desc = f"no description available yet."
+            desc = self._get_desc(exp)
             desc_html = "<tr>"
             # desc_html += f'<td><b>{exp}</b></td>'
             desc_html += f'<td>{exp}</td>'
