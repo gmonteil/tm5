@@ -594,7 +594,7 @@ class StationExplorer(pn.viewable.Viewer):
                     f"but without emissions over domain around Germany (6E-15E,47N-55N)."
             case 'half-oh':
                 desc = f"Similar to default case " \
-                    f"but TM5 only 50% of the CAMS OH field is used chemistry."
+                    f"but only 50% of the CAMS OH field is used in TM5 chemistry."
             case _:
                 desc = f"no description available yet."
 
