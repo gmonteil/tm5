@@ -14,7 +14,7 @@ from loguru import logger
 from tqdm.auto import tqdm
 
 
-def coarsen_file(path_or_pattern : str, reg : TM5Grids, start : Timestamp, end : Timestamp, use_esmf_regridder : bool = False) -> xr.Dataset:
+def coarsen_file(path_or_pattern : str, reg : TM5Grids, start : Timestamp, end : Timestamp, use_esmf_regridder : bool = False, drop_domain : list = None) -> xr.Dataset:
     # Open the source file(s). It should be on a global 1x1 resolution (for now ...)
     ds = xr.open_mfdataset(path_or_pattern)
 
@@ -30,12 +30,18 @@ def coarsen_file(path_or_pattern : str, reg : TM5Grids, start : Timestamp, end :
     #
     # Regrid
     if use_esmf_regridder:
+        #MVO-TODO!
+        if drop_domain!=None:
+            msg = f"dropping domain -->{drop_domain}<-- with ESMF regridder " \
+                f"not yet supported"
+            raise NotImplementedError(msg)
         # Define a regridder
         regridder = glb1x1.regridder(reg)
         coarse = regridder(ds)
     else:
         #
         #-- iterate over (emission) datasets and
+        #   (0) potentially erase emissions of selected domain
         #   (1) crop to target region
         #   (2) re-grid to target resolution
         data_coarse_dict = {}
@@ -43,6 +49,20 @@ def coarsen_file(path_or_pattern : str, reg : TM5Grids, start : Timestamp, end :
             if da_name=='area':
                 continue
             da = ds[da_name]
+            #
+            #--
+            #
+            # print(f"MVODEBUG@coarsen_file, {da_name}, total={da.values.sum()}")
+            if drop_domain!=None:
+                drop_west,drop_east,drop_south,drop_north = drop_domain
+                lon_slice = slice(drop_west, drop_east)
+                lat_slice = slice(drop_south, drop_north)
+                total_before = da.values.sum()
+                da.loc[:,lat_slice,lon_slice] = 0.
+                total_after = da.values.sum()
+                msg = f"...@{da_name}, dropping domain -->{drop_domain} " \
+                    f"changes total before/after {total_before}/{total_after}"
+                logger.info(msg)
             #-- make sure units is as expected
             if not da.units=='kg/cl/s':
                 msg = f"emission {da_name} with unexpected units ==>{da.units}<=="
@@ -88,7 +108,7 @@ def coarsen_file(path_or_pattern : str, reg : TM5Grids, start : Timestamp, end :
     return coarse
 
 
-def coarsen_file_with_overwrite( cat : DictConfig, reg : TM5Grids, start : Timestamp, end : Timestamp, use_esmf_regridder : bool = False) -> xr.Dataset:
+def coarsen_file_with_overwrite( cat : DictConfig, reg : TM5Grids, start : Timestamp, end : Timestamp, use_esmf_regridder : bool = False, drop_domain : list = None) -> xr.Dataset:
     #
     #-- default/main emissons filed
     #
@@ -107,7 +127,7 @@ def coarsen_file_with_overwrite( cat : DictConfig, reg : TM5Grids, start : Times
     else:
         ds = ds.drop_vars([_ for _ in ds.data_vars if _!=field])
     #
-    #-- confirm that default emissions are
+    #-- consistency check that default emissions are
     #   - global
     #   - have 1 degree resolution
     #
@@ -166,23 +186,45 @@ def coarsen_file_with_overwrite( cat : DictConfig, reg : TM5Grids, start : Times
         # regridder = glb1x1.regridder(reg)
         # coarse = regridder(ds)
     else:
+        #
         #-- default emission data
+        #
         da = ds[field]
         if not da.dims==('time','lat','lon'):
             msg = f"default emis variable -->{field}<-- with unexpected dimensions " \
                 f"***{da.dims}***"
             raise RuntimeError(msg)
-        nt,nlat,nlon = da.shape
-        #-- global default values
-        da_data = ds[field].values
         #
-        #-- (0) overwrite (spatial part of default)
+        #-- overwrite emission data
         #
         ovr_da = ovr_ds[ovr_field]
         if not ovr_da.dims==('time','lat','lon'):
             msg = f"overwrite emis variable -->{ovr_field}<-- with unexpected dimensions " \
                 f"***{da.dims}***"
             raise RuntimeError(msg)
+        #
+        #-- dropping domain (?)
+        #
+        if drop_domain!=None:
+            drop_west,drop_east,drop_south,drop_north = drop_domain
+            lon_slice = slice(drop_west, drop_east)
+            lat_slice = slice(drop_south, drop_north)
+            globtot_before = da.values.sum()
+            ovrtot_before  = ovr.values.sum()
+            da.loc[:,lat_slice,lon_slice] = 0.
+            ovr.loc[:,lat_slice,lon_slice] = 0.
+            globtot_after = da.values.sum()
+            ovrtot_after  = ovr.values.sum()
+            msg = f"...@{field}/{ovr_field} dropping domain -->{drop_domain} " \
+                f"changes totals, default before/after {globtot_before}/{ovrtot_before} " \
+                f"overwrite-part before/after {ovrtot_before}/{ovrtot_after}"
+            logger.info(msg)
+        #
+        #-- (0) overwrite (spatial part of default)
+        #
+        nt,nlat,nlon = da.shape
+        #--  default and overwrite values as numpy arrays
+        da_data = ds[field].values
         ovr_data = ovr_da.values
         # print(f"da.shape -->{da.shape}<--, ovr_da.shape -->{ovr_da.shape}<--")
         # print(f"MVODEBUG:: da.time     = ***{da.time.values}***")
@@ -332,7 +374,7 @@ def prepare_emissions(conf: DictConfig) -> None:
 
             if 'categories' not in tracer:
                 continue
-
+            drop_domain = tracer.drop_domain if 'drop_domain' in tracer else None
             #-- collect
             datasets = {}
             
@@ -340,10 +382,12 @@ def prepare_emissions(conf: DictConfig) -> None:
             for catname, cat in tracer.categories.items():
                 if 'overwrite' in cat:
                     print(f"@{region}, {catname}: ***{cat}***")
-                    ds = coarsen_file_with_overwrite(cat, reg, start, end)
+                    ds = coarsen_file_with_overwrite(cat, reg, start, end, drop_domain=drop_domain)
                     datasets[catname] = ds[cat.field]
                 else:
-                    datasets[catname] = coarsen_file(cat.path, reg, start, end)[cat.field]
+                    ds = coarsen_file(cat.path, reg, start, end, drop_domain=drop_domain)
+                    # print(f"MVO-DEBUG::@{region},{cat.field} total={ds[cat.field].sum()}")
+                    datasets[catname] = ds[cat.field]
                 
             # Ensure that the dest path exists!
             Path(tracer.prefix).parent.mkdir(exist_ok=True, parents=True)
