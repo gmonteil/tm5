@@ -498,7 +498,8 @@ class StationExplorer(pn.viewable.Viewer):
         #-- standard simulations first
         #
         exp_list_first = ['default','edgarflat','regional',
-                          'half-oh','no-germany','no-northamerica',]
+                          'half-oh','no-germany',
+                          'no-gns','no-europe','no-northamerica',]
         for exp in exp_list_first:
             if exp in exp_list:
                 self.exp_list.append(exp)
@@ -588,7 +589,14 @@ class StationExplorer(pn.viewable.Viewer):
                     f"but without anthropogenic emissions over the Netherlands. "
             case 'no-northamerica':
                 desc = f"Similar to default case " \
-                    f"but without emissions over Northern America."
+                    f"but without emissions over Northern America (165W-55W,25N-80N)."
+            case 'no-europe':
+                desc = f"Similar to default case " \
+                    f"but without emissions over European domain (10W-35E,35N-71N)."
+            case 'no-gns':
+                desc = f"Similar to default case " \
+                    f"but without emissions in innermost zoom domain of TM5 " \
+                    f"simulation covering Germany, Netherlands, and Suisse (0E-18E,42N-58N)."
             case 'no-germany':
                 desc = f"Similar to default case " \
                     f"but without emissions over domain around Germany (6E-15E,47N-55N)."
