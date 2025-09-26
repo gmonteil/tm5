@@ -5,7 +5,7 @@
 - GUI (analysis)
     - [ ] (8) GM: check domain size on plot after change of region
     - [ ] (1) GM: extract TM5 output and obspack for selected stations averaged over a pre-specified period of the day (as in inversions) at highest level
-    - [ ] (2) GM: Automated observation fit statistics (RMSE, maybe as table with both RMSEs and a map also indicating the relative difference of two RMSEs), first for pre-computed results, does the statistics adapt when we zoom on the time axis? Add bias. Add Chi2 with sigma = sqrt (sigma_obs**2 + sigma_model **2), and sigma model from a crude approximation derived from short scale variability of the obs, or the variability of the meteo (representation error approximation from slopes may also be there ...  
+    - [ ] (2) GM: Automated observation fit statistics (RMSE, maybe as table with both RMSEs and a map also indicating the relative difference of two RMSEs), first for pre-computed results, does the statistics adapt when we zoom on the time axis? Add Chi2 with sigma = sqrt (sigma_obs**2 + sigma_model **2), and sigma model from a crude approximation derived from short scale variability of the obs, or the variability of the meteo (representation error approximation from slopes may also be there ...  
     - [ ] (7) GM: Integrate some visualisation of the emission budget in configuration part of the GUI (to allow perform a quick sanity check)
 - GUI (extension)    
     - [ ] (re) implement possibility to pass defaults through a YAML file
@@ -20,7 +20,7 @@
     - [ ] implement and test reading of the CAMS reanalysis OH field (to be used for the troposhere, for the stratosphere we'll rather use Bruehl et al.), this should be the default, Spivakovsky is kept-
     - [ ] (10) MV: check how Vaganovo looks now in global 1 by 1 run (launch on COSMOS), not too urgent
 - Sensitivity Runs (the important point is that we want to see an effect and the comparison with CAMS clearly shows us which run is more consistent)
-    - [ ] (6) MV try cases with the global defautl case, where in the sensitivity run we remove the emissions from Europe
+    - [ ] (6) MV to further analyse the default vs regional cases by comparing signal from component fluxes offline (and without observations) and show these plots together with the plot using the sectoral totals and the observations that we already have in the tool
 - Documentation
     - [ ] properly setup github pages with mkdocs
 - Inversion
