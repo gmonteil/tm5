@@ -231,7 +231,11 @@ class TM5:
                     match self.dconf.initial_condition[tracer].type.lower():
                         case 'cams':
                             self.settings[f'start.{tracer}.filename'] = self.start.strftime(self.dconf.initial_condition[tracer].filename)
-                            self.settings[f'start.{tracer}.type'] = 'cams' 
+                            if 'field' in  self.dconf.initial_condition[tracer]:
+                                self.settings[f'start.{tracer}.field'] = self.dconf.initial_condition[tracer].field
+                            else:
+                                self.settings[f'start.{tracer}.field'] = tracer
+                            self.settings[f'start.{tracer}.type'] = 'cams'
                         case 'zero':
                             self.settings[f'start.{tracer}.type'] = 'constant'
                             self.settings[f'start.{tracer}.mix_ratio'] = 0.
