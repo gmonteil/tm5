@@ -78,7 +78,8 @@ module iniconc_module
             integer, intent(out)            :: status
 
             ! netCDF variables
-            character(len=200)      :: filename
+            character(len=256)      :: filename
+            character(len=128)      :: field
             integer                 :: ncf
             real(kind=4), dimension(:), allocatable             :: hyai, hybi
             integer(int16), dimension(:, :, :, :), allocatable  :: mixglo1x1_packed
@@ -103,21 +104,29 @@ module iniconc_module
             real(kind=4) :: scale_factor
             integer :: mixglo1x1_shape(4) !lon/lat/level/time
             integer :: ps_shape(3)        !lon/lat/time
+            logical :: ldebug
 
+            ldebug = .false.
             status = 0
             
             call readrc(rcf, 'start.' // trim(tracname) // '.filename', filename, status)
-            print*, rname//"::reading initial condition from "//trim(filename)
+            call readrc(rcf, 'start.'//trim(tracname)//'.field', field, status, trim(tracname))
+            print*, rname//"::@tracer="//trim(tracname)//&
+                 ", reading initial condition from file "//&
+                 "***"//trim(filename)//"***"//&
+                 " field -->"//trim(field)//"<--"
 
             ! Read the relevant info from the netCDF file
             ncf = nc_open(trim(filename), 'r', status)
 
             !-- convert packed mixing ratio to physical value
-            mixglo1x1_packed = nc_read_var(ncf, trim(names(itrac)))
-            add_offset = nc_get_attr(ncf, trim(names(itrac)), 'add_offset', status)
-            scale_factor = nc_get_attr(ncf, trim(names(itrac)), 'scale_factor', status)
-            print*, rname//"::converted packed mixing ratio to physical values with "//&
-                 "scale_factor=", scale_factor, " and add_offset=", add_offset, 'for tracer ' // trim(names(itrac))
+            mixglo1x1_packed = nc_read_var(ncf, trim(field))
+            add_offset = nc_get_attr(ncf, trim(field), 'add_offset', status)
+            scale_factor = nc_get_attr(ncf, trim(field), 'scale_factor', status)
+            if( ldebug ) then
+               print*, rname//"::converted packed mixing ratio to physical values with "//&
+                    "scale_factor=", scale_factor, " and add_offset=", add_offset, 'for field ' // trim(field)
+            endif
 
             mixglo1x1_shape = shape(mixglo1x1_packed)
             allocate(mixglo1x1(mixglo1x1_shape(1), mixglo1x1_shape(2), mixglo1x1_shape(3), mixglo1x1_shape(4)))
@@ -133,8 +142,11 @@ module iniconc_module
             scale_factor = nc_get_attr(ncf, 'ps', 'scale_factor', status)
             ps_shape = shape(ps_packed)
             ps = real(ps_packed * scale_factor + add_offset)
-            print*, rname//"::converted packed surface pressure to physical values with "//&
-                 "scale_factor=",scale_factor," and add_offset=",add_offset
+            if( ldebug ) then
+               print*, rname//"::converted packed surface pressure to physical values with "//&
+                    "scale_factor=",scale_factor," and add_offset=",add_offset
+            endif
+            !-- close file handle
             call nc_close(ncf)
 
             ! Select the proper time index:
@@ -166,6 +178,10 @@ module iniconc_module
             enddo
 
 
+            !
+            !-- deallocate resources
+            !
+            if( allocated(mixglo1x1)) deallocate(mixglo1x1)
             status = 0
 
         end subroutine read_iniconc_cams
