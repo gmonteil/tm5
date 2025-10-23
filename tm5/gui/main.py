@@ -22,7 +22,7 @@ class FitIC_UI(pn.viewable.Viewer):
     check_status_event = param.Event(doc='Check status', label='Check status')
     jobid = param.Integer(doc='TM5 job ID')
     
-    def __init__(self, url_tm5, **params):
+    def __init__(self, url_tm5: str = 'http://pancake.nebula:5000', **params):
         super().__init__(**params)
         self.settings = RunSettings()
         self.textbox = pn.pane.Alert(visible=False, width=300)
@@ -31,6 +31,7 @@ class FitIC_UI(pn.viewable.Viewer):
         self.check_status_button = pn.widgets.Button.from_param(self.param.check_status_event, visible=False)
         self.job_selector = pn.widgets.IntInput.from_param(self.param.jobid, visible=False, name='', width=60)
         self.alert = pn.pane.Alert(visible=False)
+
         self.url_tm5 = url_tm5
 
     def __panel__(self):
@@ -98,7 +99,6 @@ class FitIC_UI(pn.viewable.Viewer):
         self.alert.alert_type = 'light'
         self.check_status_button.name = f'Check status of job {self.jobid}'
 
-
     @param.depends('check_status_event', watch=True)
     def check_status(self):
         r = requests.get(f'{self.url_tm5}/status/{self.jobid}')
@@ -127,6 +127,16 @@ class FitIC_UI(pn.viewable.Viewer):
             self.terminal.visible = True
             self.terminal.clear()
             self.terminal.writelines(r.json()['stdout'])
+            #with open(r.json()['outfile'], 'r') as fid:
+            #    self.terminal.writelines(fid.readlines())
+
+    # @param.depends('run_tm5_button', watch=True)
+    # def run_tm5(self):
+    #     self.update_rcfile()
+
+    # @param.depends('build_tm5_button', watch=True)
+    # def build_tm5(self):
+    #     self.update_rcfile()
 
     def update_rcfile(self):
         """

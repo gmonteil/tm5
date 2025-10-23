@@ -5,13 +5,11 @@ G. Monteil, 15 May 2024: Basic script to do a forward run with TM5
 """
 
 import os
-from omegaconf import OmegaConf
 import tm5
 from argparse import ArgumentParser
 import sys
 from pathlib import Path
 from tm5.system import runcmd
-from loguru import logger
 
 parser = ArgumentParser()
 parser.add_argument('-b', '--build', action='store_true', default=False, help='Use this option to compile the code')

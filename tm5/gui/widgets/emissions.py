@@ -53,6 +53,8 @@ class FieldSelector(pn.viewable.Viewer):
     def update_file_choices(self):
         # available_files = get_emis_file_list(self.path, '**/*.nc*')
         #-- 2025-04-14:: restrict here to the global (default) domain
+        logger.info(self.domain)
+        logger.info(f'**/*{self.domain}*.nc')
         available_files = get_emis_file_list(Path(self.path) / self.domain, '*.nc')
         self.param.filename.objects = set([f.name.rsplit('_', maxsplit=1)[0] for f in available_files])
         #if len(available_files) > 0:
@@ -67,7 +69,7 @@ class FieldSelector(pn.viewable.Viewer):
             if 'comment' in ds[self.fieldname].attrs:
                 self.widgets['info'].object = f"""
                 {ds.attrs.get('description', '`file description missing`')}
-
+                
                 **{self.fieldname}**
                 - *long_name*\t: {ds[self.fieldname].long_name}
                 - *units*\t: {ds[self.fieldname].units}
@@ -76,7 +78,7 @@ class FieldSelector(pn.viewable.Viewer):
             else:
                 self.widgets['info'].object = f"""
                 {ds.attrs.get('description', '`file description missing`')}
-
+                
                 **{self.fieldname}**
                 - *long_name*\t: {ds[self.fieldname].long_name}
                 - *units*\t: {ds[self.fieldname].units}
@@ -148,7 +150,7 @@ class EmissionSettings(pn.viewable.Viewer):
         newem.update_visibility_regional_emissions()
         return newem
 
-
+        
 # class EmissionSettings(pn.viewable.Viewer):
 #     """
 #     Block of widgets controlling the settings of *one* emission category.
@@ -165,7 +167,7 @@ class EmissionSettings(pn.viewable.Viewer):
 #     scf = param.Number(doc='scaling factor for the emissions', default=1)
 #     path = param.Path(doc='location of the emission files')
 #     fileinfo = param.String(doc='ncdump of the file (for now ...)')
-#
+
 #     def __init__(self, regnames, **params):
 #         super().__init__(**params)
 #         self.param.regions.objects = regnames
@@ -176,7 +178,7 @@ class EmissionSettings(pn.viewable.Viewer):
 #             'info': pn.pane.Markdown()
 #         }
 #         self.update_file_choices()
-#
+    
 #     def __panel__(self):
 #         return pn.Column(
 #             pn.Row(
@@ -190,11 +192,11 @@ class EmissionSettings(pn.viewable.Viewer):
 #             self.widgets['info']
 #             #pn.widgets.TextInput.from_param(self.param.scf)
 #         )
-#
+        
 #     @param.depends('filename', 'path', watch=True)
 #     def update_field_choices(self):
 #         """
-#         Update the choices of the "Field" widget.
+#         Update the choices of the "Field" widget. 
 #         """
 #         #available_files = list(Path(self.path).glob(f'**/{self.filename}*.nc*'))
 #         available_files = get_emis_file_list(self.path, f'**/{self.filename}*.nc*')
@@ -202,13 +204,16 @@ class EmissionSettings(pn.viewable.Viewer):
 #         self.param.fieldname.objects = [ _ for _ in ds.data_vars if _!='area' ]
 #         self.fieldname = self.param.fieldname.objects[0]
 #         self.widgets['field'].visible = len(self.param.fieldname.objects) > 1
-#
+
 #     @param.depends('path', watch=True)
-#     def update_file_choices(self):
-#         available_files = get_emis_file_list(self.path, '**/*.nc*')
+#     def update_file_choices(self, domain='glb1x1'):
+#         # available_files = get_emis_file_list(self.path, '**/*.nc*')
+#         #-- 2025-04-14:: restrict here to the global (default) domain
+#         fptn = f"**/*{domain}*.nc"
+#         available_files = get_emis_file_list(self.path, fptn)
 #         self.param.filename.objects = set([f.name.rsplit('_', maxsplit=1)[0] for f in available_files])
 #         self.filename = self.param.filename.objects[0]
-#
+        
 #     @param.depends('filename', 'fieldname', watch=True)
 #     def update_field_description(self):
 #         available_files = get_emis_file_list(self.path, f'**/{self.filename}*.nc*')
@@ -216,7 +221,7 @@ class EmissionSettings(pn.viewable.Viewer):
 #         ds = xr.open_dataset(available_files[0])
 #         self.widgets['info'].object = f"""
 #         {ds.attrs.get('description', '`file description missing`')}
-#
+        
 #         **{self.fieldname}**
 #         - *long_name*\t: {ds[self.fieldname].long_name}
 #         - *units*\t: {ds[self.fieldname].units}'

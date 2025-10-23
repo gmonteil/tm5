@@ -106,7 +106,7 @@ class CH4TracerSettings(TracerSettings):
     - initial_condition (user speficied, from a list of choices, hard-coded for now)
     - reactions (user can activate or deactivate a specific reaction, but the list is hard-coded.
     """
-    initial_condition = param.Selector(default='zero', objects=['zero', 'CAMS', 'previous run'], doc='initial condition')
+    initial_condition = param.Selector(default='zero', objects=['zero', 'Cconcentration from CAMS flux inversion (v23r1)', 'previous run'], doc='initial condition')
     reactions = param.List(
         [
             ReactionSettings(
@@ -115,10 +115,9 @@ class CH4TracerSettings(TracerSettings):
                 rate0=2.45e-12, 
                 rate1=-1755, 
                 domain='tropo', 
-                versions=['Spivakovsky', 'CAMS']
+                versions=['Spivakovsky', 'CAMS OH field']
             ),
-            #-- MVO::deactivated for now in the GUI since stratosphere chemistry
-            #        is not covered yet in TM5 simulation
+            ## MVO-20250622: disable stratoshpere buttons in GUI for Geneva demo
             # ReactionSettings(
             #     reacname='CH4 + OH (stratosphere)', 
             #     shortname='ohstrat', 
