@@ -40,7 +40,9 @@ from typing import List, Dict, Union
 #-- iLab platform specific settings
 #
 _TM5DIR = '/srv/tm5' #-- TM5 top-level directory
-_stafile_lst = [f"{_TM5DIR}/stationlist.verify2020.txt", f"{_TM5DIR}/co2m-stationlist_site_20231116_for-tm5.txt"]
+_stafile_lst = [f"{_TM5DIR}/stationlist.verify2020.txt",
+                f"{_TM5DIR}/co2m-stationlist_site_20231116_for-tm5.txt",
+                f"{_TM5DIR}/CO2M_merged_networks_table_for-tm5.txt",]
 
 #-- create parser
 parser = ArgumentParser(description='build and run TM5 atmosphere tracer model')
@@ -48,7 +50,7 @@ parser.add_argument('site',
                     help="""observational station/site for the adjoint run (must be present in station table).""")
 parser.add_argument('--station_file',
                     choices=_stafile_lst,
-                    default=_stafile_lst[1],
+                    default=_stafile_lst[2],
                     help="""csv file providing station coordinates (default: %(default)s).""")
 parser.add_argument('--tpulse',
                     required=True,
