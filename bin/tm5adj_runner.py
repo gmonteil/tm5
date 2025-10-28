@@ -49,7 +49,6 @@ parser = ArgumentParser(description='build and run TM5 atmosphere tracer model')
 parser.add_argument('site',
                     help="""observational station/site for the adjoint run (must be present in station table).""")
 parser.add_argument('--station_file',
-                    choices=_stafile_lst,
                     default=_stafile_lst[2],
                     help="""csv file providing station coordinates (default: %(default)s).""")
 parser.add_argument('--tpulse',
