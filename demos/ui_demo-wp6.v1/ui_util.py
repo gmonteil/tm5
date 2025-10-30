@@ -85,7 +85,7 @@ elif is_jupyterhub(): #-- ICOS jupyter lab
     #
     #-- top-level directory with pre-computed TM5 simulations
     #
-    demo_precompdir = Path('/data/avengers/precomputed_output_sept2025')
+    demo_precompdir = Path('/data/avengers/fit_ic/precomputed_output')
     if not demo_precompdir.exists():
         msg = f"directory with pre-computed simulations not found -->{demo_precompdir}<--"
         raise RuntimeError(msg)
