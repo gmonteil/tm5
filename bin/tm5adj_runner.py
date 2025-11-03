@@ -583,8 +583,16 @@ if args.rcfile==None:
         adj_tag = args.mode
     else:
         adj_tag = f"{args.mode}-{args.sat_interpolation}"
-    
-    adj_rcfile = f"{forward_outdir}/adjoint_{site_tag}_{adj_tag}_{tpulse_utc.strftime('%Y%m%dT%H')}-UTC.rc"
+    #
+    #-- MVO, 2025-11-03: Tijls new station list contains station identifiers that contain '/'
+    #                    we better replace those (otherwise we would need to create intermediate
+    #                    directories as well...)
+    #
+    if site_tag.find('/')>=0:
+        site_tag_modified = site_tag.replace('/','--')
+        adj_rcfile = f"{forward_outdir}/adjoint_{site_tag_modified}_{adj_tag}_{tpulse_utc.strftime('%Y%m%dT%H')}-UTC.rc"
+    else:
+        adj_rcfile = f"{forward_outdir}/adjoint_{site_tag}_{adj_tag}_{tpulse_utc.strftime('%Y%m%dT%H')}-UTC.rc"
     if args.mode=='point':
         rc_dct['adjoint.input.point']     = 'T'
         rc_dct['adjoint.input.satellite'] = 'F'
