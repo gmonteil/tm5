@@ -10,3 +10,7 @@ try:
     host = OmegaConf.load(Path.home() / ".config/fitic/gui.conf")[hostname]
 except FileNotFoundError:
     host = None
+except KeyError: #-- i.e. TM5_HOST not set (may happen on ICOS Jupyter Lab)
+                 #   (TM5_HOST not relevant for visualisation of precomputed
+                 #    outputs)
+    host = None
