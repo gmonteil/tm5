@@ -2,7 +2,9 @@ import panel as pn
 import param
 from omegaconf import OmegaConf
 from tm5.gui.widgets import RunSettings
+from tm5.gui.widgets.stations import StationExplorer, StatisticsViewer
 import requests
+from pathlib import Path
 
 
 pn.extension()
@@ -10,18 +12,18 @@ pn.extension('terminal')
 pn.extension('floatpanel')
 
 
-class FitIC_UI(pn.viewable.Viewer):
+class ExperimentSetupGUI(pn.viewable.Viewer):
     """
     Top-level container for the GUI. Contains the widgets that aren't related to the settings (i.e. terminal, buttons, etc.).
     """
-    
+
     rcfile = param.FileSelector(path='*.yaml', doc='TM5 settings (yaml file) to be used as a template', label='TM5 config file')
-    #run_tm5_button = param.Event(doc='run TM5', label='Run TM5')
-    #build_tm5_button = param.Event(doc='compile TM5', label='Compile TM5')
+    # run_tm5_button = param.Event(doc='run TM5', label='Run TM5')
+    # build_tm5_button = param.Event(doc='compile TM5', label='Compile TM5')
     submit_event = param.Event(doc='submit tm5', label='Submit a new run')
     check_status_event = param.Event(doc='Check status', label='Check status')
     jobid = param.Integer(doc='TM5 job ID')
-    
+
     def __init__(self, url_tm5: str = 'http://pancake.nebula:5000', **params):
         super().__init__(**params)
         self.settings = RunSettings()
@@ -60,24 +62,24 @@ class FitIC_UI(pn.viewable.Viewer):
         self.textbox.object = None
         self.textbox.visible = False
 
-        try :
+        try:
             url = f'{self.url_tm5}/submit'
-            r = requests.get(url, params={'config':'toto'})
-            
+            r = requests.get(url, params={'config': 'toto'})
+
             if not r.ok:
                 self.alert.visible = True
                 self.alert.alert_type = 'danger'
                 self.alert.object = f'Submission failed. Incorrect request to {r.url} ☠️. '
                 return
 
-            self.check_status_button.visible=True
-            self.job_selector.visible=True
+            self.check_status_button.visible = True
+            self.job_selector.visible = True
 
-            # Set the button color according to the submit status            
+            # Set the button color according to the submit status
             self.check_status_button.button_type = {
-                'finished':'success',
-                'queued':'warning',
-                'running':'primary'
+                'finished': 'success',
+                'queued': 'warning',
+                'running': 'primary'
             }[r.json()['status']]
 
             self.jobid = int(r.json()['jobid'])
@@ -127,8 +129,8 @@ class FitIC_UI(pn.viewable.Viewer):
             self.terminal.visible = True
             self.terminal.clear()
             self.terminal.writelines(r.json()['stdout'])
-            #with open(r.json()['outfile'], 'r') as fid:
-            #    self.terminal.writelines(fid.readlines())
+            # with open(r.json()['outfile'], 'r') as fid:
+            #     self.terminal.writelines(fid.readlines())
 
     # @param.depends('run_tm5_button', watch=True)
     # def run_tm5(self):
@@ -151,7 +153,7 @@ class FitIC_UI(pn.viewable.Viewer):
         conf.run.zoom = self.settings.zoom_configuration
         conf.run.tracers = [_.tracer_name for _ in self.settings.tracers]
         conf.run.levels = self.settings.levels
-        
+
         # Output section
         # conf.output = {}
         # for outp in self.settings.output_types:
@@ -161,11 +163,11 @@ class FitIC_UI(pn.viewable.Viewer):
         conf.tracers = {}
         conf.initial_condition = {}
         conf.emissions = {}
-        
+
         for tr in self.settings.tracers:
             conf.tracers[tr.tracer_name] = {}
             conf.tracers[tr.tracer_name].species = tr.species
-        
+
             # Initial condition:
             conf.initial_condition[tr.tracer_name] = {}
             conf.initial_condition[tr.tracer_name].type = tr.initial_condition
@@ -191,3 +193,22 @@ class FitIC_UI(pn.viewable.Viewer):
         self.terminal.write(OmegaConf.to_yaml(conf))
         with open(f'{self.settings.run_name}.yaml', 'w') as fid:
             fid.writelines(OmegaConf.to_yaml(conf))
+
+
+class FitIC_UI(pn.viewable.Viewer):
+    def __init__(self, config_file: Path | str = 'gui.yml'):
+        super().__init__()
+        self.conf = OmegaConf.load(config_file)
+        
+    def __panel__(self):
+        return pn.Tabs(
+            ("Setup simulation", ExperimentSetupGUI()),
+            ("Results", pn.Tabs(
+                ("Fit statistics", StatisticsViewer(self.conf)),
+                ('Modelled timeseries', StationExplorer(self.conf)),
+                tabs_location='left',
+                dynamic=True)
+            ),dynamic=True
+        )
+        
+        
