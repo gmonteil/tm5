@@ -4,8 +4,8 @@
     - [ ] implement only configuration with 3 level zoom "avengers-1", i.e global/Europe/NL+D+CH
 - GUI (analysis)
     - [ ] (8) GM: check domain size on plot after change of region
-    - [ ] (4) GM: extract TM5 output and obspack for selected stations averaged over a pre-specified period of the day (as in inversions) at highest level
-    - [x] now: Automated observation fit statistics (RMSE, maybe as table with both RMSEs and a map also indicating the relative difference of two RMSEs), first for pre-computed results, does the statistics adapt when we zoom on the time axis? Add Chi2 with sigma = sqrt (sigma_obs**2 + sigma_model **2), and sigma model from a crude approximation derived from short scale variability of the obs, or the variability of the meteo (representation error approximation from slopes may also be there ...  
+    - [ ] (4) GM+MV: extract TM5 output and obspack for selected stations averaged over a pre-specified period of the day (as in inversions) at highest level
+    - [x] now: Automated observation fit statistics (RMSE, maybe as table with both RMSEs and a map also indicating the relative difference of two RMSEs), first for pre-computed results, does the statistics adapt when we zoom on the time axis? Add Chi2 with sigma = sqrt (sigma_obs**2 + sigma_model **2), and sigma model from a crude approximation derived from short scale variability of the obs, or the variability of the meteo (representation error approximation from slopes may also be there ...
     - [ ] (7) GM: Integrate some visualisation of the emission budget in configuration part of the GUI (to allow perform a quick sanity check)
     - [ ] GM: Add plot or table that indicates relative contribution of each sector to total signal at each site (only if we run sectors separately), this is not urgent, can be added later ...
     - [ ] (1) GM: commit of splitted source 
