@@ -190,7 +190,7 @@ class TM5:
         self.settings['input.dir'] = Path(self.dconf.run.paths.output) / 'input'
         self.settings['jobstep.timerange.start'] = self.start.strftime('%Y-%m-%d %H:%M:%S')
         self.settings['jobstep.timerange.end'] = self.end.strftime('%Y-%m-%d %H:%M:%S')
-        self.settings['my.runmode'] = {'forward': 1, 'adjoin': 2}[mode]
+        self.settings['my.runmode'] = {'forward': 1, 'adjoint': 2}[mode]
 
     def setup_iniconc(self, ini : str = None):
         """

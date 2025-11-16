@@ -1,267 +1,154 @@
-!###############################################################################
-!
-!       purpose
-!       -------
-!       perform adjoint emissions needed for TM5 4DVAR
-!
-!       interface
-!       ---------
-!       call Emission_Adj_Init
-!       call Emission_Adj_Apply
-!       call Emission_Adj_Done
-!
-!       method
-!       ------
-!       subroutine Emission_Adj_Init    is called from adj_trace0
-!       subroutine Emission_Adj_Apply   is called from adj_source1
-!       subroutine Emission_Adj_Done    is called from adj_trace_end
-!
-!
-!### macro's ###################################################################
-!
 #define TRACEBACK write (gol,'("in ",a," (",a,", line",i5,")")') rname, __FILE__, __LINE__; call goErr
 #define IF_NOTOK_RETURN(action) if (status/=0) then; TRACEBACK; action; return; end if
 #define IF_ERROR_RETURN(action) if (status> 0) then; TRACEBACK; action; return; end if
 !
 #include "tm5.inc"
 
+
 module Emission_Adj
 
-  use GO, only : gol, goErr, goPr
-  use Emission_data, only : adj_emissions
-
-  implicit none
-
-  private
-
-  ! public routines
-  public :: Emission_Adj_Init
-  public :: Emission_Adj_Setup
-  public :: Emission_Adj_Apply
-  public :: Emission_Adj_Done
-
-  ! --- const ------------------------------
-
-  character(len=*), parameter        :: mname = 'Emission_Adj'
-
-
-contains
-
-  subroutine Emission_Adj_Init( status )
-
-    use dims,               only : nregions
-    use Emission_Data,      only : tracers_em_info
-    use chem_param,         only : ntracet
-    use TM5_Fields,         only : Fields_4D_Init
-
-    integer, intent(out)            :: status
-    character(len=*), parameter     :: rname = mname//'/Emission_Adj_Init'
-    integer                         :: region, itrac, i_cat
-    integer, allocatable            :: nt(:)
-
-    ! emission arrays:
-    allocate( adj_emissions(nregions) )
-
-    ! loop over var4d categories:
-    do region = 1, nregions
-       allocate( adj_emissions(region)%tracer(ntracet) )
-!       do itrac = 1, ntracet
-!          allocate(nt(tracers_em_info(region)%tracer(itrac)%n_cat))
-!          do i_cat = 1, tracers_em_info(region)%tracer(itrac)%n_cat
-!             nt(i_cat) = tracers_em_info(region)%tracer(itrac)%cat(i_cat)%time_profile%n_period
-!          end do
-!          call Fields_4D_Init( adj_emissions(region)%tracer(itrac), region, .false.,&
-!                               tracers_em_info(region)%tracer(itrac)%n_cat, nt , status )
-!          IF_NOTOK_RETURN(status=1)
-!          deallocate(nt)
-!       end do
-    end do
-
-!    call Init_adjemis_CO2(status)
-    IF_NOTOK_RETURN(status=1)
-
-   ! ok
-    status = 0
-
-  end subroutine Emission_Adj_Init
-
-  subroutine Emission_Adj_Done( status )
-
-    use Emission_Data,  only : tracers_em_info, update_parent_emissions
-    use dims,           only : revert, nregions, region_name, im, jm
-    use global_data,    only : rcF
-    use GO,             only : ReadRc
+    use GO,             only : gol, goErr, goPr, tdate
+    use emission_data,  only : source_apply, adj_emissions, tracers_em_info, t_tracer_info
+    use emission_fwd,   only : emission_fwd_setup
+    use dims,           only : nregions, isr, ier, jsr, jer, itau, region_name
     use chem_param,     only : ntracet
-    use TM5_Fields,     only : Fields_4D_Done
-    use file_netcdf
+    use os_specs,       only : MAX_FILENAME_LEN
+    use global_data,    only : region_dat, mass_dat
+    use datetime,       only : tau2date
 
-    integer, intent(out)        :: status
-    character(len=*), parameter :: rname = mname//'/Emission_Adj_Done'
-    character(len=512)          :: outdir_adj_emis, outFile
-    integer                     :: nc_io, region, rgrp, itrac, tgrp, i_cat, ntime, cgrp
-    character(len=40)           :: c_cat
+    implicit none
 
-    if (revert == -1) then
+    private
+    public  :: emission_adj_init
+    public  :: emission_adj_done
+    public  :: emission_adj_setup
+    public  :: emission_adj_apply
 
-        ! First update parent adj_emissions
-        ! For some reason Arjo has this call, but for me it causes the adjoint test to fail...
-!        call update_parent_emissions( adj_emissions )
+    character(len=*), parameter        :: mname = 'Emission_Adj'
 
-        call ReadRc(rcF, 'output.dir', outdir_adj_emis, status)
-        IF_NOTOK_RETURN(status=1)
+    ! Adjoint has the structure adj_emis(region)%tracer(itrac)%values(ilon, ilat)
+    ! No need to bother with categories: the adjoint is the same for all categories (by definition)
+    type t_surfemis
+        ! dimensions: lon, lat, tracer
+        real, dimension(:, :, :), allocatable   :: values
+    end type t_surfemis
+    type(t_surfemis), dimension(:), allocatable :: adj_emis
 
-        write (outFile,'(a,"/adj_emissions.nc4")') trim(outdir_adj_emis)
-        nc_io = nc_open(trim(outFile),'c',status)
-        IF_NOTOK_RETURN(status=1)
+    character(len=MAX_FILENAME_LEN), dimension(:), allocatable     :: filename_adj
 
-        call nc_create_dim(nc_io,'nregions',nregions)
-        call nc_create_dim(nc_io,'tracer',ntracet)
-        do region = 1, nregions
-           rgrp = nc_create_group(nc_io,region_name(region),status)
-           do itrac = 1, ntracet
-              tgrp = nc_create_group(rgrp,TRIM(tracers_em_info(region)%tracer(itrac)%name),status)
-              call nc_create_dim(tgrp,'lon ',im(region),status)
-              call nc_create_dim(tgrp,'lat ',jm(region),status)
-              call nc_create_dim(tgrp,'ncat',tracers_em_info(region)%tracer(itrac)%n_cat,status)
-              do i_cat = 1, tracers_em_info(region)%tracer(itrac)%n_cat
-                 c_cat = tracers_em_info(region)%tracer(itrac)%cat(i_cat)%name
-                 ntime = tracers_em_info(region)%tracer(itrac)%cat(i_cat)%time_profile%n_period
-                 cgrp = nc_create_group(tgrp,trim(c_cat),status)
-                 call nc_create_dim(cgrp,'time',ntime,status)
-                 call nc_dump_var(cgrp,'adj_emis',(/'lon ','lat ','time'/),  &
-                      adj_emissions(region)%tracer(itrac)%cat(i_cat)%field(:,:,1,:))
-                 print*, i_cat, c_cat, sum(adj_emissions(region)%tracer(itrac)%cat(i_cat)%field(:,:,1,:))
-              end do !i_cat
-           end do ! itrac
-        end do ! region
-        call nc_close(nc_io, status)
-        IF_NOTOK_RETURN(status=1)
+    contains
 
-    end if ! revert
+        subroutine emission_adj_init(status)
+            integer, intent(out)    :: status
+            integer                 :: ireg
+            
+            allocate(adj_emis(nregions))
+            allocate(filename_adj(nregions))
+            do ireg = 1, nregions
+                allocate(adj_emis(ireg)%values(isr(ireg) : ier(ireg), jsr(ireg) : jer(ireg), ntracet))
+            enddo
+            status = 0
+        end subroutine emission_adj_init
 
-    ! clear:
-!    do region = 1, nregions
-!       do itrac = 1, ntracet
-!          call Fields_4D_Done( adj_emissions(region)%tracer(itrac), tracers_em_info(region)%tracer(itrac)%n_cat,  status )
-!          IF_NOTOK_RETURN(status=1)
-!       end do
-!    end do
-!    deallocate( adj_emissions )
 
-!    call Done_adjemis_CO2(status)
-    IF_NOTOK_RETURN(status=1)
+        subroutine emission_adj_done(status)
+            integer, intent(out)    :: status
+            status = 0
+        end subroutine emission_adj_done
 
-  end subroutine Emission_Adj_Done
 
-  subroutine Emission_Adj_Setup( status )
+        subroutine emission_adj_setup(status)
+            integer, intent(out)            :: status
+            character(len=*), parameter     :: rname = mname//'/emission_adj_setup'
+            call emission_fwd_setup(status)
+        end subroutine emission_adj_setup
 
-    ! --- modules ------------------------------
 
-    use Dims,                   only : nregions, itaui, itaue
-    use datetime,               only : time_window, get_num_days
-    use Emission_Data,          only : ref_emissions_apri, tracers_em_info, adj_emissions
-    use Emission_Read_PyShell,  only : Read_Emissions_From_PyShell
-    use chem_param,             only : ntracet
-    use global_data,            only : rcF
-    use GO,                     only : ReadRc
-    use os_specs,               only : DUMMY_STR_LEN
+        subroutine emission_adj_apply(ireg, tr, status)
+            
+            use go, only : rtotal, operator(-)
 
-    ! --- in/out ----------------------------------------------
+            integer, intent(in)     :: ireg
+            type(tdate), intent(in) :: tr(2)
+            integer, intent(out)    :: status
 
-    integer, intent(out)             :: status
+            integer :: itrac
+            character(len=*), parameter :: rname = mname//'/emission_adj_apply'
+            real                        :: dtime
 
-    ! --- const -----------------------------------------------
+            ! timestep emissions
+            dtime = abs(rtotal(tr(2) - tr(1), 'sec'))
 
-    character(len=*), parameter      :: rname = mname//'/Emission_Adj_Setup'
+            do itrac = 1, ntracet
+                call emission_adj_apply_tracer(ireg, itrac, tracers_em_info(ireg)%tracer(itrac), dtime)
+            enddo
 
-    !--- local ------------------------------------------------
-
-    integer                         :: i_cat, itrac, region, n_cat, n_day, i
-    character(len=8)                :: tracer_name
-    character(len=256)              :: emis_indir ! where are the daily cycle files?
-    logical                         :: apply_dailycycle, dcycle_cat ! whether or not to apply the diurnal cycle
-    character(len=256)              :: dailycycle_pfx ! the prefix for the daily cycle file
-    integer                         :: dailycycle_type ! 0 for scaling, 1 for adding daily cycles over smaller time steps
-    character(len=DUMMY_STR_LEN)    :: cat_name
-
-    !--- begin ------------------------------------------------
-
-    ! loop over categories:
-    ! loop over tracers:
-    ! loop over regions:
-    do region = 1, nregions
-       do itrac = 1, ntracet
-          do i_cat = 1, tracers_em_info(region)%tracer(itrac)%n_cat
-             ! set adjoint emissions to zero:
-             adj_emissions(region)%tracer(itrac)%cat(i_cat)%field = 0.0
-          end do
-       end do
-    end do
-
-    call Read_Emissions_From_PyShell ( tracers_em_info, time_window, &
-                                        ref_emissions_apri, status )
-    IF_NOTOK_RETURN(status=1)
-
-    ! Check whether we want to apply daily cycle or not, per tracer and per region
-    do itrac = 1, ntracet
-        tracer_name = trim(tracers_em_info(1)%tracer(itrac)%name)
-        ! Figure out if this tracer needs sub-period chunking for any of its categories
-        apply_dailycycle = .false.
-        do region = 1, nregions
-            n_cat = tracers_em_info(region)%tracer(itrac)%n_cat
-            do i_cat = 1, n_cat
-                cat_name = tracers_em_info(region)%tracer(itrac)%cat(i_cat)%name
-                call ReadRc(rcf, trim(tracer_name)//'.'//trim(cat_name)//'.dailycycle', dcycle_cat, status, default=.false.)
-                IF_ERROR_RETURN(status=1)
-                if (dcycle_cat) write(gol,'(a, ": tracer ",a," category ",a," has sub-period chunking")') rname, trim(tracer_name), trim(cat_name) ; call goPr
-                apply_dailycycle = apply_dailycycle .or. dcycle_cat
-            end do ! i_cat
-        end do ! region
-        !call ReadRc(rcf, trim(tracer_name)//'.emission.dailycycle', apply_dailycycle, status)
-        !IF_NOTOK_RETURN(status=1)
-        if (apply_dailycycle) then
-            call ReadRc(rcf, trim(tracer_name)//'.dailycycle.prefix', dailycycle_pfx, status)
+            call write_adj_emis(ireg, dtime, status)
             IF_NOTOK_RETURN(status=1)
-            call ReadRc(rcF, 'dailycycle.folder', emis_indir, status)
-            IF_NOTOK_RETURN(status=1)
-            call ReadRc(rcf, trim(tracer_name)//'.dailycycle.type', dailycycle_type, status) ! 0 for scaling, 1 for adding
-            IF_NOTOK_RETURN(status=1)
-            do region = 1, nregions
-                n_cat = tracers_em_info(region)%tracer(itrac)%n_cat
-                allocate(tracers_em_info(region)%tracer(itrac)%dailycycle%cycle_cat(n_cat))
-                tracers_em_info(region)%tracer(itrac)%dailycycle%apply = apply_dailycycle
-                tracers_em_info(region)%tracer(itrac)%dailycycle%pfx = dailycycle_pfx
-                tracers_em_info(region)%tracer(itrac)%dailycycle%emis_indir = emis_indir
-                tracers_em_info(region)%tracer(itrac)%dailycycle%dtype = dailycycle_type
-                if (.not. allocated(tracers_em_info(region)%tracer(itrac)%dailycycle%day_opened)) then
-                    ! How many days during the model run?
-                    n_day = get_num_days(itaui, itaue)
-                    allocate(tracers_em_info(region)%tracer(itrac)%dailycycle%day_opened(n_day))
-                    do i=1,n_day
-                        tracers_em_info(region)%tracer(itrac)%dailycycle%day_opened(i) = .false.
-                    end do ! n_day
-                end if ! allocated(day_opened)
-            end do ! region
-        end if ! apply_dailycycle
-    end do ! itrac
 
-    ! ok
-    status = 0
+        end subroutine emission_adj_apply
 
-  end subroutine Emission_Adj_Setup
 
-  subroutine Emission_Adj_Apply( region, tr, status )
+        subroutine emission_adj_apply_tracer(ireg, itrac, tracer, dtime)
 
-    use Go,                 only : TDate
+            integer, intent(in)                     :: ireg, itrac
+            real, intent(in)                        :: dtime
+            type(t_tracer_info), intent(in)         :: tracer
+            real, dimension(:, :, :, :), pointer    :: adj_rm
+            real, dimension(:, :, :, :), pointer    :: adj_rzm
 
-    integer, intent(in)              :: region
-    type(TDate), intent(in)          :: tr(2)
-    integer, intent(out)             :: status
+            integer                         :: j, i
 
-    character(len=*), parameter      :: rname = mname//'/Emission_Adj_Apply'
+            adj_rm => mass_dat(ireg)%rm_t
+            adj_rzm => mass_dat(ireg)%rzm_t
 
-    IF_NOTOK_RETURN(status=1)
+            do j = jsr(ireg), jer(ireg)
+                do i = isr(ireg), ier(ireg)
+                    if (region_dat(ireg)%zoomed(i, j) /= ireg) cycle
+                    adj_emis(ireg)%values(i, j, itrac) = adj_emis(ireg)%values(i, j, itrac) + adj_rm(i, j, 1, itrac) * dtime
+                    adj_emis(ireg)%values(i, j, itrac) = adj_emis(ireg)%values(i, j, itrac) - adj_rzm(i, j, 1, itrac) * dtime
+                enddo
+            enddo
 
-  end subroutine Emission_Adj_Apply
+            nullify(adj_rm, adj_rzm)
 
-end module Emission_Adj
+        end subroutine emission_adj_apply_tracer
+
+        
+        subroutine write_adj_emis(ireg, dtime, status)
+
+            integer, intent(in)                 :: ireg
+            integer, intent(out)                :: status
+            real, intent(in)                    :: dtime
+
+            ! integer                             :: iday
+            integer, dimension(6)               :: idate_mid
+            character(len=MAX_FILENAME_LEN)     :: filename
+
+            status = 0
+
+            ! TODO: this is probably not correct in adjoint mode!
+            !iday = get_num_days(itaui, itaur(ireg) + ndyn / 4 / tref(ireg))
+            !call tau2date(itaur(ireg) + ndyn / 4 / tref(ireg), idate_mid)
+            call tau2date(itau - nint(dtime), idate_mid)
+
+            ! One adjoint file should contain the emissions of all tracers for one given region and adjoint time step
+            write(filename, '("adjemis.", a, ".", i4.4, 2i2.2, ".nc")'), trim(region_name(ireg)), idate_mid(1), idate_mid(2), idate_mid(3)
+
+            if (filename == filename_adj(ireg)) then 
+                ! If we are still in the same adjoint timestep, do nothing (i.e. keep accumulating the adjoint emissions)
+                return
+            endif
+
+            ! Write the adjoint emissions to a netCDF file (TODO: write the code!)
+
+            ! Reset the adjoint fields
+            adj_emis(ireg)%values = 0
+
+            ! Store the filename
+            filename_adj(ireg) = filename
+
+        end subroutine write_adj_emis
+
+        
+end module emission_adj

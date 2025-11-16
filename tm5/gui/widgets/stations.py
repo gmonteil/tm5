@@ -17,7 +17,7 @@ from functools import partial
 from tqdm.contrib.concurrent import process_map
 
 
-#----- utilities -----
+# ----- utilities -----
 
 
 def md5(fname: str) -> str:
@@ -38,8 +38,8 @@ def load_experiment(conf, expname) -> DataFrame:
     The "conf" argument is an "omegaconf.DictConfig" object, and should contain the following keys:
     - experiments.path : path where the TM5 "stations.
     - experiments.cache :
-    - experiments.list: 
-    
+    - experiments.list:
+
     """
     stations_file = Path(conf.experiments.path) / conf.experiments.list[expname] / 'stations/stations.nc4'
     fitic_file = Path(conf.experiments.cache) / expname / 'stations.nc'
@@ -52,33 +52,33 @@ def load_experiment(conf, expname) -> DataFrame:
             out = out.to_dataframe().reset_index()
             out['sampling_height'] = [int(_.split('_')[1]) for _ in out.site]
 
-            #TODO: we need a better method to filter out the highest site ...
+            # TODO: we need a better method to filter out the highest site ...
             return out.loc[out.sampling_height == out.groupby('station')['sampling_height'].transform('max')]
-            
+
     with Dataset(stations_file) as ds:
 
         # Dimensions of the output file should be (time, tracer, site)
         times = [Timestamp(*_) for _ in ds['date_midpoints'][:]]
-        tracers = [getattr(ds, f'tracer_{itr+1:03.0f}') for itr in range(ds.dimensions['tracers'].size)]
+        tracers = [getattr(ds, f'tracer_{itr + 1:03.0f}') for itr in range(ds.dimensions['tracers'].size)]
         sites = [ds[_].getncattr('name') for _ in ds.groups]
         abbr = [ds[_].getncattr('abbr').split('/')[1] for _ in ds.groups]
-    
+
         # Create output dataset:
         out = xr.Dataset(coords=dict(time=times, tracer=tracers, site=abbr))
         out['station'] = (('site',), sites)
-    
+
         mix = zeros((len(sites), len(times), len(tracers)))
         for isite, site in enumerate(ds.groups):
             mix[isite, :, :] = ds[site]['mixing_ratio'][:].transpose()
-    
+
     out['mixing_ratio'] = (('site', 'time', 'tracer'), mix)
 
     out.attrs['sourcefile'] = str(stations_file)
     out.attrs['sourcefile_md5sum'] = checksum
     fitic_file.parent.mkdir(exist_ok=True, parents=True)
     out.to_netcdf(fitic_file)
-    
-    
+
+
 def load_observations_data(fname: Path) -> DataFrame:
     """
     Read one observation file. Return the content as a dataframe, with the following columns:
@@ -93,7 +93,7 @@ def load_observations_data(fname: Path) -> DataFrame:
     - filename: name of the observation file
     - site_name: full name of the site
     - obs: observation, in ppb
-    
+
     The function is very ad-hoc for FitIC => CH4-specific, hardcoded for 2021. But this should be easy enough to fix ...
     """
     ds = xr.open_dataset(fname, decode_timedelta=False)[['time', 'value', 'altitude', 'latitude', 'longitude', 'elevation', 'intake_height']]
@@ -134,7 +134,7 @@ def load_observations_metadata(fname: Path) -> DataFrame:
         'filename': fname
     }, index=[ds.attrs['site_name']])
 
-    
+
 def interp_model(observations: DataFrame, model: DataFrame, station: str, experiments: List[str]) -> DataFrame:
     # TODO: bad stuff will happen if we have more than one tracer ...
     obs = observations[observations.site_name == station].copy()
@@ -149,10 +149,10 @@ def interp_model(observations: DataFrame, model: DataFrame, station: str, experi
 
         # bias:
         obs.loc[:, f'bias_{exp}'] = obs[exp] - obs.obs
-        
+
     return obs
-    
-    
+
+
 # ----- Plots -----
 
 
@@ -162,27 +162,27 @@ def plot_stations(model: DataFrame, observations: DataFrame, station: str | None
     - if no station is provided, the function will return "None"
     - if no experiment is provided, the function will just return a plot of the observations
     """
-    
-    if station is None: 
+
+    if station is None:
         return
-    
+
     plot = observations[observations.site_name == station].hvplot.points(
         x='time', y='obs', color='k', s=1, label='observations', width=1200, grid=True
     )
-    
+
     # If no experiment has been requested, return the plot with the obs only
     if experiments is None:
         return plot
-    
+
     for exp in experiments:
         plot *= model.loc[model.station == station].hvplot(x='time', y=exp, label=exp)
-        
+
     return plot
 
 
 def plot_weekly_bias(observations: DataFrame, model: DataFrame, station: str | None, experiments):
-    if station is None or experiments is None: 
-            return
+    if station is None or experiments is None:
+        return
     wmean = calc_weekly_bias(observations, model, station, experiments)
     plot = wmean.hvplot(
         x='time', y=[f'bias_{exp}' for exp in experiments], grid=True, width=1200, ylabel='bias (ppb)'
@@ -203,19 +203,24 @@ def plot_site_info(sites: DataFrame, station: str | None):
     """)
 
     return pn.Column(
-        text, 
+        text,
         sites.hvplot.points(
-            x='longitude', y='latitude', geo=True, coastline=True, xlim=(-180, 180), ylim=(-90, 90), 
+            x='longitude', y='latitude', geo=True, coastline=True, xlim=(-180, 180), ylim=(-90, 90),
             frame_width=300, hover_cols=['site_name']
         ) *
         sites.loc[[station]].hvplot.points(
             x='longitude', y='latitude', geo=True, coastline=True, xlim=(-180, 180), ylim=(-90, 90), frame_width=300, color='r'
         )
     )
-    
 
-def plot_histogram_of_fit_residuals(observations: DataFrame, model: DataFrame, station: str, experiments: List[str]) -> hv.Overlay:
-    if station is None or experiments is None: 
+
+def plot_histogram_of_fit_residuals(
+    observations: DataFrame,
+    model: DataFrame,
+    station: str,
+    experiments: List[str]
+) -> hv.Overlay:
+    if station is None or experiments is None:
         return
     df = interp_model(observations, model, station, experiments)
     histplots = []
@@ -232,29 +237,36 @@ def plot_table_statistics(observations: DataFrame, model: DataFrame, station: st
 def plot_stat_maps(model: DataFrame, experiment: str, statistics_type: str):
     df = model[model.Month.isna() & (model.experiment == experiment)]
     return df.hvplot.points(
-        x='longitude', y='latitude', c=statistics_type, s='count', geo=True, title=statistics_type, 
-        hover_cols=['site_name', 'Bias', 'RMSE', 'Correlation coefficient'], 
+        x='longitude', y='latitude', c=statistics_type, s='count', geo=True, title=statistics_type,
+        hover_cols=['site_name', 'Bias', 'RMSE', 'Correlation coefficient'],
         coastline=True, xlim=(-180, 180), ylim=(-90, 90), frame_width=1200)
 
 
 def plot_stats_table(model: DataFrame, statistics_type: str, experiment_list: List[str], highlighted_experiment: str):
-    df = model[model.Month.isna()]# & (self.model.experiment == self.experiment)]
+    df = model[model.Month.isna()]  # & (self.model.experiment == self.experiment)]
     fig = df[df.experiment == highlighted_experiment].sort_values(statistics_type).hvplot.scatter(
-        x='site_name', 
-        s='count', 
-        y=statistics_type, 
-        title=statistics_type, 
-        rot=90, 
-        frame_width=1200, 
-        height=800, 
+        x='site_name',
+        s='count',
+        y=statistics_type,
+        title=statistics_type,
+        rot=90,
+        frame_width=1200,
+        height=800,
         grid=True,
         label=highlighted_experiment,
         muted=False
     )
-    
+
     for exp in experiment_list:
         if exp != highlighted_experiment:
-            fig *= df[df.experiment == exp].hvplot.scatter(x='site_name', s='count', y=statistics_type, label=exp, muted_alpha=0, muted=True)
+            fig *= df[df.experiment == exp].hvplot.scatter(
+                x='site_name',
+                s='count',
+                y=statistics_type,
+                label=exp,
+                muted_alpha=0,
+                muted=True
+            )
     return fig
 
 
@@ -267,7 +279,8 @@ def plot_stats_table(model: DataFrame, statistics_type: str, experiment_list: Li
 
 def calc_weekly_bias(observations: DataFrame, model: DataFrame, station: str | None, experiments: List[str] | None):
     df = interp_model(observations, model, station, experiments)
-    if df is None: return
+    if df is None:
+        return
 
     # Calculate weekly mean:
     return df.groupby(Grouper(key='time', freq='7D')).mean(numeric_only=True)
@@ -279,36 +292,36 @@ def calc_statistics(observations: DataFrame, model: DataFrame, station: str | No
     - corr
     - bias
     """
-    if station is None or experiments is None: 
+    if station is None or experiments is None:
         return
-    
+
     df = interp_model(observations, model, station, experiments)
     stats = {
-        'Mean bias':[],
-        'Correlation coefficient':[],
-        'RMSE':[],
-        'experiment':[]
+        'Mean bias': [],
+        'Correlation coefficient': [],
+        'RMSE': [],
+        'experiment': []
     }
     for exp in experiments:
         stats['experiment'].append(exp)
         stats['Mean bias'].append((df[exp] - df.obs).mean())
         stats['RMSE'].append(((df[exp] - df.obs) ** 2).mean() ** .5)
-        stats['Correlation coefficient'].append(corrcoef(df[exp].values, df.obs.values)[0,1])
+        stats['Correlation coefficient'].append(corrcoef(df[exp].values, df.obs.values)[0, 1])
 
     return DataFrame.from_dict(stats).set_index('experiment')
-    
+
 
 def calc_fit_statistics2(model: DataFrame, obs: DataFrame) -> DataFrame:
-    
+
     mod = model.set_index(['time', 'tracer', 'station']).to_xarray().squeeze()
     for site in obs.site_name.unique():
         obstime = obs.loc[obs.site_name == site, 'time']
         obs.loc[obs.site_name == site, 'model'] = mod.sel(station=site).interp(time=obstime).mixing_ratio.values[:]
-    
+
     obs.loc[:, 'Bias'] = obs.model - obs.obs
     obs.loc[:, 'RMSE'] = obs.Bias ** 2
     # obs.loc[:, 'chi2'] = obs.rmse / (obs.err ** 2)
-    
+
     total_statistics = obs.groupby('site_name').mean(numeric_only=True)
     total_statistics.loc[:, 'RMSE'] = total_statistics.RMSE ** .5
     total_statistics.loc[:, 'Correlation coefficient'] = obs.groupby('site_name')[['obs', 'model']].corr().obs.values[1::2]
@@ -322,25 +335,25 @@ def calc_fit_statistics2(model: DataFrame, obs: DataFrame) -> DataFrame:
     monthly_statistics.index.rename('Month', level=0, inplace=True)
     monthly_statistics.loc[:, 'count'] = obs.groupby([obs.time.to_numpy().astype('datetime64[M]'), 'site_name']).obs.count() ** .5
     monthly_statistics = monthly_statistics.reset_index()[['Month', 'site_name', 'latitude', 'longitude', 'altitude', 'elevation', 'intake_height', 'obs', 'model', 'Bias', 'RMSE', 'Correlation coefficient', 'count']]
-    
+
     return concat([monthly_statistics, total_statistics]).rename(columns={'obs': 'Observations', 'model':'Model'})
-    
-    
+
+
 def calc_statistics2(exp: str, obs: DataFrame, conf: DictConfig) -> DataFrame:
     model = load_experiment(conf, exp)
     stats = calc_fit_statistics2(model, obs)
     stats.loc[:, 'experiment'] = exp
     return stats
 
-    
+
 def load_experiments(observations: DataFrame, settings: DictConfig, experiments: List[str]) -> DataFrame:
     stats = process_map(partial(calc_statistics2, obs=observations, conf=settings), experiments)
     return concat(stats)
 
 
 # ===== Main widgets =====
-    
-    
+
+
 class StationExplorer(pn.viewable.Viewer):
     station = param.Selector()
     experiments = param.ListSelector()
@@ -394,15 +407,15 @@ class StationExplorer(pn.viewable.Viewer):
         - if not, it is loaded using "load_experiment", which computes the temporal interpolation based on the "stations.nc" files. Further speedups are embedded in "load_experiment" to avoid recomputing that interpolation multiple times.
         """
         for exp in self.experiments:
-            
+
             # If no modelled timeseries has been loaded yet:
             if self.model is None:
-                self.model = load_experiment(self.settings, exp).rename(columns={'mixing_ratio':exp})
-                
+                self.model = load_experiment(self.settings, exp).rename(columns={'mixing_ratio': exp})
+
             # Load the remaining data:
-            else :
+            else:
                 if exp not in self.model.columns:
-                    df = load_experiment(self.settings, exp).rename(columns={'mixing_ratio':exp})
+                    df = load_experiment(self.settings, exp).rename(columns={'mixing_ratio': exp})
                     self.model = merge(self.model, df[[exp, 'site', 'time', 'tracer', 'station']], on=['site', 'time', 'tracer', 'station'])
 
     @pn.depends('station', 'experiments')
@@ -424,7 +437,7 @@ class StationExplorer(pn.viewable.Viewer):
     @pn.depends('station', 'experiments')
     def table_statistics(self):
         return plot_table_statistics(self.data, self.model, self.station, self.experiments)
-    
+
 
 class StatisticsViewer(pn.viewable.Viewer):
 
@@ -432,7 +445,7 @@ class StatisticsViewer(pn.viewable.Viewer):
     data = param.DataFrame()
     model = param.DataFrame()
     statistics_type = param.Selector(objects=['RMSE', 'Bias', 'Correlation coefficient', 'Model', 'Observations'])
-    
+
     def __init__(self, settings: DictConfig):
         super().__init__()
         self.settings = settings
@@ -448,7 +461,7 @@ class StatisticsViewer(pn.viewable.Viewer):
 
         # Set default values:
         self.experiment = self.param.experiment.objects[0]
-        
+
     def __panel__(self):
         return pn.Column(
             pn.Row(
@@ -458,13 +471,13 @@ class StatisticsViewer(pn.viewable.Viewer):
             self.plot_stat_maps,
             self.plot_stats_table
         )
-        
+
     def load_observations(self):
         self.data = load_all_observations(self.settings.observations.files)
-        
+
     def load_experiments(self):
         self.model = load_experiments(self.data, self.settings, self.param.experiment.objects)
-    
+
     @pn.depends('statistics_type', 'experiment')
     def plot_stat_maps(self):
         return plot_stat_maps(self.model, self.experiment, self.statistics_type)

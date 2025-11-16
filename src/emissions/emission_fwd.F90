@@ -61,7 +61,6 @@ contains
         !
         ! Call chain: main -> tm5var4d/tm5var4d_Run -> tracer/tracer_model -> initexit/start_tm5 -> initexit/start_tm5_emissions -> emission_fwd_setup
 
-        use emission_read_pyshell,  only : read_emissions_from_pyshell
         use dims,                   only : adv_scheme
 
         integer, intent(out)            :: status

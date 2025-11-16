@@ -20,7 +20,11 @@ class ReactionSettings(pn.viewable.Viewer):
     rate0 = param.Number(doc="Reaction rate", label='rate a')
     rate1 = param.Number(doc='reaction rate', label='rate b')
     active = param.Boolean(default=True, doc='Enable or disable the reaction')
-    domain = param.Selector(default='all', objects=['tropo', 'strato', 'all'], doc='Should the reaction be applied to the whole atmosphere or to a specific layer?')
+    domain = param.Selector(
+        default='all',
+        objects=['tropo', 'strato', 'all'],
+        doc='Should the reaction be applied to the whole atmosphere or to a specific layer?'
+    )
     field = param.Selector(doc='version')
 
     def __init__(self, versions: List[str] = None, default_field: str = None, **param):
@@ -28,25 +32,25 @@ class ReactionSettings(pn.viewable.Viewer):
         self.param.field.objects = versions
         self.param.field.doc = f'Version of the reactive component field to be used for the reaction {self.reacname}'
         self.field = versions[0]
-        if default_field is not None: 
+        if default_field is not None:
             self.field = default_field
 
     def __panel__(self):
         return pn.Row(
             pn.widgets.Checkbox.from_param(self.param.active, name=self.param.reacname),
             pn.widgets.Select.from_param(self.param.field) if len(self.param.field.objects) > 1 else None,
-            #pn.widgets.FloatInput.from_param(self.param.rate0),
-            #pn.widgets.FloatInput.from_param(self.param.rate1),
+            # pn.widgets.FloatInput.from_param(self.param.rate0),
+            # pn.widgets.FloatInput.from_param(self.param.rate1),
         )
 
     def copy(self):
         return self.__class__(
-            versions = self.param.field.objects,
-            reacname = self.reacname,
-            shortname = self.shortname,
-            rate0 = self.rate0,
-            rate1 = self.rate1,
-            active = self.active,
-            domain = self.domain,
-            #field = self.field
+            versions=self.param.field.objects,
+            reacname=self.reacname,
+            shortname=self.shortname,
+            rate0=self.rate0,
+            rate1=self.rate1,
+            active=self.active,
+            domain=self.domain,
+            # field = self.field
         )
