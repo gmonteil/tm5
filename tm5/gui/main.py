@@ -203,7 +203,7 @@ class FitIC_UI(pn.viewable.Viewer):
     def __panel__(self):
         return pn.Tabs(
             ("Setup simulation", ExperimentSetupGUI()),
-            ("Results", pn.Tabs(
+            ("Precomputed results", pn.Tabs(
                 ("Fit statistics", StatisticsViewer(self.conf)),
                 ('Modelled timeseries', StationExplorer(self.conf)),
                 tabs_location='left',
