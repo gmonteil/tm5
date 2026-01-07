@@ -3,6 +3,7 @@ from functools import wraps
 import time
 from .system import colorize
 import inspect
+import pprint
 
 
 def trace_args(*parameters):
@@ -35,7 +36,7 @@ def trace_args(*parameters):
 
             msg = f"<y>{func.__module__}.{func.__name__}</> ({inspect.getfile(func)})"
             if diag:
-                msg += f' called with arguments <y>{diag}</y>'
+                msg += f' called with arguments <y>{pprint.pformat(diag)}</y>'
             
             # Log
             logger.opt(colors=True, depth=1, capture=True).debug(msg)

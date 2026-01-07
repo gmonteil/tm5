@@ -11,7 +11,7 @@ from tm5.units import units_registry as ureg
 from tm5.settings import TM5Settings, load_config
 from tm5 import species as chem
 from pathlib import Path
-from pandas import Timestamp, Timedelta
+from pandas import Timestamp, Timedelta, DataFrame
 from loguru import logger
 from typing import List
 
@@ -154,11 +154,11 @@ class TM5:
         - var4d.horcor.min_eigval
         - var4d.optim_emis.type
         """
-#        self.settings['var4d.optim_emis.type'] = '1'
+        # self.settings['var4d.optim_emis.type'] = '1'
         self.settings['var4d.horcor.min_eigval'] = '0.0001'
         self.settings['correlation.inputdir'] = 'not-defined'
 
-    def setup_output(self, stations : bool = True):
+    def setup_output(self, stations : bool = True, satellite: bool = True):
         """
         This will setup the following (group of) rc keys:
         - output.dir
@@ -176,6 +176,9 @@ class TM5:
 
         if stations and 'stations' in self.dconf.output :
             self.setup_output_stations()
+            
+        if satellite and 'satellite' in self.dconf.output: 
+            self.setup_output_satellite()
 
         self.setup_output_mix(self.dconf.output.get('mix', None))
 
@@ -191,6 +194,8 @@ class TM5:
         self.settings['jobstep.timerange.start'] = self.start.strftime('%Y-%m-%d %H:%M:%S')
         self.settings['jobstep.timerange.end'] = self.end.strftime('%Y-%m-%d %H:%M:%S')
         self.settings['my.runmode'] = {'forward': 1, 'adjoint': 2}[mode]
+        self.settings['okdebug'] = self.dconf.run.get('verbose', False)
+        self.settings['okdebug.tmm'] = self.dconf.run.get('verbose_tmm', False)
 
     def setup_iniconc(self, ini : str = None):
         """
@@ -243,12 +248,15 @@ class TM5:
                 logger.error("initial condition settings not understood")
                 raise Exception
             
-    def setup_observations(self) -> Path:
+    def setup_observations(self, df: DataFrame) -> Path:
         """
         Write a (point) observations file for TM5 + setup the relevant rc-keys:
         - output.point
         - output.point.errors
         - output.point.{tracer}.minerror
+        - output.point.interpolation
+        - output.point.timewindow
+        - output.point.verbose
         """
 
         self.settings['output.point'] = 'T'
@@ -256,8 +264,8 @@ class TM5:
         for tracer in self.dconf.run.tracers:
             self.settings['output.point.timewindow'] = self.dconf.observations.point[tracer].default_assim_window
             self.settings[f'output.point.{tracer}.minerror'] = self.dconf.observations.point[tracer].minerror
-        self.setup_output_point(self.dconf.output.point)
-        return tm5.observations.prepare_point_obs(self.dconf.output.point)
+        self.setup_output_point()
+        return tm5.observations.write_point_obs(df, Path(self.dconf.output.point.input_dir) / 'point_input.nc4') # self.dconf.output.point)
 
     def setup_emissions2(self, skip_emis_gen : bool = False):
         """
@@ -373,13 +381,23 @@ class TM5:
         self.settings['output.point.sample.parent'] = self.dconf.output.point.get('sample_parent', 'F')
         self.settings['output.point.errors'] = self.dconf.output.point.get('errors', '1')
         self.settings['output.point.interpolation'] = {'linear': 3, 'gridbox': 1, 'slopes': 2}[self.dconf.output.point.interpolation]
-
+        self.settings['output.point.timewindow'] = int(Timedelta(self.dconf.output.point.assim_window).total_seconds() / 3600)
+        self.settings['output.point.verbose'] = self.dconf.output.point.get('verbose', False)
+        
     def setup_output_stations(self):
         self.setup_output_point()
         self.settings['output.station.timeseries'] = 'T'
         self.settings['output.station.timeseries.filename'] = Path(self.dconf.output.stations.filename).absolute()
         self.settings['output.station.meteo'] = self.dconf.output.stations.get('meteo', False)
         self.settings['output.station.verbose'] = 'T'
+        self.settings['adjoint.input.point'] = 'T'
+        
+    def setup_output_satellite(self):
+        self.settings['output.satellite.interpolation'] = {
+            'gridbox': 1, 'slopes':2, 'linear': 3}[self.dconf.output.satellite.interpolation]
+        self.settings['output.satellite.verbose'] = self.dconf.output.satellite.get('verbose', False)
+        self.settings['output.satellite.split.period'] = 'm'
+        self.settings['adjoint.input.satellite'] = 'T'
 
     def setup_output_mix(self, dconf: DictConfig | None = None):
         if dconf is None :

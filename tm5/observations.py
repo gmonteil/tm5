@@ -2,14 +2,17 @@
 
 from pathlib import Path
 import xarray as xr
-from pandas import DatetimeIndex, Timestamp
+from pandas import DatetimeIndex, Timestamp, concat
 from loguru import logger
 from numpy import int16, float64, int32
 from dataclasses import dataclass
 from omegaconf import DictConfig
-from pandas import DataFrame, concat
-from typing import Tuple
+from pandas import DataFrame, concat, TimedeltaIndex
+from typing import Tuple, List, Callable
 from tqdm import tqdm
+from glob import glob
+from functools import partial
+from tm5.debug import trace_args
 
 
 def read_obspack_file(filename: str) -> Tuple[DataFrame, DataFrame]:
@@ -18,7 +21,6 @@ def read_obspack_file(filename: str) -> Tuple[DataFrame, DataFrame]:
     metadata = {k:ds.attrs.get(k) for k in ['site_code', 'site_name', 'site_latitude', 'site_elevation', 'site_elevation_unit', 'site_utc2lst', 'dataset_name', 'dataset_globalview_prefix', 'dataset_parameter', 'dataset_project', 'dataset_platform', 'dataset_selection', 'dataset_selection_tag', 'dataset_calibration_scale', 'dataset_start_date', 'dataset_stop_date', 'dataset_data_frequency', 'dataset_data_frequency_unit', 'dataset_intake_ht', 'dataset_intake_ht_unit', 'dataset_usage_url', 'dataset_usage_description', 'dataset_contribution', 'obspack_name']}
     metadata['filename'] = Path(filename).name
     return SimpleNamespace(data=data, metadata=metadata)
-
 
 @dataclass
 class PointObs:
@@ -34,13 +36,100 @@ class PointObs:
             data.append(dat)
             metadata.append(mdat)
         self.observations = concat(data)
-        self.metadata = condat(metadata)
+        self.metadata = concat(metadata)
 
     def write(self, filename:str) -> str:
         raise NotImplementedError
+    
+    
+def read_obspack_file_(fname: str | Path, start: Timestamp | str, end: Timestamp | str) -> DataFrame | None :
+    """
+    This should return a DataFrame with at least the following columns: 
+    lat, lon, alt, time, obs, err, tracer, station_id
+    """
+    
+    ds = xr.open_dataset(fname)
+    df = ds.sel(obs=(ds.time > Timestamp(start)) & (ds.time <= Timestamp(end))).to_dataframe().reset_index()
+    if len(df) == 0: 
+        return
+    df = df.loc[:, ['time', 'start_time', 'longitude', 'latitude', 'altitude', 'elevation', 'intake_height', 'value', 'value_std_dev']]
+    df = df.rename(columns={
+        'longitude': 'lon', 
+        'latitude': 'lat', 
+        'altitude': 'alt', 
+        'value': 'mixing_ratio', 
+        'value_std_dev': 'mixing_ratio_err', 
+    })
+    df.loc[:, 'station_id'] = ds.attrs['dataset_num']
+    df.loc[:, 'station_code'] = ds.attrs['site_code']
+    df.loc[:, 'tracer'] = ds.attrs['dataset_parameter'].upper()
+    df.loc[:, 'mixing_ratio'] = df.mixing_ratio * 1.e-9
+    df.loc[:, 'mixing_ratio_err'] = df.mixing_ratio_err * 1.e-9
+    df.loc[:, 'time_window_length'] = TimedeltaIndex(df.time - df.start_time) * 2
+    df.loc[:, 'sampling_strategy'] = 2
+    return df
+    
+    
+@trace_args('file_list_or_pattern', 'start', 'end')
+def read_obspack(file_list_or_pattern: str | List[str], start: Timestamp | str, end: Timestamp | str) -> DataFrame:
+    if isinstance(file_list_or_pattern, str):
+        file_list_or_pattern = glob(file_list_or_pattern)
 
+    import_fn = partial(read_obspack_file_, start=start, end=end)
+    
+    # Import all the obs files
+    observations = [import_fn(f) for f in tqdm(file_list_or_pattern)]
+    
+    # Concat, filtering out the None
+    observations = concat([o for o in observations if o is not None])
+    
+    # Return, adding an "id" variable in the process
+    return observations.reset_index(drop=True).reset_index().rename(columns={'index':'id'})
+    
+    
+@trace_args('dconf')
+def write_point_obs(df: DataFrame, filename: Path | str) -> Path: # dconf: DictConfig, reader: Callable = read_obspack) -> Path:
+#    df = reader(
+#        dconf.filename,
+#        start = Timestamp(dconf.start),
+#        end = Timestamp(dconf.end)
+#    )
+    
+    # The part after this should be independent from the reader
+    ds = df.set_index('id').to_xarray()
+    
+    # Add a "date_components" variable that TM5 can read:
+    ds['date_components'] = xr.DataArray(
+        [t.timetuple()[:6] for t in DatetimeIndex(ds.time)],
+        dims=('id', 'idate')
+    )
 
-def prepare_point_obs(dconf) -> Path:
+    # Adjust the file types:
+    ds['lat'] = ds.lat.astype(float64)
+    ds['lon'] = ds.lon.astype(float64)
+    ds['alt'] = ds.alt.astype(float64)
+    ds['mixing_ratio'] = ds.mixing_ratio.astype(float64)
+    ds['mixing_ratio_err'] = ds.mixing_ratio_err.astype(float64)
+    ds['id'] = ds['id'].astype(int32)
+    ds['time_window_length'] = (ds.time_window_length).astype(int32)
+    ds['sampling_strategy'] = ds.sampling_strategy.astype(int16)
+    ds['date_components'] = ds.date_components.astype(int16)
+    ds['station_id'] = ds.station_id.astype(int32)
+    
+    # Determine the filename and ensure that the parent exist
+    # filename = Path(dconf.input_dir) / 'point_input.nc4'
+    Path(filename).parent.mkdir(parents=True, exist_ok=True)
+    
+    for itrac, tracer in enumerate(set(df.tracer)):
+        mode = 'a' if itrac > 0 else 'w'
+        ds.sel(id = ds.tracer.str.lower() == tracer.lower()).to_netcdf(filename, group=tracer, mode=mode)
+    
+    logger.info(f"Wrote {filename}")
+        
+    return filename
+    
+        
+def prepare_point_obs_(dconf) -> Path:
 
     # Determine the filename and ensure that the parent exist
     filename = Path(dconf.input_dir) / 'point_input.nc4'
@@ -53,7 +142,8 @@ def prepare_point_obs(dconf) -> Path:
     # Replace the time dimension by a regular index
     ds = ds.to_dataframe().reset_index().to_xarray()
     logger.info(f"Done ...")
-
+    
+    
     # Filter the time interval:
     ds = ds.sel(index = (ds.time >= Timestamp(dconf.start)) & (ds.time < Timestamp(dconf.end)))
 
