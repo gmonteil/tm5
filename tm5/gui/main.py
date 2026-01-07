@@ -12,6 +12,16 @@ pn.extension('terminal')
 pn.extension('floatpanel')
 
 
+def fix_env() -> None:
+    import sys, os
+    from pathlib import Path
+    env_base_path = Path(sys.executable).parents[1]
+    # os.environ["SSL_CERT_FILE"] = str(env_base_path / 'ssl' / 'cert.pem')
+    # os.environ["SSL_CERT_DIR"] = str(env_base_path / 'ssl' / 'certs')
+    # os.environ["REQUESTS_CA_BUNDLE"] = str(env_base_path / 'ssl' / 'cert.pem')
+    os.environ["PROJ_LIB"] = str(env_base_path / 'share' / 'proj')
+
+
 class ExperimentSetupGUI(pn.viewable.Viewer):
     """
     Top-level container for the GUI. Contains the widgets that aren't related to the settings (i.e. terminal, buttons, etc.).
@@ -198,12 +208,13 @@ class ExperimentSetupGUI(pn.viewable.Viewer):
 class FitIC_UI(pn.viewable.Viewer):
     def __init__(self, config_file: Path | str = 'gui.yml'):
         super().__init__()
+        fix_env()
         self.conf = OmegaConf.load(config_file)
         
     def __panel__(self):
         return pn.Tabs(
             ("Setup simulation", ExperimentSetupGUI()),
-            ("Results", pn.Tabs(
+            ("Precomputed results", pn.Tabs(
                 ("Fit statistics", StatisticsViewer(self.conf)),
                 ('Modelled timeseries', StationExplorer(self.conf)),
                 tabs_location='left',
