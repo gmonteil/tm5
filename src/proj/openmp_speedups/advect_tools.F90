@@ -330,7 +330,7 @@ contains
        p    =>   sp_dat(region)%data
        m    =>    m_dat(region)%data
        phlb => phlb_dat(region)%data
-       mpar =>    m_dat(region)%data
+       mpar =>    m_dat(parent(region))%data
        dxyp => region_dat(region)%dxyp
        dxy  => region_dat(parent(region))%dxyp
 

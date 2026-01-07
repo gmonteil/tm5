@@ -473,7 +473,7 @@ contains
     use dims            , only : itaur, tref, ndyn, parent, children, revert
     use adj_user_output , only : adj_user_output_step
     use zoom_tools      , only : update_parent
-    use advect_tools    , only : m2phlb, m2phlb1
+    use advect_tools    , only : m2phlb, m2phlb1, mass_to_pressure
     use adj_zoom_tools  , only : adj_update_parent
 
     implicit none
@@ -551,11 +551,13 @@ contains
       itaur(region) = itaur(region) + dtime     !update region time (dtime < 0)
     end do
 
-    if ( region /= 1 ) then
-       call m2phlb(region)
-    else
-       call m2phlb1(1)
-    end if
+!    if ( region /= 1 ) then
+!       call m2phlb(region)
+!    else
+!       call m2phlb1(1)
+!    end if
+
+    call mass_to_pressure(region)
 
     ! ok:
     status = 0
