@@ -28,10 +28,12 @@
 - Documentation
     - [ ] properly setup github pages with mkdocs
 - Inversion
-    - [ ] TXK: implement dummy inversion based on Jacobians to test computational performance 
-    - [ ] (2) GM: test script for adjoint, and commit, so MV can test 
-   
- 
+    - [ ] TXK: implement dummy inversion based on Jacobians to test computational performance
+    - [ ] TXK: to specify how the footprints wil be used in the inverse model (dc/df, no emission caterogies).
+    - [ ] (2a) GM: check units of footprint 
+    - [ ] (2b) MV to further test footprint calculation
+    - [ ] GM: make sure that adjoint file is returned in the right place
+          
 # Task ideas / discussion
 - avoid misuse through implementation of "accepted ranges" => *That's essentially built-in the GUI*
 - Documentation: could be overleaf or a shared word document ... https://lumia.nateko.lu.se/ using a package mkdoc, could be combined with a markedown file on nextcloud ... => *actually, there's already a squeletton in place. Just install the `mkdocs` python package and run `mkdocs serve` from within the root of the repo. The content of the resulting page is based on the markdown files in the `docs` folder*
@@ -39,4 +41,5 @@
   - migration of the VM part
   - mounting folder from additional VM on notebook
   - mounting folder from Jupyter hub on new VM not needed, because we would only need it to pass the yaml file to the VM, and that can be arranged differently ...
+- Note that the concentration calculation uses fine grid in the full zoom domain, but the emissions close to the boundary are using the coarse resolution (that is applied on the other side of the boundary). If we wanted to change that we would need to enlarge the zoom domain.
 
