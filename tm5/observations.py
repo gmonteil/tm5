@@ -47,18 +47,38 @@ def read_obspack_file_(fname: str | Path, start: Timestamp | str, end: Timestamp
     This should return a DataFrame with at least the following columns: 
     lat, lon, alt, time, obs, err, tracer, station_id
     """
-    
     ds = xr.open_dataset(fname)
     df = ds.sel(obs=(ds.time > Timestamp(start)) & (ds.time <= Timestamp(end))).to_dataframe().reset_index()
-    if len(df) == 0: 
+    if len(df) == 0:
+        msg = f"...reading obspack@{fname} for {start} -- {end} " \
+            f"yielded empty frame. Location will be discarded."
+        logger.trace(msg)
         return
-    df = df.loc[:, ['time', 'start_time', 'longitude', 'latitude', 'altitude', 'elevation', 'intake_height', 'value', 'value_std_dev']]
+    #
+    #-- there are obspack files for which 'value_std_dev' is missing
+    #   (e.g. ch4_wbi_aircraft-pfp_1_allvalid.nc, which has 'value_unc' instead)
+    #
+    if 'value_std_dev' in df.columns:
+        unc_column = 'value_std_dev'
+        df = df.loc[:, ['time', 'start_time', 'longitude', 'latitude', 'altitude', 'elevation', 'intake_height', 'value', unc_column]]
+    elif 'value_unc' in df.columns:
+         unc_column = 'value_unc'
+         df = df.loc[:, ['time', 'start_time', 'longitude', 'latitude', 'altitude', 'elevation', 'intake_height', 'value', unc_column]]
+    else:
+        msg = f"...reading obspack@{fname}, " \
+            f"neither 'value_std_dev' nor 'value_unc' found, " \
+            f"location will be discarded."
+        logger.warning(msg)
+        return
+    #
+    #-- normalise variable names
+    #
     df = df.rename(columns={
         'longitude': 'lon', 
         'latitude': 'lat', 
         'altitude': 'alt', 
         'value': 'mixing_ratio', 
-        'value_std_dev': 'mixing_ratio_err', 
+        unc_column: 'mixing_ratio_err', 
     })
     df.loc[:, 'station_id'] = ds.attrs['dataset_num']
     df.loc[:, 'station_code'] = ds.attrs['site_code']
@@ -129,7 +149,7 @@ def write_point_obs(df: DataFrame, filename: Path | str) -> Path: # dconf: DictC
     return filename
     
         
-def prepare_point_obs_(dconf) -> Path:
+def prepare_point_obs_(dconf : DictConfig) -> Path:
 
     # Determine the filename and ensure that the parent exist
     filename = Path(dconf.input_dir) / 'point_input.nc4'
