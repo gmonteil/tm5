@@ -101,13 +101,17 @@ def gen_departures(point_input_file: Path, point_output_file: Path, point_depart
     return array(yadj)
             
             
-def read_adjvec(start: str | Timestamp, end: str | Timestamp, conf: DictConfig) -> DataFrame:
+def read_adjvec(adjemis_dir : str | Path,
+                start: str | Timestamp, end: str | Timestamp, conf: DictConfig) -> DataFrame:
+    if isinstance(adjemis_dir, str):
+        adjemis_dir = Path(adjemis_dir)
     adjx = []
     for itrac, tracer in enumerate(conf):
         for categ in conf[tracer].categories:
             for region in conf[tracer].categories[categ].regions:
                 for day in date_range(start, end, freq='D', inclusive='left'):
-                    ds = xr.open_dataset(f'adjemis.{region}.{day:%Y%m%d}.nc').adj_emis.isel(tracer=itrac).to_dataframe().reset_index()
+                    outname = adjemis_dir / f'adjemis.{region}.{day:%Y%m%d}.nc'
+                    ds = xr.open_dataset(outname).adj_emis.isel(tracer=itrac).to_dataframe().reset_index()
                     ds.loc[:, 'region'] = region
                     ds.loc[:, 'time'] = day
                     ds.loc[:, 'tracer'] = tracer
@@ -115,18 +119,23 @@ def read_adjvec(start: str | Timestamp, end: str | Timestamp, conf: DictConfig) 
                     adjx.append(ds)
     return concat(adjx)
     
-    
+
 parser = ArgumentParser()
 parser.add_argument('-b', '--build', action='store_true', default=False, help='Use this option to compile the code')
 parser.add_argument('-m', '--host', default=os.environ['TM5_HOST'])
+parser.add_argument('--trange',
+                    metavar=('tstart','tend'),
+                    nargs=2,
+                    help="""whether to override simulation start/end time specified in the yaml file (strings must be parseable as pandas Timestamp).""")
+parser.add_argument('--rcfile-only', action='store_true', default=False, help="""whether to only create the TM5 rcfile(s) (neither compiling nor running TM5).""")
 parser.add_argument('config_file')
 args = parser.parse_args(sys.argv[1:])
 
 #=====================================================
 # 1. Build the model
 #=====================================================
-tm = tm5.TM5(args.config_file, host=args.host)
-if args.build :
+tm = tm5.TM5(args.config_file, host=args.host, override_trange=args.trange)
+if args.build and not args.rcfile_only:
     tm.build()
     
 #=====================================================
@@ -181,53 +190,80 @@ x1 = emis_to_state(tm.dconf)
 rcf = tm.settings.write(Path(tm.dconf.run.paths.output) / 'forward.rc')
 
 # Run TM5
-#runcmd(tm.dconf.run.run_cmd.split() + [str(rcf)])
+run_cmd = tm.dconf.run.run_cmd.split() + [str(rcf)]
 
-y1 = obsfile_to_vector(
-    filename=Path(tm.dconf.run.paths.output) / 'point/point_output.nc4', 
-    regions=tm.dconf.run.regions, 
-    tracers=tm.dconf.run.tracers
-)
+if args.rcfile_only:
+    msg = f"TM5 rcfile ***{str(rcf)}*** has been created"
+    logger.info(msg)
+    msg = f"...but don't actually run TM5 \n-->{' '.join(run_cmd)}<--\n"
+    logger.info(msg)
+else:
+    runcmd(run_cmd)
 
-# Create an emission perturbation, by applying a random scaling to the original emissions
-#dx = randn(len(x1))
-#dx /= dx
+    y1 = obsfile_to_vector(
+        filename=Path(tm.dconf.run.paths.output) / 'point/point_output.nc4', 
+        regions=tm.dconf.run.regions, 
+        tracers=tm.dconf.run.tracers
+    )
 
-dx = zeros(len(x1))
-dx[x1.region == 'gns100x100'] = 1.
+    # Create an emission perturbation, by applying a random scaling to the original emissions
+    #dx = randn(len(x1))
+    #dx /= dx
 
-x2 = x1.copy()
-x2.loc[:, 'emis'] = x2.emis + dx
-state_to_emis(x2, tm.dconf)
+    dx = zeros(len(x1))
+    dx[x1.region == 'gns100x100'] = 1.
 
-# Run TM5 again
-#runcmd(tm.dconf.run.run_cmd.split() + [str(rcf)])
-y2 = obsfile_to_vector(
-    filename=Path(tm.dconf.run.paths.output) / 'point/point_output.nc4', 
-    regions=tm.dconf.run.regions, 
-    tracers=tm.dconf.run.tracers
-)
+    x2 = x1.copy()
+    x2.loc[:, 'emis'] = x2.emis + dx
+    state_to_emis(x2, tm.dconf)
 
-dy = y2 - y1
+    # Run TM5 again
+    runcmd(tm.dconf.run.run_cmd.split() + [str(rcf)])
+    y2 = obsfile_to_vector(
+        filename=Path(tm.dconf.run.paths.output) / 'point/point_output.nc4', 
+        regions=tm.dconf.run.regions, 
+        tracers=tm.dconf.run.tracers
+    )
 
-yadj = gen_departures(
-    point_input_file=Path(tm.dconf.output.point.input_dir) / 'point_input.nc4',
-    point_output_file=Path(tm.dconf.run.paths.output) / 'point/point_output.nc4',
-    point_departures_file=Path(tm.dconf.run.paths.output) / 'point/point_departures.nc4'
-)
+    dy = y2 - y1
 
+    yadj = gen_departures(
+        point_input_file=Path(tm.dconf.output.point.input_dir) / 'point_input.nc4',
+        point_output_file=Path(tm.dconf.run.paths.output) / 'point/point_output.nc4',
+        point_departures_file=Path(tm.dconf.run.paths.output) / 'point/point_departures.nc4'
+    )
+
+#
+#-- setup adjoint run
+#
 tm.setup_run('adjoint')
 rcf = tm.settings.write(Path(tm.dconf.run.paths.output) / 'adjoint.rc')
-runcmd(tm.dconf.run.run_cmd.split() + [str(rcf)])
+adjrun_cmd = tm.dconf.run.run_cmd.split() + [str(rcf)]
 
-xadj = read_adjvec(tm.dconf.run.start, tm.dconf.run.end, tm.dconf.emissions)
+if args.rcfile_only:
+    msg = f"TM5 rcfile ***{str(rcf)}*** has been created"
+    logger.info(msg)
+    msg = f"...but don't actually run adjoint TM5 \n-->{' '.join(run_cmd)}<--\n"
+    logger.info(msg)
+else:
+    runcmd(adjrun_cmd)
 
-# Adjoint test:
-x1 = x1.sort_values(['tracer', 'region', 'category', 'time', 'lat', 'lon'])
-x2 = x2.sort_values(['tracer', 'region', 'category', 'time', 'lat', 'lon'])
-xadj = xadj.sort_values(['tracer', 'region', 'category', 'time', 'lat', 'lon'])
+    if False: #--
+        # adjemis_dir = <read from key in yaml file> (if present)
+        pass
+    else:
+        #-- TM5 default output directory for adjoint emissions
+        #   (currently see emission_adj.F90, line 154ff)
+        adjemis_dir = Path(tm.dconf.run.paths.output) / 'adjemis'
+    xadj = read_adjvec(adjemis_dir,
+                       tm.dconf.run.start, tm.dconf.run.end, tm.dconf.emissions)
 
-dxdx = (x2.emis - x1.emis).values @ xadj.adj_emis.values
-dydy = dy @ yadj
+    # Adjoint test:
+    x1 = x1.sort_values(['tracer', 'region', 'category', 'time', 'lat', 'lon'])
+    x2 = x2.sort_values(['tracer', 'region', 'category', 'time', 'lat', 'lon'])
+    xadj = xadj.sort_values(['tracer', 'region', 'category', 'time', 'lat', 'lon'])
 
-print(f'dx @ xadj = {dxdx}; dy @ yadj = {dydy}; err (%) = {1 - dydy/dxdx}')
+    dxdx = (x2.emis - x1.emis).values @ xadj.adj_emis.values
+    dydy = dy @ yadj
+
+    print(f'dx @ xadj = {dxdx}; dy @ yadj = {dydy}; err (%) = {1 - dydy/dxdx}')
