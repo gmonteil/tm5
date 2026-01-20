@@ -16,7 +16,7 @@ import sys
 import os
 from tm5.system import runcmd
 from tm5.observations import read_obspack
-from omegaconf import DictConfig
+from omegaconf import OmegaConf, DictConfig
 import tm5
 from pandas import DataFrame, Timestamp, date_range, concat, Timedelta
 import xarray as xr
@@ -134,7 +134,19 @@ args = parser.parse_args(sys.argv[1:])
 #=====================================================
 # 1. Build the model
 #=====================================================
-tm = tm5.TM5(args.config_file, host=args.host, override_trange=args.trange)
+#
+#-- load configuration file
+#
+dconf = OmegaConf.load(args.config_file)
+#
+#-- potential partial override (or extend) configuration
+#
+if args.trange!=None:
+    tstart, tend = args.trange
+    dconf.run['start'] = tstart
+    dconf.run['end']   = tend
+
+tm = tm5.TM5(dconf, host=args.host)
 if args.build and not args.rcfile_only:
     tm.build()
     
@@ -183,6 +195,7 @@ tm.setup_run('forward')
 # Do the initial setup of emissions
 tm.setup_emissions2()
 
+
 # Create a pseudo control-vector from it:
 x1 = emis_to_state(tm.dconf)
     
@@ -197,7 +210,18 @@ if args.rcfile_only:
     logger.info(msg)
     msg = f"...but don't actually run TM5 \n-->{' '.join(run_cmd)}<--\n"
     logger.info(msg)
+    #--
+    tm.setup_run('adjoint')
+    rcf = tm.settings.write(Path(tm.dconf.run.paths.output) / 'adjoint.rc')
+    adjrun_cmd = tm.dconf.run.run_cmd.split() + [str(rcf)]
+    msg = f"TM5 rcfile ***{str(rcf)}*** has been created"
+    logger.info(msg)
+    msg = f"...but don't actually run adjoint TM5 \n-->{' '.join(run_cmd)}<--\n"
+    logger.info(msg)
+    sys.exit(0)
 else:
+    msg = f"first TM5 forward run, exectuing command ==>{run_cmd}<=="
+    logger.info(msg)
     runcmd(run_cmd)
 
     y1 = obsfile_to_vector(
@@ -218,7 +242,9 @@ else:
     state_to_emis(x2, tm.dconf)
 
     # Run TM5 again
-    runcmd(tm.dconf.run.run_cmd.split() + [str(rcf)])
+    msg = f"second TM5 forward run, exectuing command ==>{run_cmd}<=="
+    logger.info(msg)
+    runcmd(run_cmd)
     y2 = obsfile_to_vector(
         filename=Path(tm.dconf.run.paths.output) / 'point/point_output.nc4', 
         regions=tm.dconf.run.regions, 
@@ -233,19 +259,15 @@ else:
         point_departures_file=Path(tm.dconf.run.paths.output) / 'point/point_departures.nc4'
     )
 
-#
-#-- setup adjoint run
-#
-tm.setup_run('adjoint')
-rcf = tm.settings.write(Path(tm.dconf.run.paths.output) / 'adjoint.rc')
-adjrun_cmd = tm.dconf.run.run_cmd.split() + [str(rcf)]
+    #
+    #-- setup adjoint run
+    #
+    tm.setup_run('adjoint')
+    rcf = tm.settings.write(Path(tm.dconf.run.paths.output) / 'adjoint.rc')
+    adjrun_cmd = tm.dconf.run.run_cmd.split() + [str(rcf)]
 
-if args.rcfile_only:
-    msg = f"TM5 rcfile ***{str(rcf)}*** has been created"
+    msg = f"TM5 adjoint run, exectuing command ==>{adjrun_cmd}<=="
     logger.info(msg)
-    msg = f"...but don't actually run adjoint TM5 \n-->{' '.join(run_cmd)}<--\n"
-    logger.info(msg)
-else:
     runcmd(adjrun_cmd)
 
     if False: #--

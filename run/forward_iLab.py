@@ -44,8 +44,22 @@ platform = get_hostname()
 #=====================================================
 # 1. Build the model
 #=====================================================
-tm = tm5.TM5(str(yaml_file), host=args.host,
-             platform=platform, override_trange=args.trange)
+dconf = OmegaConf.load(str(yaml_file))
+#
+#-- potential partial override (or extend) configuration
+#
+if args.trange!=None:
+    tstart, tend = args.trange
+    dconf.run['start'] = tstart
+    dconf.run['end']   = tend
+if platform!=None and 'platform' in dconf.run:
+        if dconf.run.platform!=platform:
+            dconf.run['platform'] = platform
+            msg = f"overriding dconf.run.platform, {self.dconf.run.platform} " \
+                f"{args.platform}"
+            logger.info(msg)
+
+tm = tm5.TM5(dconf, host=args.host)
 
 if args.build or args.build_only and not args.rcfile_only:
     tm.build()
