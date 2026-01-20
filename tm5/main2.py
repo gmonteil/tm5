@@ -21,22 +21,9 @@ Re-implementation of whatever was in main.py, because I forgot how up to date th
 """
 
 class TM5:
-    def __init__(self, dconf : str | DictConfig, host : str | None,
-                 platform : str | None = None,
-                 override_trange : List[str] | None = None) -> None:
+    def __init__(self, dconf : str | DictConfig, host : str | None) -> None:
         # Load the config file
         self.dconf = load_config(dconf, host)
-        # potentially overriding few settings in yaml file
-        if platform != None and 'platform' in self.dconf.run:
-            if self.dconf.run.platform!=platform:
-                self.dconf.run['platform'] = platform
-                msg = f"overriding dconf.run.platform, {self.dconf.run.platform} by {platform}"
-                logger.info(msg)
-        # potentially override simulation period
-        if override_trange!=None:
-            tstart, tend = override_trange
-            self.dconf.run['start'] = tstart
-            self.dconf.run['end']   = tend
         self.settings = TM5Settings()
         self.tm5exec = Path(self.dconf.run.paths.output) / 'tm5.x'
         self.meteo = Meteo(**self.dconf.meteo)
@@ -49,15 +36,26 @@ class TM5:
     def end(self) -> Timestamp:
         return Timestamp(self.dconf.run.end)
 
-    def build(self, clean : bool = False):
+    def build(self, clean : bool = False, relative_link : bool = False):
         """
         Build TM5
         """
+        relpath = os.path.relpath
         tm5exec = build_tm5(self.dconf, clean = clean)
         if not self.tm5exec.exists():# or not self.tm5exec.is_symlink():
             self.tm5exec.parent.mkdir(parents=True, exist_ok=True)
             self.tm5exec.unlink(missing_ok=True)
-            os.symlink(tm5exec.absolute(), self.tm5exec)
+            #
+            #--
+            #
+            if relative_link:
+                relpath = relpath(str(tm5exec), self.dconf.run.paths.output)
+                cwd = os.getcwd()
+                os.chdir(self.dconf.run.paths.output)
+                os.symlink(relpath, self.tm5exec.name)
+                os.chdir(cwd)
+            else:
+                os.symlink(tm5exec.absolute(), self.tm5exec)
 
     # Main setup methods
     def setup_meteo(self, coarsen : bool = False, fast: bool = False):
