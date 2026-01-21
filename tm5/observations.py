@@ -13,11 +13,51 @@ from tqdm import tqdm
 from glob import glob
 from functools import partial
 from tm5.debug import trace_args
+from types import SimpleNamespace
 
-
-def read_obspack_file(filename: str) -> Tuple[DataFrame, DataFrame]:
+def read_obspack_file(filename: str,
+                      start: Timestamp | str | None = None,
+                      end:   Timestamp | str | None = None ) -> SimpleNamespace: #Tuple[DataFrame, DataFrame]:
     ds = xr.open_dataset(filename)
-    data = ds[['longitude', 'latitude', 'altitude', 'elevation', 'intake_height', 'time', 'start_time', 'value', 'value_unc']].to_dataframe()
+    #
+    #-- apply temporal restriction
+    #
+    if start!=None and end!=None:
+        cnd_time = (ds.time>=Timestamp(start)) & (ds.time <= Timestamp(end))
+        ds = ds.sel(obs=cnd_time)
+    elif start!=None:
+        cnd_time = (ds.time>=Timestamp(start))
+        ds = ds.sel(obs=cnd_time)
+    elif end!=None:
+        cnd_time = (ds.time<=Timestamp(end))
+        ds = ds.sel(obs=cnd_time)
+    #
+    obspack_variables = ['longitude', 'latitude', 'altitude', 'time', 'start_time', 'value',]
+    # obspack_variables = ['longitude', 'latitude', 'altitude', 'elevation', 'intake_height', 'time', 'start_time', 'value',]
+    #
+    #-- obspack uncertainties are provides as variable
+    #   'value_unc' or 'value_std_dev'
+    if  'value_unc' in ds.variables:
+        uncvar = 'value_unc'
+        obspack_variables.append('value_unc')
+    elif 'value_std_dev' in ds.variables:
+        obspack_variables.append('value_std_dev')
+        uncvar = 'value_std_dev'
+    else:
+        #-- not clear whether uncertainty might be a "must" downstream,
+        #   better raise Exception (or discard this obspack file)
+        uncvar = None #-- not clear whether uncertainty m
+    #
+    #-- some obspack files have elevation/intake_height as variables
+    #
+    #   NOTE: measurement height can always be accessed from variable
+    #         'altitude'
+    #
+    for var in ['elevation', 'intake_height',]:
+        if var in ds.variables:
+            obspack_variables.append(var)
+    data = ds[obspack_variables].to_dataframe()
+
     metadata = {k:ds.attrs.get(k) for k in ['site_code', 'site_name', 'site_latitude', 'site_elevation', 'site_elevation_unit', 'site_utc2lst', 'dataset_name', 'dataset_globalview_prefix', 'dataset_parameter', 'dataset_project', 'dataset_platform', 'dataset_selection', 'dataset_selection_tag', 'dataset_calibration_scale', 'dataset_start_date', 'dataset_stop_date', 'dataset_data_frequency', 'dataset_data_frequency_unit', 'dataset_intake_ht', 'dataset_intake_ht_unit', 'dataset_usage_url', 'dataset_usage_description', 'dataset_contribution', 'obspack_name']}
     metadata['filename'] = Path(filename).name
     return SimpleNamespace(data=data, metadata=metadata)
