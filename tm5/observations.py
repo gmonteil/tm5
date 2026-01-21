@@ -46,7 +46,7 @@ def read_obspack_file(filename: str,
     else:
         #-- not clear whether uncertainty might be a "must" downstream,
         #   better raise Exception (or discard this obspack file)
-        uncvar = None #-- not clear whether uncertainty m
+        uncvar = None
     #
     #-- some obspack files have elevation/intake_height as variables
     #
