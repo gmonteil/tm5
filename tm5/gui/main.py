@@ -5,7 +5,7 @@ from tm5.gui.widgets import RunSettings
 from tm5.gui.widgets.stations import StationExplorer, StatisticsViewer
 import requests
 from pathlib import Path
-
+from tm5 import debug
 
 pn.extension()
 pn.extension('terminal')
@@ -34,6 +34,7 @@ class ExperimentSetupGUI(pn.viewable.Viewer):
     check_status_event = param.Event(doc='Check status', label='Check status')
     jobid = param.Integer(doc='TM5 job ID')
 
+    @debug.timer
     def __init__(self, url_tm5: str = 'http://pancake.nebula:5000', **params):
         super().__init__(**params)
         self.settings = RunSettings()
@@ -219,7 +220,7 @@ class FitIC_UI(pn.viewable.Viewer):
                 ('Modelled timeseries', StationExplorer(self.conf)),
                 tabs_location='left',
                 dynamic=True)
-            ),dynamic=True
+            ), dynamic=True
         )
         
         
