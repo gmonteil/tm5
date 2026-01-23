@@ -8,7 +8,7 @@
     - [x partly] now: Automated observation fit statistics (RMSE, maybe as table with both RMSEs and a map also indicating the relative difference of two RMSEs), first for pre-computed results, does the statistics adapt when we zoom on the time axis? Add Chi2 with sigma = sqrt (sigma_obs**2 + sigma_model **2), and sigma model from a crude approximation derived from short scale variability of the obs, or the variability of the meteo (representation error approximation from slopes may also be there ...
     - [ ] (7) GM: Integrate some visualisation of the emission budget in configuration part of the GUI (to allow perform a quick sanity check)
     - [ ] GM: Add plot or table that indicates relative contribution of each sector to total signal at each site (only if we run sectors separately), this is not urgent, can be added later ...
-    - [ ] (3) GM+MV: Inspect what makes the first cell in the GUI so slow, must be some data processing that we should be beforehand, because it is too slow ...
+    - [X] (3) GM+MV: Inspect what makes the first cell in the GUI so slow, must be some data processing that we should be beforehand, because it is too slow ...
     - [ ] (1) MV: More text around plots to explain what we see, e.g. time series show hourly values but fit statistics are based on daily averages (as a preparation for the selection of averges over specific periods of the day)
 - GUI (extension)    
     - [ ] (re) implement possibility to pass defaults through a YAML file
@@ -30,6 +30,7 @@
 - Inversion
     - [ ] TXK: implement dummy inversion based on Jacobians to test computational performance
     - [ ] TXK: to specify how the footprints wil be used in the inverse model (dc/df, no emission caterogies).
+    - [ ] TXK/MV: draft a kind of tutorial guiding the user through one of the experiments
     - [ ] (2a) GM: check units of footprint 
     - [ ] (2b) MV to further test footprint calculation
     - [ ] GM: make sure that adjoint file is returned in the right place
