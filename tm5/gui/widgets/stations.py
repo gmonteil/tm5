@@ -11,9 +11,10 @@ import param
 from omegaconf import DictConfig
 from glob import glob
 import holoviews as hv
-from typing import List
+from holoviews import opts
 import hvplot.pandas
 from functools import partial
+from typing import List
 from tqdm.contrib.concurrent import process_map
 from tm5 import debug
 import xxhash
@@ -200,7 +201,7 @@ def interp_model_1sta(observations: DataFrame, model: DataFrame, station: str, e
 
 
 @debug.timer
-def plot_stations(model: DataFrame, observations: DataFrame, station: str | None, experiments: List[str] | None):
+def plot_stations(model: DataFrame, observations: DataFrame, station: str | None, experiments: List[str] | None, title : str | None = None):
     """
     Returns a plot comparing observations to model data at a specific station.
     - if no station is provided, the function will return "None"
@@ -216,21 +217,32 @@ def plot_stations(model: DataFrame, observations: DataFrame, station: str | None
 
     # If no experiment has been requested, return the plot with the obs only
     if experiments is None:
+        plotcfg = opts.Overlay(title="observed conentrations",
+                               ylabel="[ppb]")
+        plot.opts(plotcfg)
         return plot
 
     for exp in experiments:
         plot *= model.loc[model.station == station].hvplot(x='time', y=exp, label=exp)
 
+    if title!=None:
+        plotcfg = opts.Overlay(title=title, ylabel="[ppb]")
+        plot.opts(plotcfg)
     return plot
 
 
 @debug.timer
-def plot_weekly_bias(observations: DataFrame, model: DataFrame, station: str | None, experiments):
+def plot_weekly_bias(observations: DataFrame, model: DataFrame, station: str | None, experiments, title : str | None = None):
     if station is None or experiments is None:
         return
     wmean = calc_weekly_bias(observations, model, station, experiments)
+    if len(wmean)==0:
+        return
+    if title==None:
+        title = "Weekly averaged bias"
     plot = wmean.hvplot(
-        x='time', y=[f'bias_{exp}' for exp in experiments], grid=True, width=1200, ylabel='bias (ppb)'
+        x='time', y=[f'bias_{exp}' for exp in experiments], grid=True,
+        width=1200, ylabel='[ppb]', title=title 
     )
     return plot
 
@@ -273,7 +285,10 @@ def plot_histogram_of_fit_residuals(
     histplots = []
     for exp in experiments:
         histplots.append(df[f'bias_{exp}'].hvplot.hist(bins=100, alpha=.5, line_width=0, label=exp))
-    return hv.Overlay(histplots)
+    hvplot = hv.Overlay(histplots).opts(
+        title="Histogram of hourly biases",
+        xlabel="[ppb]", ylabel="count")
+    return hvplot
 
 
 @debug.timer
@@ -483,6 +498,7 @@ class StationExplorer(pn.viewable.Viewer):
         self.param.station.objects = sorted(set(self.data.site_name))
         self.station = self.param.station.objects[0]
 
+    @debug.timer
     @pn.depends('experiments', watch=True)
     def load_experiments(self):
         """
@@ -494,17 +510,22 @@ class StationExplorer(pn.viewable.Viewer):
 
             # If no modelled timeseries has been loaded yet:
             if self.model is None:
+                print(f"@{load_experiments}, first: exp={exp}")
                 self.model = load_experiment(self.settings, exp).rename(columns={'mixing_ratio': exp})
 
             # Load the remaining data:
             else:
                 if exp not in self.model.columns:
+                    print(f"@{load_experiments}, first: exp={exp}")
+
                     df = load_experiment(self.settings, exp).rename(columns={'mixing_ratio': exp})
                     self.model = merge(self.model, df[[exp, 'site', 'time', 'tracer', 'station']], on=['site', 'time', 'tracer', 'station'])
 
     @pn.depends('station', 'experiments')
     def plot_timeseries(self):
-        return plot_stations(self.model, self.data, self.station, self.experiments)
+        title = "time-series of observed and simulated concentrations"
+        all_plots = plot_stations(self.model, self.data, self.station, self.experiments, title=title)
+        return all_plots
 
     @pn.depends('station', 'experiments')
     def plot_weekly_bias(self):
