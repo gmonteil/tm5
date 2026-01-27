@@ -14,6 +14,17 @@ pn.extension()
 pn.extension('terminal')
 pn.extension('floatpanel')
 
+#
+#-- initial attempts to update layout/appearance
+#
+css = '''
+.bk.precomp-widget-box {
+  background: #f0f0f0;
+  border-radius: 5px;
+  border: 1px black solid;
+}
+'''
+pn.extension(raw_css=[css])
 
 def fix_env() -> None:
     import sys, os
@@ -223,8 +234,10 @@ class FitIC_UI(pn.viewable.Viewer):
                 ("Fit statistics", StatisticsViewer(self.conf)),
                 ('Modelled timeseries', StationExplorer(self.conf)),
                 tabs_location='left',
-                dynamic=True)
-            ), dynamic=True
+                dynamic=True,
+                css_classes=['precomp-widget-box'])
+             ),
+            dynamic=True
         )
         
         
