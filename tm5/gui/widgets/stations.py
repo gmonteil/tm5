@@ -20,6 +20,11 @@ import xxhash
 import numpy as np
 import multiprocessing.pool as mp
 
+#-- background color covering (most) elements of
+#   - StationExplorer
+#   - StatisticsViewer
+_bgcolor = '#E4EDED'
+
 
 # ----- utilities -----
 
@@ -45,7 +50,7 @@ def md5(fname: str, chunk_size: int=1024 * 1024):
 
 
 #@debug.timer
-def load_experiment(conf, expname) -> DataFrame:
+def load_experiment(conf, expname, outmode : str = 'dataframe') -> DataFrame | xr.Dataset:
     """
     Load the TM5 stations output as a single DataFrame.
     Since this is time-consuming, this function will try to cache the results into a netCDF file.
@@ -62,8 +67,14 @@ def load_experiment(conf, expname) -> DataFrame:
     if fitic_file.exists():
         out = xr.open_dataset(fitic_file)
         if out.attrs['sourcefile_md5sum'] == checksum:
-
-            return out
+            #
+            #--
+            #
+            if outmode=='dataframe':
+                df = out.to_dataframe().reset_index()
+                return df
+            else:#-- assuming xarray.dataset
+                return out
 
     with Dataset(stations_file) as ds:
 
@@ -80,7 +91,9 @@ def load_experiment(conf, expname) -> DataFrame:
         mix = zeros((len(sites), len(times), len(tracers)))
         for isite, site in enumerate(ds.groups):
             mix[isite, :, :] = ds[site]['mixing_ratio'][:].transpose()
-
+    #
+    #-- additional data variables
+    #
     out['mixing_ratio'] = (('site', 'time', 'tracer'), mix)
     out['sampling_height'] = (('site'), [int(_.split('_')[1]) for _ in out.site.values])
     out['sitecode'] = (('site'), [_.split('_')[0] for _ in out.site.values])
@@ -90,13 +103,21 @@ def load_experiment(conf, expname) -> DataFrame:
     max_height = df.groupby('sitecode')['sampling_height'].transform('max').values
     selected = where(df.sampling_height.values == max_height)[0]
     out = out.isel(site=selected)    
-
+    #
+    #-- save FIT-IC enhanced station file to cache
+    #
     out.attrs['sourcefile'] = str(stations_file)
     out.attrs['sourcefile_md5sum'] = checksum
-     
     fitic_file.parent.mkdir(exist_ok=True, parents=True)
     out.to_netcdf(fitic_file)
-    return out
+    #
+    #-- need to return dataframe
+    #
+    if outmode=='dataframe':
+        df = out.to_dataframe().reset_index()
+        return df
+    else:
+        return out
 
 
 def load_observations_data(fname: Path) -> DataFrame:
@@ -156,9 +177,8 @@ def load_observations_metadata(fname: Path) -> DataFrame:
         'filename': fname
     }, index=[ds.attrs['site_name']])
 
-
 @debug.timer
-def interp_model(observations: DataFrame, model: DataFrame, station: str, experiments: List[str]) -> DataFrame:
+def interp_model_1sta(observations: DataFrame, model: DataFrame, station: str, experiments: List[str]) -> DataFrame:
     # TODO: bad stuff will happen if we have more than one tracer ...
     obs = observations[observations.site_name == station].copy()
     mod = model[model.station == station]
@@ -249,7 +269,7 @@ def plot_histogram_of_fit_residuals(
 ) -> hv.Overlay:
     if station is None or experiments is None:
         return
-    df = interp_model(observations, model, station, experiments)
+    df = interp_model_1sta(observations, model, station, experiments)
     histplots = []
     for exp in experiments:
         histplots.append(df[f'bias_{exp}'].hvplot.hist(bins=100, alpha=.5, line_width=0, label=exp))
@@ -309,7 +329,7 @@ def plot_stats_table(model: DataFrame, statistics_type: str, experiment_list: Li
 
 @debug.timer
 def calc_weekly_bias(observations: DataFrame, model: DataFrame, station: str | None, experiments: List[str] | None):
-    df = interp_model(observations, model, station, experiments)
+    df = interp_model_1sta(observations, model, station, experiments)
     if df is None:
         return
 
@@ -327,7 +347,7 @@ def calc_statistics(observations: DataFrame, model: DataFrame, station: str | No
     if station is None or experiments is None:
         return
 
-    df = interp_model(observations, model, station, experiments)
+    df = interp_model_1sta(observations, model, station, experiments)
     stats = {
         'Mean bias': [],
         'Correlation coefficient': [],
@@ -344,11 +364,14 @@ def calc_statistics(observations: DataFrame, model: DataFrame, station: str | No
 
 
 #@debug.timer
-def interp_model(model: DataFrame, obs: DataFrame) -> DataFrame:
+#def interp_model(model: DataFrame, obs: DataFrame) -> DataFrame:
+def interp_model(model: xr.Dataset, obs: DataFrame) -> DataFrame:
     obs = obs.sort_values(["site_name", "time"])
     out = []
-
     for site, g in obs.groupby("site_name", sort=False):
+        # #-- if model is dataframe...
+        # cnd_site = model['station']==site
+        # m = model.loc[cnd_site,:]
         m = model.sel(site=model.station == site)
         out.append(np.interp(
             g["time"].values.astype("datetime64[ns]").astype(float),
@@ -361,7 +384,8 @@ def interp_model(model: DataFrame, obs: DataFrame) -> DataFrame:
 
 
 #@debug.timer
-def calc_fit_statistics2(model: DataFrame, obs: DataFrame) -> DataFrame:
+##def calc_fit_statistics2(model: DataFrame, obs: DataFrame) -> DataFrame:
+def calc_fit_statistics2(model: xr.Dataset, obs: DataFrame) -> DataFrame:
     obs = interp_model(model, obs)
     obs.loc[:, 'Bias'] = obs.model - obs.obs
     obs.loc[:, 'RMSE'] = obs.Bias ** 2
@@ -386,7 +410,7 @@ def calc_fit_statistics2(model: DataFrame, obs: DataFrame) -> DataFrame:
 
 #@debug.timer
 def calc_statistics2(exp: str, obs: DataFrame, conf: DictConfig) -> DataFrame:
-    model = load_experiment(conf, exp)
+    model = load_experiment(conf, exp, outmode='xarray')
     stats = calc_fit_statistics2(model, obs)
     stats.loc[:, 'experiment'] = exp
     return stats
@@ -436,7 +460,8 @@ class StationExplorer(pn.viewable.Viewer):
             pn.Row(
                 self.site_info,
                 self.histogram_of_fit_residuals
-            )
+            ),
+            styles=dict(background=_bgcolor)
         )
 
     def _maxnproc(self):
@@ -530,7 +555,8 @@ class StatisticsViewer(pn.viewable.Viewer):
                 pn.widgets.RadioButtonGroup.from_param(self.param.statistics_type)
             ),
             self.plot_stat_maps,
-            self.plot_stats_table
+            self.plot_stats_table,
+            styles=dict(background=_bgcolor)
         )
 
     def _maxnproc(self):
