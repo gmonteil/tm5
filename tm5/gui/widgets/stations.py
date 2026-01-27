@@ -127,8 +127,8 @@ def load_observations_data(fname: Path) -> DataFrame:
     return df
 
 
-def load_all_observations(observation_files: str) -> DataFrame:
-    with mp.Pool() as pp:
+def load_all_observations(observation_files: str, nproc : int | None = None) -> DataFrame:
+    with mp.Pool(processes=nproc) as pp:
         return concat(pp.map(load_observations_data, list(glob(observation_files))))
 
 
@@ -394,7 +394,9 @@ def calc_statistics2(exp: str, obs: DataFrame, conf: DictConfig) -> DataFrame:
     
 def load_experiments(observations: DataFrame, settings: DictConfig, experiments: List[str]) -> DataFrame:
     fn = partial(calc_statistics2, obs=observations, conf=settings)
-    with mp.Pool() as pp:
+
+    nproc = settings.maxnproc if 'maxnproc' in settings else None
+    with mp.Pool(processes=nproc) as pp:
         stats = pp.map(fn, experiments)
     return concat(stats)
 
@@ -413,13 +415,13 @@ class StationExplorer(pn.viewable.Viewer):
     def __init__(self, settings: DictConfig):
         super().__init__()
         self.settings = settings
-
         # Initialize widgets
         self.param.experiments.objects = list(self.settings.experiments.list)
 
         # Preload observations
         self.load_observations()
 
+    @debug.timer
     def __panel__(self):
         return pn.Column(
             pn.Row(
@@ -437,6 +439,10 @@ class StationExplorer(pn.viewable.Viewer):
             )
         )
 
+    def _maxnproc(self):
+        nproc = self.settings.maxnproc if 'maxnproc' in self.settings else None
+        return nproc
+
     @debug.timer
     def load_observations(self):
         """
@@ -444,8 +450,10 @@ class StationExplorer(pn.viewable.Viewer):
         This is normally called just once, during the "__init__". All the observations in the obs folder will be read => The site selection is done by selecting which file(s) go in that folder!
         """
         # TODO: This is slow. We can make it ways faster by pre-computing and storing the concatenated dataframe
-        with mp.Pool() as pp:
+        
+        with mp.Pool(processes=self._maxnproc()) as pp:
             self.data = concat(pp.map(load_observations_data, glob(self.settings.observations.files)))
+            # self.data.to_csv('stationexplorer_obsdata.csv', index=True)
             self.sites = concat(pp.map(load_observations_metadata, glob(self.settings.observations.files)))
         self.param.station.objects = sorted(set(self.data.site_name))
         self.station = self.param.station.objects[0]
@@ -514,6 +522,7 @@ class StatisticsViewer(pn.viewable.Viewer):
         # Set default values:
         self.experiment = self.param.experiment.objects[0]
 
+    @debug.timer
     def __panel__(self):
         return pn.Column(
             pn.Row(
@@ -524,10 +533,15 @@ class StatisticsViewer(pn.viewable.Viewer):
             self.plot_stats_table
         )
 
+    def _maxnproc(self):
+        nproc = self.settings.maxnproc if 'maxnproc' in self.settings else None
+        return nproc
+
     @debug.timer
     def load_observations(self):
-        self.data = load_all_observations(self.settings.observations.files)
-
+        self.data = load_all_observations(self.settings.observations.files,
+                                          nproc=self._maxnproc())
+        # self.data.to_csv('statisticsviewer_obsdata.csv', index=True)
     @debug.timer
     def load_experiments(self):
         self.model = load_experiments(self.data, self.settings, self.param.experiment.objects)
