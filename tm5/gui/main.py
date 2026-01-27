@@ -1,11 +1,14 @@
 import panel as pn
 import param
 from omegaconf import OmegaConf
-from tm5.gui.widgets import RunSettings
-from tm5.gui.widgets.stations import StationExplorer, StatisticsViewer
 import requests
 from pathlib import Path
+import sys
+from loguru import  logger
+from tm5.gui.widgets import RunSettings
+from tm5.gui.widgets.stations import StationExplorer, StatisticsViewer
 from tm5 import debug
+
 
 pn.extension()
 pn.extension('terminal')
@@ -211,7 +214,8 @@ class FitIC_UI(pn.viewable.Viewer):
         super().__init__()
         fix_env()
         self.conf = OmegaConf.load(config_file)
-        
+
+    @debug.timer
     def __panel__(self):
         return pn.Tabs(
             ("Setup simulation", ExperimentSetupGUI()),
