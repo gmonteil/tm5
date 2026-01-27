@@ -4,7 +4,7 @@ from omegaconf import OmegaConf
 import requests
 from pathlib import Path
 import sys
-from loguru import  logger
+from loguru import logger
 from tm5.gui.widgets import RunSettings
 from tm5.gui.widgets.stations import StationExplorer, StatisticsViewer
 from tm5 import debug
@@ -225,6 +225,14 @@ class FitIC_UI(pn.viewable.Viewer):
         super().__init__()
         fix_env()
         self.conf = OmegaConf.load(config_file)
+        #
+        #-- loguru compatible log level
+        #
+        loglev = self.conf.loglevel if 'loglevel' in self.conf else "CRITICAL"
+        if loglev!=None:
+            logger.remove()
+            #-- loguru levels are in upper-case
+            logger.add(sys.stdout, level=loglev.upper())
 
     @debug.timer
     def __panel__(self):
@@ -239,5 +247,3 @@ class FitIC_UI(pn.viewable.Viewer):
              ),
             dynamic=True
         )
-        
-        
