@@ -231,8 +231,13 @@ class FitIC_UI(pn.viewable.Viewer):
         loglev = self.conf.loglevel if 'loglevel' in self.conf else "CRITICAL"
         if loglev!=None:
             logger.remove()
-            #-- loguru levels are in upper-case
-            logger.add(sys.stdout, level=loglev.upper())
+            if loglev.upper() in ['DEBUG','TRACE',]:
+                logger.add('fitic.log', level=loglev.upper())
+                logger.add(sys.stdout, level=loglev.upper(),
+                           diagnose=True, backtrace=True)
+            else:
+                #-- loguru levels are in upper-case
+                logger.add(sys.stdout, level=loglev.upper())
 
     @debug.timer
     def __panel__(self):
