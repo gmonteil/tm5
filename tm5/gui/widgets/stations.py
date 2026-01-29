@@ -20,6 +20,7 @@ from tm5 import debug
 import xxhash
 import numpy as np
 import multiprocessing.pool as mp
+from loguru import logger
 
 #-- background color covering (most) elements of
 #   - StationExplorer
@@ -50,7 +51,7 @@ def md5(fname: str, chunk_size: int=1024 * 1024):
     return h.hexdigest()
 
 
-#@debug.timer
+@debug.timer
 def load_experiment(conf, expname, outmode : str = 'dataframe') -> DataFrame | xr.Dataset:
     """
     Load the TM5 stations output as a single DataFrame.
@@ -71,11 +72,19 @@ def load_experiment(conf, expname, outmode : str = 'dataframe') -> DataFrame | x
             #
             #--
             #
+            # logger.debug(f"...cached {fitic_file} can be used!")
+
+            #-- conversion to DataFrame
             if outmode=='dataframe':
+                logger.debug(f"...converting to dataframe")
                 df = out.to_dataframe().reset_index()
+                logger.debug(f"......conversion done.")
                 return df
-            else:#-- assuming xarray.dataset
+            elif outmode in ['xarray','dataset',]:#-- keep as xarray.dataset
                 return out
+            else:
+                msg = f"unexpected outmode ==>{outmode}<=="
+                raise RuntimeError(msg)
 
     with Dataset(stations_file) as ds:
 
@@ -225,11 +234,45 @@ def plot_stations(model: DataFrame, observations: DataFrame, station: str | None
     for exp in experiments:
         plot *= model.loc[model.station == station].hvplot(x='time', y=exp, label=exp)
 
-    if title!=None:
-        plotcfg = opts.Overlay(title=title, ylabel="[ppb]")
-        plot.opts(plotcfg)
+    if title==None:
+        title = "hourly observed and simulated concentrations"
+    plotcfg = opts.Overlay(title=title, ylabel="[ppb]")
+    plot.opts(plotcfg)
     return plot
 
+@debug.timer
+def plot_stations_v3(obs_model: DataFrame, station: str | None, experiments: List[str] | None, title : str | None = None):
+    """
+    Returns a plot comparing observations to model data at a specific station.
+    - if no station is provided, the function will return "None"
+    - if no experiment is provided, the function will just return a plot of the observations
+    """
+
+    if station is None:
+        return
+
+    cnd_station = (obs_model.site_name == station)
+    dfplot = obs_model.loc[cnd_station,:]
+    plot = dfplot.hvplot.points(
+        x='time', y='obs', color='k', s=1, label='observations', width=1200, grid=True
+    )
+
+    # If no experiment has been requested, return the plot with the obs only
+    if experiments is None:
+        plotcfg = opts.Overlay(title="observed conentrations",
+                               ylabel="[ppb]")
+        plot.opts(plotcfg)
+        return plot
+    #-- expend
+    for exp in experiments:
+        plot *= dfplot.hvplot(x='time', y=exp, label=exp)
+
+    if title==None:
+        title = "hourly observed and simulated concentrations"
+    plotcfg = opts.Overlay(title=title, ylabel="[ppb]")
+    plot.opts(plotcfg)
+
+    return plot
 
 @debug.timer
 def plot_weekly_bias(observations: DataFrame, model: DataFrame, station: str | None, experiments, title : str | None = None):
@@ -246,6 +289,20 @@ def plot_weekly_bias(observations: DataFrame, model: DataFrame, station: str | N
     )
     return plot
 
+@debug.timer
+def plot_weekly_bias_v3(obs_model: DataFrame, station: str | None, experiments, title : str | None = None):
+    if station is None or experiments is None:
+        return
+    wmean = calc_weekly_bias_v3(obs_model, station, experiments)
+    if len(wmean)==0:
+        return
+    if title==None:
+        title = "Weekly averaged bias"
+    plot = wmean.hvplot(
+        x='time', y=[f'bias_{exp}' for exp in experiments], grid=True,
+        width=1200, ylabel='[ppb]', title=title 
+    )
+    return plot
 
 @debug.timer
 def plot_site_info(sites: DataFrame, station: str | None):
@@ -290,10 +347,33 @@ def plot_histogram_of_fit_residuals(
         xlabel="[ppb]", ylabel="count")
     return hvplot
 
+@debug.timer
+def plot_histogram_of_fit_residuals_v3(
+    obs_model: DataFrame,
+    station: str,
+    experiments: List[str]
+) -> hv.Overlay:
+    if station is None or experiments is None:
+        return
+    cnd_station = (obs_model.site_name == station)
+    dfhist = obs_model.loc[cnd_station,:]
+    histplots = []
+    for exp in experiments:
+        histplots.append(dfhist[f'bias_{exp}'].hvplot.hist(bins=100, alpha=.5, line_width=0, label=exp))
+    hvplot = hv.Overlay(histplots).opts(
+        title="Histogram of hourly biases",
+        xlabel="[ppb]", ylabel="count")
+    return hvplot
+
 
 @debug.timer
 def plot_table_statistics(observations: DataFrame, model: DataFrame, station: str, experiments: List[str]):
     df = calc_statistics(observations, model, station, experiments)
+    return pn.pane.DataFrame(df, formatters=[lambda x: f'{x:.2f}'] * 3, text_align='center')
+
+@debug.timer
+def plot_table_statistics_v3(obs_model: DataFrame, station: str, experiments: List[str]):
+    df = calc_statistics_v3(obs_model, station, experiments)
     return pn.pane.DataFrame(df, formatters=[lambda x: f'{x:.2f}'] * 3, text_align='center')
 
 
@@ -351,6 +431,22 @@ def calc_weekly_bias(observations: DataFrame, model: DataFrame, station: str | N
     # Calculate weekly mean:
     return df.groupby(Grouper(key='time', freq='7D')).mean(numeric_only=True)
 
+@debug.timer
+def calc_weekly_bias_v3(obs_model: DataFrame, station: str | None, experiments: List[str] | None):
+    if obs_model is None:
+        return
+    # logger.debug(f"obs_model, columns -->{list(obs_model.columns)}<--, station={station}")
+    df = obs_model.loc[obs_model.site_name==station,:]
+    if len(df)==0:
+        return
+    #
+    #-- lazy computation, calc weakly mean for all numeric columns
+    #
+    dfw = df.groupby(Grouper(key='time', freq='7D')).mean(numeric_only=True)
+    # Calculate weekly mean:
+    # logger.debug(f"dfw,columns -->{list(dfw.columns)}<-- shape={dfw.shape}")
+    return dfw
+
 
 @debug.timer
 def calc_statistics(observations: DataFrame, model: DataFrame, station: str | None, experiments: List[str] | None):
@@ -377,29 +473,70 @@ def calc_statistics(observations: DataFrame, model: DataFrame, station: str | No
 
     return DataFrame.from_dict(stats).set_index('experiment')
 
+@debug.timer
+def calc_statistics_v3(obs_model: DataFrame, station: str | None, experiments: List[str] | None):
+    """
+    - RMSE
+    - corr
+    - bias
+    """
+    if station is None or experiments is None:
+        return
+    df = obs_model.loc[obs_model.site_name==station,:]
+    stats = {
+        'Mean bias': [],
+        'Correlation coefficient': [],
+        'RMSE': [],
+        'experiment': []
+    }
+    for exp in experiments:
+        bias_column = f"bias_{exp}"
+        stats['experiment'].append(exp)
+        stats['Mean bias'].append(df.loc[:,bias_column].mean())
+        stats['RMSE'].append((df.loc[:,bias_column] ** 2).mean() ** .5)
+        stats['Correlation coefficient'].append(corrcoef(df[exp].values, df.obs.values)[0, 1])
 
-#@debug.timer
+    return DataFrame.from_dict(stats).set_index('experiment')
+
+
 #def interp_model(model: DataFrame, obs: DataFrame) -> DataFrame:
-def interp_model(model: xr.Dataset, obs: DataFrame) -> DataFrame:
+#@debug.timer
+def interp_model(model: xr.Dataset, obs: DataFrame, column : str = 'model') -> DataFrame:
     obs = obs.sort_values(["site_name", "time"])
     out = []
+    # site_list = []
     for site, g in obs.groupby("site_name", sort=False):
         # #-- if model is dataframe...
         # cnd_site = model['station']==site
         # m = model.loc[cnd_site,:]
         m = model.sel(site=model.station == site)
-        out.append(np.interp(
+        mmix_interp = np.interp(
             g["time"].values.astype("datetime64[ns]").astype(float),
             m["time"].values.astype("datetime64[ns]").astype(float),
-            m["mixing_ratio"].values.squeeze()
-        ))
-
-    obs.loc[:, "model"] = np.concatenate(out)
+            m["mixing_ratio"].values.squeeze())
+        out.append(mmix_interp)
+        # cur_sites = np.full(len(mmix_interp), site)
+        # if site_list is None:
+        #     site_list = cur_sites
+        # else:
+        #     site_list = np.concatenate((site_list,cur_sites))
+        # site_list.append([site,]*len(mmix_interp))
+        # logger.info(f"...appending at site {site}")
+        # site_list.append(cur_sites)
+        # logger.info(f"...appending done.")
+    # logger.trace(f"...concatenating site list")
+    # site_list = np.concatenate(site_list)
+    # logger.trace(f"...concatenation done.")
+    #-- insert simulated mixing ratio
+    obs.loc[:, column] = np.concatenate(out)
+    #--
+    # if 'station' in obs:
+    #     assert np.all(obs.loc[:,'station'].values==site_list)
+    # else:
+    #     obs.loc[:,'station'] = site_list
     return obs
 
-
 #@debug.timer
-##def calc_fit_statistics2(model: DataFrame, obs: DataFrame) -> DataFrame:
 def calc_fit_statistics2(model: xr.Dataset, obs: DataFrame) -> DataFrame:
     obs = interp_model(model, obs)
     obs.loc[:, 'Bias'] = obs.model - obs.obs
@@ -447,6 +584,9 @@ class StationExplorer(pn.viewable.Viewer):
     station = param.Selector()
     experiments = param.ListSelector()
     data = param.DataFrame()
+    #-- MVO:model will/may represent combined dataframe
+    #       containing observations *and* model simulations
+    #       Thus naming 'model' is bit misleading...
     model = param.DataFrame()
     sites = param.DataFrame()
 
@@ -454,15 +594,28 @@ class StationExplorer(pn.viewable.Viewer):
     def __init__(self, settings: DictConfig):
         super().__init__()
         self.settings = settings
+        # Loading mode for experiments
+        # - v3:              use new experiment handling
+        # - any other value: stick with previous implementation
+        # NOTE:
+        # - once thoroughly tested we would stick with implementation
+        #   of 'v3' and eventually drop this switch!
+        # - there is currently one drawback left with 'v3',
+        #   which is that the simulated time-series are only shown
+        #   for the time-points interpolated to the observation times...
+        self.expmode = 'v0'
+        if 'expmode' in self.settings:
+            self.expmode = self.settings.expmode
         # Initialize widgets
         self.param.experiments.objects = list(self.settings.experiments.list)
 
         # Preload observations
         self.load_observations()
 
+
     @debug.timer
     def __panel__(self):
-        return pn.Column(
+        widgets = pn.Column(
             pn.Row(
                 pn.widgets.Select.from_param(self.param.station),
                 pn.widgets.MultiSelect.from_param(self.param.experiments, align='end', height=200, height_policy='max', width_policy='max'),
@@ -478,10 +631,15 @@ class StationExplorer(pn.viewable.Viewer):
             ),
             styles=dict(background=_bgcolor)
         )
+        return widgets
 
     def _maxnproc(self):
         nproc = self.settings.maxnproc if 'maxnproc' in self.settings else None
         return nproc
+
+    def _startup_station(self):
+        site_start = self.settings.station_first if 'station_first' in self.settings else 'Cabauw'
+        return site_start
 
     @debug.timer
     def load_observations(self):
@@ -495,10 +653,27 @@ class StationExplorer(pn.viewable.Viewer):
             self.data = concat(pp.map(load_observations_data, glob(self.settings.observations.files)))
             # self.data.to_csv('stationexplorer_obsdata.csv', index=True)
             self.sites = concat(pp.map(load_observations_metadata, glob(self.settings.observations.files)))
-        self.param.station.objects = sorted(set(self.data.site_name))
-        self.station = self.param.station.objects[0]
+        #
+        #-- list of stations
+        #-- selected station shown on start-up
+        #
+        site_list = sorted(set(self.data.site_name))
+        site_start = self._startup_station()
+        try:
+            isite0 = site_list.index(site_start)
+        except ValueError:
+            isite0 = 0 #-- take first in list if selected station is not present
+        self.param.station.objects = site_list
+        self.station = self.param.station.objects[isite0]
 
-    @debug.timer
+        #
+        #-- self.model becomes DataFrame containing
+        #   both, observations and model simulations for (potentially)
+        #   multiple experiments
+        #
+        if self.expmode=='v3':
+            self.model = self.data.copy()
+
     @pn.depends('experiments', watch=True)
     def load_experiments(self):
         """
@@ -507,29 +682,57 @@ class StationExplorer(pn.viewable.Viewer):
         - if not, it is loaded using "load_experiment", which computes the temporal interpolation based on the "stations.nc" files. Further speedups are embedded in "load_experiment" to avoid recomputing that interpolation multiple times.
         """
         for exp in self.experiments:
-
-            # If no modelled timeseries has been loaded yet:
-            if self.model is None:
-                print(f"@{load_experiments}, first: exp={exp}")
-                self.model = load_experiment(self.settings, exp).rename(columns={'mixing_ratio': exp})
-
-            # Load the remaining data:
+            if self.expmode=='v3':
+                # If no modelled timeseries has been loaded yet:
+                if self.model is None:
+                    self.model = self.data.copy()
+                    m = load_experiment(self.settings, exp, outmode='xarray')
+                    self.model = interp_model(m, self.model, column=exp)
+                # Load the remaining data:
+                else:
+                    if exp not in self.model.columns:
+                        m = load_experiment(self.settings, exp, outmode='xarray')
+                        self.model = interp_model(m, self.model, column=exp)
+                #
+                #-- pre-calculate observation-model biases
+                #
+                bias_column = f"bias_{exp}"
+                if not bias_column in self.model:
+                    _obs = self.model.loc[:,'obs']
+                    _sim = self.model.loc[:,exp]
+                    self.model.loc[:, bias_column] = _sim - _obs
             else:
-                if exp not in self.model.columns:
-                    print(f"@{load_experiments}, first: exp={exp}")
+                # If no modelled timeseries has been loaded yet:
+                if self.model is None:
+                    self.model = load_experiment(self.settings, exp).rename(columns={'mixing_ratio': exp})
 
-                    df = load_experiment(self.settings, exp).rename(columns={'mixing_ratio': exp})
-                    self.model = merge(self.model, df[[exp, 'site', 'time', 'tracer', 'station']], on=['site', 'time', 'tracer', 'station'])
+                # Load the remaining data:
+                else:
+                    if exp not in self.model.columns:
+                        df = load_experiment(self.settings, exp).rename(columns={'mixing_ratio': exp})
+                        self.model = merge(self.model, df[[exp, 'site', 'time', 'tracer', 'station']], on=['site', 'time', 'tracer', 'station'])
+        #
+        #
+        #
+        # if not self.model is None:
+        #     logger.debug(f"self.model, columns -->{list(self.model.columns)}<--")
 
     @pn.depends('station', 'experiments')
     def plot_timeseries(self):
-        title = "time-series of observed and simulated concentrations"
-        all_plots = plot_stations(self.model, self.data, self.station, self.experiments, title=title)
+        title = "hourly observed and simulated concentrations"
+        if self.expmode=='v3':
+            all_plots = plot_stations_v3(self.model, self.station, self.experiments, title=title)
+        else:
+            all_plots = plot_stations(self.model, self.data, self.station, self.experiments, title=title)
         return all_plots
 
     @pn.depends('station', 'experiments')
     def plot_weekly_bias(self):
-        return plot_weekly_bias(self.data, self.model, self.station, self.experiments)
+        if self.expmode=='v3':
+            dfvisu = plot_weekly_bias_v3(self.model, self.station, self.experiments)
+            return dfvisu
+        else:
+            return plot_weekly_bias(self.data, self.model, self.station, self.experiments)
 
     @pn.depends('station')
     def site_info(self):
@@ -537,11 +740,18 @@ class StationExplorer(pn.viewable.Viewer):
 
     @pn.depends('station', 'experiments')
     def histogram_of_fit_residuals(self):
-        return plot_histogram_of_fit_residuals(self.data, self.model, self.station, self.experiments)
+        if self.expmode=='v3':
+            return plot_histogram_of_fit_residuals_v3(self.model, self.station, self.experiments)
+        else:
+            return plot_histogram_of_fit_residuals(self.data, self.model, self.station, self.experiments)
 
     @pn.depends('station', 'experiments')
     def table_statistics(self):
-        return plot_table_statistics(self.data, self.model, self.station, self.experiments)
+        if self.expmode=='v3':
+            return plot_table_statistics_v3(self.model, self.station, self.experiments)
+        else:
+            return plot_table_statistics(self.data, self.model, self.station, self.experiments)
+        
 
 
 class StatisticsViewer(pn.viewable.Viewer):
