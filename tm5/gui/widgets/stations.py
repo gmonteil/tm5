@@ -256,14 +256,14 @@ def plot_stations_v3(obs_model: DataFrame, station: str | None, experiments: Lis
     plot = dfplot.hvplot.points(
         x='time', y='obs', color='k', s=1, label='observations', width=1200, grid=True
     )
-
     # If no experiment has been requested, return the plot with the obs only
-    if experiments is None:
+    if experiments is None or len(experiments)==0:
         plotcfg = opts.Overlay(title="observed conentrations",
                                ylabel="[ppb]")
         plot.opts(plotcfg)
+        logger.debug(f"experiments: -->{experiments}<-- plotcfg should be: {plotcfg}")
         return plot
-    #-- expend
+    #-- extend
     for exp in experiments:
         plot *= dfplot.hvplot(x='time', y=exp, label=exp)
 
@@ -621,10 +621,12 @@ class StationExplorer(pn.viewable.Viewer):
                 pn.widgets.MultiSelect.from_param(self.param.experiments, align='end', height=200, height_policy='max', width_policy='max'),
                 self.table_statistics
             ),
+            pn.layout.Divider(),
             pn.Column(
                 self.plot_timeseries,
                 self.plot_weekly_bias
             ),
+            pn.layout.Divider(),
             pn.Row(
                 self.site_info,
                 self.histogram_of_fit_residuals
