@@ -26,13 +26,21 @@ class RunSettings(pn.viewable.Viewer):
     end = param.Date(
         default=date(2022, 1, 1),
         bounds=(date(2021, 1, 2), date(2022, 1, 1)),
-        doc='Start of the simulation')
-    zoom_configuration = param.Selector(objects={
-        'avengers-1': ['glb6x4', 'eur3x2', 'gns1x1'],
-        'glb6x4': ['glb6x4'],
-        'glb1x1': ['glb1x1'],
-        'eur1x1': ['glb6x4', 'eur3x2', 'eur1x1']
-    }, doc='zoom configuration for TM5 simulation')
+        doc='End of the simulation')
+    #
+    #-- NOTE: for the GUI we currently stick with
+    #         only one single zoom configuration.
+    #
+    # zoom_configuration = param.Selector(objects={
+    #     'avengers-1': ['glb6x4', 'eur3x2', 'gns1x1'],
+    #     'glb6x4': ['glb6x4'],
+    #     'glb1x1': ['glb1x1'],
+    #     'eur1x1': ['glb6x4', 'eur3x2', 'eur1x1']
+    # }, doc='zoom configuration for TM5 simulation')
+    zoom_doc = """Zoom configuration for TM5 simulation. While TM5 itself is flexible in this regard, for the GUI this is currently restricted a single default configuration with highest resolution of 1 by 1 degree over central Europe."""
+    zoom_configuration = param.Selector(
+        objects={'avengers-1': ['glb6x4', 'eur3x2', 'gns1x1']},
+        doc=zoom_doc)
     run_name = param.String(
         default=f'{os.environ["USER"]}_{date.today().strftime("%d%b%Y")}',
         doc='Name of the simulation')
