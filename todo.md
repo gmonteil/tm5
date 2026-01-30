@@ -1,15 +1,17 @@
 # Tasks (by order of priority)
 
 - GUI (setup)
-    - [ ] implement only configuration with 3 level zoom "avengers-1", i.e global/Europe/NL+D+CH
+    - [ ] (2) MV/TK: draft user instruction document, to be circulated before next WP6.1 meeting (Feb. 9)
+    - [ ] (1) MV add some short description of the experiments, More text around plots to explain what we see, e.g. time series show hourly values but fit statistics are based on daily averages (as a preparation for the selection of averges over specific periods of the day)
+    - [ ] (3) MV implement only configuration with 3 level zoom "avengers-1", i.e global/Europe/NL+D+CH
+    - [ ] (4) MV new tracer default to CAMS OH
+    - [ ] (5) MV to check why setup of experiment does not work as expected
 - GUI (analysis)
-    - [ ] (8) GM: check domain size on plot after change of region
-    - [ ] (4) GM+MV: extract TM5 output and obspack for selected stations averaged over a pre-specified period of the day (as in inversions), e.g. above 1000 m height take nighttime data (midnight to 4am local solar time) and below afternoon date (from 12 to 4 local solar time) (there is a flag in obspack for filtering, but don't take it as an absolute reference, just for a sanity check) at highest level
-    - [x partly] now: Automated observation fit statistics (RMSE, maybe as table with both RMSEs and a map also indicating the relative difference of two RMSEs), first for pre-computed results, does the statistics adapt when we zoom on the time axis? Add Chi2 with sigma = sqrt (sigma_obs**2 + sigma_model **2), and sigma model from a crude approximation derived from short scale variability of the obs, or the variability of the meteo (representation error approximation from slopes may also be there ...
-    - [ ] (7) GM: Integrate some visualisation of the emission budget in configuration part of the GUI (to allow perform a quick sanity check)
+    - [ ] (7) GM: check domain size on plot after change of region
+    - [ ] (6) GM+MV: extract TM5 output and obspack for selected stations averaged over a pre-specified period of the day (as in inversions), e.g. above 1000 m height take nighttime data (midnight to 4am local solar time) and below afternoon date (from 12 to 4 local solar time) (there is a flag in obspack for filtering, but don't take it as an absolute reference, just for a sanity check) at highest level
+    - [x partly] Add Chi2 with sigma = sqrt (sigma_obs**2 + sigma_model **2), and sigma model from a crude approximation derived from short scale variability of the obs, or the variability of the meteo (representation error approximation from slopes may also be there ...
+    - [ ] (8) GM: Integrate some visualisation of the emission budget in configuration part of the GUI (to allow perform a quick sanity check)
     - [ ] GM: Add plot or table that indicates relative contribution of each sector to total signal at each site (only if we run sectors separately), this is not urgent, can be added later ...
-    - [X] (3) GM+MV: Inspect what makes the first cell in the GUI so slow, must be some data processing that we should be beforehand, because it is too slow ...
-    - [ ] (1) MV: More text around plots to explain what we see, e.g. time series show hourly values but fit statistics are based on daily averages (as a preparation for the selection of averges over specific periods of the day)
 - GUI (extension)    
     - [ ] (re) implement possibility to pass defaults through a YAML file
     - [ ] implement a few default configurations, add the option to transport emission categories separately (with a warning on performance)
