@@ -108,7 +108,7 @@ class CH4TracerSettings(TracerSettings):
     """
     initial_condition = param.Selector(
         default='zero',
-        objects=['zero', 'Concentration from CAMS flux inversion (v23r1)', 'previous run'],
+        objects=['Concentration from CAMS flux inversion (v23r1)', 'previous run', 'zero', ],
         doc='initial condition')
     reactions = param.List(
         [
@@ -118,7 +118,7 @@ class CH4TracerSettings(TracerSettings):
                 rate0=2.45e-12,
                 rate1=-1755,
                 domain='tropo',
-                versions=['Spivakovsky', 'CAMS OH field']
+                versions=['CAMS OH field', 'Spivakovsky', ]
             ),
             # MVO-20250622: disable stratoshpere buttons in GUI for Geneva demo
             # ReactionSettings(
