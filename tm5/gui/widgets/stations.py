@@ -596,7 +596,7 @@ class StationExplorer(pn.viewable.Viewer):
         self.settings = settings
         # Loading mode for experiments
         # - v3:              use new experiment handling
-        # - any other value: stick with previous implementation
+        # - any other value (e.g. v0): stick with previous implementation
         # NOTE:
         # - once thoroughly tested we would stick with implementation
         #   of 'v3' and eventually drop this switch!
@@ -604,6 +604,7 @@ class StationExplorer(pn.viewable.Viewer):
         #   which is that the simulated time-series are only shown
         #   for the time-points interpolated to the observation times...
         self.expmode = 'v0'
+        self.expmode = 'v3'
         if 'expmode' in self.settings:
             self.expmode = self.settings.expmode
         # Initialize widgets
