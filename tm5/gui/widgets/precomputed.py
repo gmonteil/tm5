@@ -119,7 +119,7 @@ class PrecomputedInfo(pn.viewable.Viewer):
               - metrics based on complete time-series differentiated by station
               - available metrics include bias, RMSE (Root-mean squared error), and Pearson correlation coefficient
             - **Modelled timeseries**
-              - comparison/visualsation of observed and simulated concentrations for one selected site and (potentially multiple) experiments
+              - comparison/visualsation of observed and simulated concentrations (potentially from multiple experiments) for one selected site
               - time-series of hourly concentrations
               - time-series of weekly-averaged biases
               - histogram of hourly biases
