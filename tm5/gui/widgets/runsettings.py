@@ -84,7 +84,7 @@ class RunSettings(pn.viewable.Viewer):
                 pn.widgets.Button.from_param(self.param.create_co2_tracer, disabled=True),
                 pn.widgets.Button.from_param(self.param.create_ch4_tracer),
             ),
-            styles=dict(background='#daf5f6'),
+            # styles=dict(background='#daf5f6'),
             sizing_mode='stretch_width'
         )
 
