@@ -21,17 +21,19 @@ pn.extension('floatpanel')
 css = '''
 .bk.precomp-widget-box {
 /*  background: #f0f0f0;*/
-  background: #E4EDED;
+  background: #BDC9CB;
   border-radius: 5px;
   border: 1px black solid;
 }
 .bk.setup-widget-box {
-/*  background: #daf5f6;*/
+/*  background: #daf5f6; */
+/*  background: #BDC9CB; */
   background: #88B4BF;
   border-radius: 5px;
   border: 1px black solid;
 }
 '''
+
 pn.extension(raw_css=[css])
 
 def fix_env() -> None:
@@ -234,6 +236,11 @@ class FitIC_UI(pn.viewable.Viewer):
         super().__init__()
         fix_env()
         self.conf = OmegaConf.load(config_file)
+        #
+        #--
+        #
+        self.conf['bgcolor_precomp'] = '#E4EDED'
+        # self.conf['bgcolor_setup']   = '#88B4BF'
         #
         #-- loguru compatible log level
         #

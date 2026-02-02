@@ -80,7 +80,7 @@ class TracerSettings(pn.viewable.Viewer):
             pn.layout.Card(
                 pn.Column(*components),
                 title=self.param.tracer_name,
-                styles={'background': '#edfafa'},
+                # styles={'background': '#edfafa'},
                 sizing_mode='stretch_width',
                 hide_header=True),
             )

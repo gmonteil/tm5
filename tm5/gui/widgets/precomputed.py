@@ -89,7 +89,7 @@ class PrecomputedInfo(pn.viewable.Viewer):
         are available for comparison.
 
         The standard setup (referred to as 'default' below) applies CAMS
-        global atmospheric concentrations derived from inversion of surface observations (v23r1) as initial condition, and the following list of Methane fluxes is ingested:
+        global atmospheric concentrations derived from inversion of surface observations (v23r1) as initial condition, and the following Methane fluxes are ingested:
         - wetland emissions at daily time-scale (LPJ-GUESS, AVENGERS WP2)
         - emissions from mineral soils at daily time-scale (LPJ-GUESS, AVENGERS WP2)
         - anthropogenic emissions (agriculture, fossil, and waste) at monthly time-scale taken from EDGAR (v8)
@@ -105,24 +105,32 @@ class PrecomputedInfo(pn.viewable.Viewer):
             info1,
             )
             # styles={'background': '#edfafa'})
-        # pane2 = pn.pane.Markdown(
-        #     f"<table>" \
-        #     f"<thead><tr><th>Experiment</th><th>Description</th></tr></thead>" \
-        #     f"<table>"
-        #     )
         pane2 = pn.pane.Markdown(
             f"{self._exptable_html()}"
         )
         pane3 = pn.pane.Markdown(
             """
-            ## Statistics
+            ## <ins>Statistics and Comparison</ins>
 
-            
+            Two principal types of statistics and comparison of simulation experiments against observed concentrations are available, which can be selected via the corresponding tab on the left-hand side:
+            - **Fit statistics**
+              - visualisation of statistics or concentrations for one selected experiment 
+              - temporally averaged simulated or observed concentration differentiated by station (as map and as table)
+              - metrics based on complete time-series differentiated by station
+              - available metrics include bias, RMSE (Root-mean squared error), and Pearson correlation coefficient
+            - **Modelled timeseries**
+              - comparison/visualsation of observed and simulated concentrations for one selected site and (potentially multiple) experiments
+              - time-series of hourly concentrations
+              - time-series of weekly-averaged biases
+              - histogram of hourly biases
+              - table with metrics (RMSE, bias, correlation coeffient) based on complete time-series
             """
             )
         return pn.Column(
             pane1,
-            pane2
+            pane2,
+            pane3,
+            styles={'background':self.settings['bgcolor_precomp']}
             )
 
     def _exptable_html(self):

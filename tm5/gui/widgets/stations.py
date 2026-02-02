@@ -631,7 +631,7 @@ class StationExplorer(pn.viewable.Viewer):
                 self.site_info,
                 self.histogram_of_fit_residuals
             ),
-            # styles=dict(background=_bgcolor)
+            styles={'background':self.settings['bgcolor_precomp']}
         )
         return widgets
 
@@ -789,7 +789,7 @@ class StatisticsViewer(pn.viewable.Viewer):
             ),
             self.plot_stat_maps,
             self.plot_stats_table,
-            # styles=dict(background=_bgcolor)
+            styles={'background':self.settings['bgcolor_precomp']}
         )
 
     def _maxnproc(self):
