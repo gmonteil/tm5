@@ -7,6 +7,7 @@ import sys
 from loguru import logger
 from tm5.gui.widgets import RunSettings
 from tm5.gui.widgets.stations import StationExplorer, StatisticsViewer
+from tm5.gui.widgets.precomputed import PrecomputedInfo
 from tm5 import debug
 
 
@@ -19,7 +20,14 @@ pn.extension('floatpanel')
 #
 css = '''
 .bk.precomp-widget-box {
-  background: #f0f0f0;
+/*  background: #f0f0f0;*/
+  background: #E4EDED;
+  border-radius: 5px;
+  border: 1px black solid;
+}
+.bk.setup-widget-box {
+/*  background: #daf5f6;*/
+  background: #88B4BF;
   border-radius: 5px;
   border: 1px black solid;
 }
@@ -76,6 +84,7 @@ class ExperimentSetupGUI(pn.viewable.Viewer):
                 self.textbox,
                 self.terminal
             ),
+            css_classes=['setup-widget-box']
         )
 
     @param.depends('submit_event', watch=True)
@@ -241,14 +250,18 @@ class FitIC_UI(pn.viewable.Viewer):
 
     @debug.timer
     def __panel__(self):
-        return pn.Tabs(
-            ("Setup simulation", ExperimentSetupGUI()),
-            ("Precomputed results", pn.Tabs(
+        setup_tab = ("Setup simulation", ExperimentSetupGUI())
+        precomp_tabs = (
+            "Precomputed simulations", pn.Tabs(
+                ("Description", PrecomputedInfo(self.conf)),
                 ("Fit statistics", StatisticsViewer(self.conf)),
                 ('Modelled timeseries', StationExplorer(self.conf)),
                 tabs_location='left',
                 dynamic=True,
                 css_classes=['precomp-widget-box'])
-             ),
+        )
+        return pn.Tabs(
+            setup_tab,
+            precomp_tabs,
             dynamic=True
         )
