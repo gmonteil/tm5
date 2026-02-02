@@ -51,7 +51,7 @@ def md5(fname: str, chunk_size: int=1024 * 1024):
     return h.hexdigest()
 
 
-@debug.timer
+#@debug.timer
 def load_experiment(conf, expname, outmode : str = 'dataframe') -> DataFrame | xr.Dataset:
     """
     Load the TM5 stations output as a single DataFrame.
@@ -261,7 +261,7 @@ def plot_stations_v3(obs_model: DataFrame, station: str | None, experiments: Lis
         plotcfg = opts.Overlay(title="observed conentrations",
                                ylabel="[ppb]")
         plot.opts(plotcfg)
-        logger.debug(f"experiments: -->{experiments}<-- plotcfg should be: {plotcfg}")
+        logger.trace(f"experiments: -->{experiments}<-- plotcfg should be: {plotcfg}")
         return plot
     #-- extend
     for exp in experiments:
@@ -631,7 +631,7 @@ class StationExplorer(pn.viewable.Viewer):
                 self.site_info,
                 self.histogram_of_fit_residuals
             ),
-            styles=dict(background=_bgcolor)
+            # styles=dict(background=_bgcolor)
         )
         return widgets
 
@@ -789,7 +789,7 @@ class StatisticsViewer(pn.viewable.Viewer):
             ),
             self.plot_stat_maps,
             self.plot_stats_table,
-            styles=dict(background=_bgcolor)
+            # styles=dict(background=_bgcolor)
         )
 
     def _maxnproc(self):
