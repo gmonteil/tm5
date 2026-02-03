@@ -32,10 +32,34 @@ class TracerSettings(pn.viewable.Viewer):
 
     @param.depends('add_emissions_category', watch=True)
     def add_emis(self):
+        #
+        #-- MVO::hack to solve case that 'host' is None
+        #        (as it may happen, in case of missing/incomplete file
+        #         $HOME/.config/fitic/gui.conf):
+        #        This should allow to run 'add_emis' successfully on
+        #        - ICOS Jupyter Hub
+        #        - COSMOS (including one of Marko's private nodes)
+        #
+        def is_jupyterhub():
+            import os
+            return 'JUPYTERHUB_API_TOKEN' in os.environ
+        def is_cosmos():
+            import os
+            hostname = os.environ['HOSTNAME']
+            return (hostname in ['cx02','cx03',]) or hostname.startswith('cosmos')
+        if not host is None:
+            emission_path = host.emission_path
+        elif is_jupyterhub():
+            emission_path = '/data/avengers/fit_ic/input/emissions'
+        elif is_cosmos():
+            emission_path = '/lunarc/nobackup/projects/ghg_inv/michael/TM5/input/ch4/emissions'
+        else:
+            msg = f"path for emissions could not be determined"
+            raise RuntimeError(msg)
         self.emissions.append(EmissionSettings(
             catname=f'emissions_{len(self.emissions) + 1}',
             regions=self.regions,
-            path=host.emission_path
+            path=emission_path
         ))
         self.emissions_widgets.append(self.emissions[-1].__panel__())
 
