@@ -253,24 +253,30 @@ def plot_stations_v3(obs_model: DataFrame, station: str | None, experiments: Lis
 
     cnd_station = (obs_model.site_name == station)
     dfplot = obs_model.loc[cnd_station,:]
+    if experiments is None or len(experiments)==0:
+        title = 'observed concentrations'
+    elif title==None:
+        title = "hourly simulated and observed concentrations"
+    units = '[ppb]'
     plot = dfplot.hvplot.points(
-        x='time', y='obs', color='k', s=1, label='observations', width=1200, grid=True
+        x='time', y='obs', color='k', s=1, label='observations', width=1200, grid=True, ylabel=units, title=title
     )
     # If no experiment has been requested, return the plot with the obs only
     if experiments is None or len(experiments)==0:
-        plotcfg = opts.Overlay(title="observed conentrations",
-                               ylabel="[ppb]")
-        plot.opts(plotcfg)
-        logger.trace(f"experiments: -->{experiments}<-- plotcfg should be: {plotcfg}")
         return plot
     #-- extend
     for exp in experiments:
         plot *= dfplot.hvplot(x='time', y=exp, label=exp)
 
-    if title==None:
-        title = "hourly observed and simulated concentrations"
-    plotcfg = opts.Overlay(title=title, ylabel="[ppb]")
-    plot.opts(plotcfg)
+    #
+    #-- MVO::this did not work, and is now achieved
+    #        by providing title and y-label already
+    #        when creating the initial plot.
+    #
+    # if title==None:
+    #     title = "hourly observed and simulated concentrations"
+    # plotcfg = opts.Overlay(title=title, ylabel="[ppb]")
+    # plot.opts(plotcfg)
 
     return plot
 
@@ -627,10 +633,14 @@ class StationExplorer(pn.viewable.Viewer):
 
     @debug.timer
     def __panel__(self):
+        station_widget = pn.widgets.Select.from_param(self.param.station,
+                                                      description="Only one single station can be selected at a time.")
+        exp_widget =  pn.widgets.MultiSelect.from_param(self.param.experiments,
+                                                        align='end', height=200, height_policy='max', width_policy='max', description="Multiple experiments can be selected at a time (keep <ctrl> key pressed while selecting further experiments).")
         widgets = pn.Column(
             pn.Row(
-                pn.widgets.Select.from_param(self.param.station),
-                pn.widgets.MultiSelect.from_param(self.param.experiments, align='end', height=200, height_policy='max', width_policy='max'),
+                station_widget,
+                exp_widget,
                 self.table_statistics
             ),
             pn.layout.Divider(),
