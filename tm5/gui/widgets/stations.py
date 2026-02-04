@@ -379,21 +379,31 @@ def plot_table_statistics_v3(obs_model: DataFrame, station: str, experiments: Li
 
 @debug.timer
 def plot_stat_maps(model: DataFrame, experiment: str, statistics_type: str):
+    #
+    #-- make sure only statistics based on total time-series is shown
+    #   (see routine calc_fit_statistics2)
+    #
     df = model[model.Month.isna() & (model.experiment == experiment)]
+    title = f"{statistics_type} ({experiment}, based on overall time-series)"
     return df.hvplot.points(
-        x='longitude', y='latitude', c=statistics_type, s='count', geo=True, title=statistics_type,
+        x='longitude', y='latitude', c=statistics_type, s='count', geo=True, title=title,
         hover_cols=['site_name', 'Bias', 'RMSE', 'Correlation coefficient'],
         coastline=True, xlim=(-180, 180), ylim=(-90, 90), frame_width=1200)
 
 
 @debug.timer
 def plot_stats_table(model: DataFrame, statistics_type: str, experiment_list: List[str], highlighted_experiment: str):
+    #
+    #-- make sure only statistics based on total time-series is shown
+    #   (see routine calc_fit_statistics2)
+    #
     df = model[model.Month.isna()]  # & (self.model.experiment == self.experiment)]
+    title = f"{statistics_type} (based on overall time-series)"
     fig = df[df.experiment == highlighted_experiment].sort_values(statistics_type).hvplot.scatter(
         x='site_name',
         s='count',
         y=statistics_type,
-        title=statistics_type,
+        title=title,
         rot=90,
         frame_width=1200,
         height=800,
@@ -412,7 +422,8 @@ def plot_stats_table(model: DataFrame, statistics_type: str, experiment_list: Li
                 muted_alpha=0,
                 muted=True
             )
-    return fig
+    plotcfg = opts.Overlay(ylabel="[ppb]")
+    return fig.opts(plotcfg)
 
 
 # ----- Statistics -----
@@ -783,10 +794,16 @@ class StatisticsViewer(pn.viewable.Viewer):
 
     @debug.timer
     def __panel__(self):
+        exp_desc = f"Only one single experiment can be selected at a time."
+        exp_widget =  pn.widgets.Select.from_param(self.param.experiment,
+                                                   description=exp_desc)
+        metric_desc = f""
+        metric_widget = pn.widgets.RadioButtonGroup.from_param(self.param.statistics_type,
+                                                               description=metric_desc)
         return pn.Column(
             pn.Row(
-                pn.widgets.Select.from_param(self.param.experiment),
-                pn.widgets.RadioButtonGroup.from_param(self.param.statistics_type)
+                exp_widget,
+                metric_widget
             ),
             self.plot_stat_maps,
             self.plot_stats_table,
