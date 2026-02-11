@@ -1,8 +1,8 @@
 # Tasks (by order of priority)
 
 - GUI (setup)
-    - [ ] (2) MV/TK: draft user instruction document, to be circulated before next WP6.1 meeting (Feb. 9)
-    - [ ] (1) MV add some short description of the experiments, More text around plots to explain what we see, e.g. time series show hourly values but fit statistics are based on daily averages (as a preparation for the selection of averges over specific periods of the day)
+    - [ ] (1) MV to get right of the dark background on first screenshot (and potentially larger font size) 
+    - [ ] (2) MV add some short description of the experiments, More text around plots to explain what we see, e.g. time series show hourly values but fit statistics are based on daily averages (as a preparation for the selection of averges over specific periods of the day)
     - [ ] (3) MV implement only configuration with 3 level zoom "avengers-1", i.e global/Europe/NL+D+CH
     - [ ] (4) MV new tracer default to CAMS OH
     - [ ] (5) MV to check why setup of experiment does not work as expected
@@ -33,9 +33,10 @@
     - [ ] TXK: implement dummy inversion based on Jacobians to test computational performance
     - [ ] TXK: to specify how the footprints wil be used in the inverse model (dc/df, no emission caterogies).
     - [ ] TXK/MV: draft a kind of tutorial guiding the user through one of the experiments
-    - [ ] (2a) GM: check units of footprint 
+    - [ ] (2a) GM: check units of footprint: (On the setup of footprint calculations within the zoom domain: we do those for multi-hour averages, e.g. over the afternoon. This will result in one footprint per day.)
     - [ ] (2b) MV to further test footprint calculation
     - [ ] GM: make sure that adjoint file is returned in the right place
+  
           
 # Task ideas / discussion
 - avoid misuse through implementation of "accepted ranges" => *That's essentially built-in the GUI*
