@@ -26,6 +26,12 @@ else
 endif
 LDFLAGS_NC = $(shell ${nfconfig} --flibs) -Wl,-R$(shell ${nfconfig} --prefix)/lib64/
 LDFLAGS_H5 = -L${H5PATH}/lib64/ -lhdf5_fortran
+LDFLAGS_NC = $(shell ${nfconfig} --flibs) -Wl,-R$(shell ${nfconfig} --prefix)/lib/
+LDFLAGS_H5 = -L${H5PATH}/lib/ -lhdf5_fortran
+#
+#-- MVO, 2026-02-12:
+#   there is no lib64 in $(MINICONDA_HOME)/envs/tm5 but just 'lib'
+#
 #LDFLAGS_UD = -L/opt/udunits-1.12.11/lib -ludunits
 LDFLAGS_UD  = -L$(MINICONDA_HOME)/opt/udunits-1.12.11/lib -ludunits
 LDFLAGS_BLAS = -L$(TM5_CONDA)/lib -lblas -llapack
