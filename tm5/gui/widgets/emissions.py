@@ -5,7 +5,7 @@ from functools import lru_cache
 from typing import List
 import xarray as xr
 from loguru import logger
-
+from tm5.gui.css import *
 
 @lru_cache
 def get_emis_file_list(path: Path, pattern: str) -> List[Path]:
@@ -24,8 +24,12 @@ class FieldSelector(pn.viewable.Viewer):
         super().__init__(**params)
         self.widgets = dict(
             field=pn.widgets.Select.from_param(self.param.fieldname),
+            # info=pn.pane.Markdown(width=300,
+            #                       stylesheets=[setup_stylesheet,], css_classes=['setup-tracer']),
+            # title=pn.pane.Markdown(width=300,
+            #                        stylesheets=[setup_stylesheet,], css_classes=['setup-tracer'])
             info=pn.pane.Markdown(width=300),
-            title=pn.pane.Markdown(width=300)
+            title=pn.pane.Markdown(width=300),
         )
         self.update_desc()
 
@@ -34,7 +38,8 @@ class FieldSelector(pn.viewable.Viewer):
             self.widgets['title'],
             pn.widgets.Select.from_param(self.param.filename),
             self.widgets['field'],
-            self.widgets['info']
+            self.widgets['info'],
+            stylesheets=[setup_stylesheet,], css_classes=['setup-tracer']
         )
 
     @param.depends('filename', 'path', 'domain', watch=True)
@@ -103,11 +108,11 @@ class EmissionSettings(pn.viewable.Viewer):
         self.emis_glo = FieldSelector(desc='Global emissions', domain=self.regions[0])
         self.emis_glo.path = self.path
         self.emis_reg.path = self.path
-        self.pane_glo = pn.Column(self.emis_glo)
+        self.pane_glo = pn.Column(self.emis_glo, stylesheets=[setup_stylesheet,], css_classes=['setup-tracer'])
         self.pane_reg = pn.Column(self.emis_reg, visible=len(self.regions) > 1)
         self.switch_button = pn.Row(
             pn.widgets.Switch.from_param(self.param.switch_reg, align='center'),
-            pn.pane.Markdown("Use different regional emissions"),
+            pn.pane.Markdown("Use different regional emissions", stylesheets=[setup_stylesheet,], css_classes=['setup-tracer']),
             visible=len(self.regions) > 1
         )
         self.update_visibility_regional_emissions()

@@ -96,20 +96,22 @@ class TracerSettings(pn.viewable.Viewer):
 
     @param.depends('tracer_name', watch=True)
     def __panel__(self):
-        components = [
-            pn.widgets.TextInput.from_param(self.param.tracer_name),
-            pn.pane.Markdown("""
-            ## Initial condition:
+        iniconc_txtpane = pn.pane.Markdown("""
+        ## Initial condition:
 
-            Select whether the model should be initialized with concentrations from a previous run, from CAMS reanalysis, or left to zero. 
-            """),
-            pn.widgets.Select.from_param(self.param.initial_condition),
-            self.reaction_widgets,
-            pn.pane.Markdown("""
+        Select whether the model should be initialized with concentrations from a previous run, from CAMS reanalysis, or left to zero. 
+            """, stylesheets=[setup_stylesheet,], css_classes=['setup-tracer'])
+        emis_txtpane = pn.pane.Markdown("""
             ## Emissions:
 
             You can add one or multiple emission products to your simulation. The emissions are global (by default), but you have the option to use a different emission dataset within the regional domain.
-            """),
+            """, stylesheets=[setup_stylesheet,], css_classes=['setup-tracer'])
+        components = [
+            pn.widgets.TextInput.from_param(self.param.tracer_name),
+            iniconc_txtpane,
+            pn.widgets.Select.from_param(self.param.initial_condition),
+            self.reaction_widgets,
+            emis_txtpane,
             self.emissions_widgets,
             pn.widgets.Button.from_param(self.param.add_emissions_category)
         ]
@@ -125,7 +127,6 @@ class TracerSettings(pn.viewable.Viewer):
                 hide_header=True),
             stylesheets=[setup_stylesheet,], css_classes=['setup-tracer']
             )
-        # return pn.layout.Card(pn.Column(*components), title=self.param.tracer_name)
 
     @property
     def reaction_widgets(self):
@@ -135,7 +136,7 @@ class TracerSettings(pn.viewable.Viewer):
                 ## Chemical reactions (sink):
 
                 The transport model supports tracer loss through reaction with other species. The defaults settings are always sane, but you can change them to see the impact on the results.
-                """),
+                """, stylesheets=[setup_stylesheet,], css_classes=['setup-tracer']),
                 *[r for r in self.reactions])
 
 

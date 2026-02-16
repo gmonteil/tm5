@@ -80,8 +80,7 @@ class RunSettings(pn.viewable.Viewer):
             - one single tracer with all processes (initial condition, sources and sinks);
             - one tracer for each source process (to be able to track the contribution of each process).
             - several tracers as "sensitivity tests"
-            """,
-                             stylesheets=[setup_stylesheet,], css_classes=['setup-base']),
+            """, stylesheets=[setup_stylesheet,]),
             self.tracers_widgets,
             pn.Row(
                 pn.widgets.Button.from_param(self.param.create_co2_tracer, disabled=True),

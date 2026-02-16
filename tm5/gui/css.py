@@ -5,9 +5,14 @@
 #-- https://panel.holoviz.org/how_to/styling/apply_css.html
 #
 setup_stylesheet = """
-:host(.setup-base) {
+:host {
   font-size: 1.25em;
   background: #B6E0F0;
+/*  border-radius: 5px; */
+/*  border: 1px black solid; */
+}
+
+:host(.setup-base) {
   border-radius: 5px;
   border: 1px black solid;
 }
