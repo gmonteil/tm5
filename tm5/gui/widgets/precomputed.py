@@ -130,7 +130,7 @@ class PrecomputedInfo(pn.viewable.Viewer):
             pane1,
             pane2,
             pane3,
-            styles={'background':self.settings['bgcolor_precomp']}
+            css_classes=['precomp-right']
             )
 
     def _exptable_html(self):

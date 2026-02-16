@@ -22,11 +22,6 @@ import numpy as np
 import multiprocessing.pool as mp
 from loguru import logger
 
-#-- background color covering (most) elements of
-#   - StationExplorer
-#   - StatisticsViewer
-_bgcolor = '#E4EDED'
-
 
 # ----- utilities -----
 
@@ -653,7 +648,7 @@ class StationExplorer(pn.viewable.Viewer):
                 self.site_info,
                 self.histogram_of_fit_residuals
             ),
-            styles={'background':self.settings['bgcolor_precomp']}
+            css_classes=['precomp-right']
         )
         return widgets
 
@@ -817,7 +812,7 @@ class StatisticsViewer(pn.viewable.Viewer):
             ),
             self.plot_stat_maps,
             self.plot_stats_table,
-            styles={'background':self.settings['bgcolor_precomp']}
+            css_classes=['precomp-right']
         )
 
     def _maxnproc(self):

@@ -1,5 +1,6 @@
 import param
 import panel as pn
+from pathlib import Path
 from tm5.gui.widgets.emissions import EmissionSettings
 from tm5.gui.widgets.reactions import ReactionSettings
 from tm5.gui import host
@@ -28,33 +29,42 @@ class TracerSettings(pn.viewable.Viewer):
         super().__init__(**params)
         self.emissions = []
         self.emissions_widgets = pn.Column()
-        self.parent = parent
+        self.parent = parent #-- reference to the RunSettings
 
     @param.depends('add_emissions_category', watch=True)
     def add_emis(self):
+        # #
+        # #-- MVO::hack to solve case that 'host' is None
+        # #        (as it may happen, in case of missing/incomplete file
+        # #         $HOME/.config/fitic/gui.conf):
+        # #        This should allow to run 'add_emis' successfully on
+        # #        - ICOS Jupyter Hub
+        # #        - COSMOS (including one of Marko's private nodes)
+        # #
+        # def is_jupyterhub():
+        #     import os
+        #     return 'JUPYTERHUB_API_TOKEN' in os.environ
+        # def is_cosmos():
+        #     import os
+        #     hostname = os.environ['HOSTNAME']
+        #     return (hostname in ['cx02','cx03',]) or hostname.startswith('cosmos')
+        # if not host is None:
+        #     emission_path = host.emission_path
+        # elif is_jupyterhub():
+        #     emission_path = '/data/avengers/fit_ic/input/emissions'
+        # elif is_cosmos():
+        #     emission_path = '/lunarc/nobackup/projects/ghg_inv/michael/TM5/input/ch4/emissions'
+        # else:
+        #     msg = f"path for emissions could not be determined"
+        #     raise RuntimeError(msg)
         #
-        #-- MVO::hack to solve case that 'host' is None
-        #        (as it may happen, in case of missing/incomplete file
-        #         $HOME/.config/fitic/gui.conf):
-        #        This should allow to run 'add_emis' successfully on
-        #        - ICOS Jupyter Hub
-        #        - COSMOS (including one of Marko's private nodes)
+        #-- emission_path currently provided
+        #   by the yaml file that is passed to the GUI constructor
         #
-        def is_jupyterhub():
-            import os
-            return 'JUPYTERHUB_API_TOKEN' in os.environ
-        def is_cosmos():
-            import os
-            hostname = os.environ['HOSTNAME']
-            return (hostname in ['cx02','cx03',]) or hostname.startswith('cosmos')
-        if not host is None:
-            emission_path = host.emission_path
-        elif is_jupyterhub():
-            emission_path = '/data/avengers/fit_ic/input/emissions'
-        elif is_cosmos():
-            emission_path = '/lunarc/nobackup/projects/ghg_inv/michael/TM5/input/ch4/emissions'
-        else:
-            msg = f"path for emissions could not be determined"
+        emission_path = self.parent.gui_settings.emission_path
+        if not Path(emission_path).is_dir():
+            msg = f"path for TM5 input emissions ***{str(emission_path)}*** " \
+                f"not found on system!"
             raise RuntimeError(msg)
         self.emissions.append(EmissionSettings(
             catname=f'emissions_{len(self.emissions) + 1}',
@@ -107,6 +117,7 @@ class TracerSettings(pn.viewable.Viewer):
                 # styles={'background': '#edfafa'},
                 sizing_mode='stretch_width',
                 hide_header=True),
+            css_classes=['setup-tracer']
             )
         # return pn.layout.Card(pn.Column(*components), title=self.param.tracer_name)
 

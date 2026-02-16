@@ -2,6 +2,7 @@ import panel as pn
 import param
 import os
 from datetime import date
+from omegaconf import OmegaConf, DictConfig
 from tm5.gui.widgets import CH4TracerSettings, CO2TracerSettings
 
 
@@ -52,8 +53,9 @@ class RunSettings(pn.viewable.Viewer):
     create_co2_tracer = param.Event(doc='Add new CO2 tracer', label='New CO2 tracer')
     levels = param.Selector(default='tropo34', objects=['tropo25', 'tropo34'], doc='Number of vertical levels')
 
-    def __init__(self, **params):
+    def __init__(self, gui_settings : DictConfig, **params):
         super().__init__(**params)
+        self.gui_settings = gui_settings
         self.tracers = []
         self.tracers_widgets = pn.Column()
 

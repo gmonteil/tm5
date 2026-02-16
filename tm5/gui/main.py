@@ -1,6 +1,6 @@
 import panel as pn
 import param
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf, DictConfig
 import requests
 from pathlib import Path
 import sys
@@ -19,16 +19,29 @@ pn.extension('floatpanel')
 #-- initial attempts to update layout/appearance
 #
 css = '''
-.bk.precomp-widget-box {
-/*  background: #f0f0f0;*/
-  background: #BDC9CB;
+.bk.precomp-left {
+/*  background: #f0f0f0; */
+/*  background: #BDC9CB; */
+  background: #C1D8E0;
+  border-radius: 5px;
+  border: 1px black solid;
+}
+.bk.precomp-right {
+  background: #D0EAF2;
   border-radius: 5px;
   border: 1px black solid;
 }
 .bk.setup-widget-box {
 /*  background: #daf5f6; */
 /*  background: #BDC9CB; */
-  background: #88B4BF;
+  background: #B6E0F0;
+/*  background: #88B4BF; */
+  border-radius: 5px;
+  border: 1px black solid;
+}
+.bk.setup-tracer {
+/*  background: #B6E0F0; */
+  background: #C4EEFE;
   border-radius: 5px;
   border: 1px black solid;
 }
@@ -59,9 +72,10 @@ class ExperimentSetupGUI(pn.viewable.Viewer):
     jobid = param.Integer(doc='TM5 job ID')
 
     @debug.timer
-    def __init__(self, url_tm5: str = 'http://pancake.nebula:5000', **params):
+    def __init__(self, gui_settings: DictConfig, url_tm5: str = 'http://pancake.nebula:5000', **params):
         super().__init__(**params)
-        self.settings = RunSettings()
+        self.gui_settings = gui_settings
+        self.settings = RunSettings(self.gui_settings)
         self.textbox = pn.pane.Alert(visible=False, width=300)
         self.terminal = pn.widgets.Terminal(options={"cursorBlink": True}, height=300, sizing_mode='stretch_width', write_to_console=True, visible=False)
         self.submit_button = pn.widgets.Button.from_param(self.param.submit_event)
@@ -235,11 +249,15 @@ class FitIC_UI(pn.viewable.Viewer):
     def __init__(self, config_file: Path | str = 'gui.yml'):
         super().__init__()
         fix_env()
+        if not Path(config_file).exists():
+            msg = f"configuration file ***{config_file}*** not found " \
+                f"on GUI startup!"
+            raise RuntimeError(msg)
         self.conf = OmegaConf.load(config_file)
         #
         #--
         #
-        self.conf['bgcolor_precomp'] = '#E4EDED'
+        # self.conf['bgcolor_precomp'] = '#E4EDED'
         # self.conf['bgcolor_setup']   = '#88B4BF'
         #
         #-- loguru compatible log level
@@ -257,7 +275,8 @@ class FitIC_UI(pn.viewable.Viewer):
 
     @debug.timer
     def __panel__(self):
-        setup_tab = ("Setup simulation", ExperimentSetupGUI())
+        setup_tab = ("Setup simulation",
+                     ExperimentSetupGUI(gui_settings=self.conf))
         precomp_tabs = (
             "Precomputed simulations", pn.Tabs(
                 ("Description", PrecomputedInfo(self.conf)),
@@ -265,7 +284,7 @@ class FitIC_UI(pn.viewable.Viewer):
                 ('Modelled timeseries', StationExplorer(self.conf)),
                 tabs_location='left',
                 dynamic=True,
-                css_classes=['precomp-widget-box'])
+                css_classes=['precomp-left'])
         )
         return pn.Tabs(
             setup_tab,
