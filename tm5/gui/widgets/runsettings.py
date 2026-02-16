@@ -60,8 +60,13 @@ class RunSettings(pn.viewable.Viewer):
         self.tracers_widgets = pn.Column()
 
     def __panel__(self):
+        # return pn.Column(
+        #     pn.pane.Markdown('## Run settings'),
+        #     stylesheets=[setup_stylesheet,], css_classes=['setup-base']
+        #     )
         return pn.Column(
-            pn.pane.Markdown('## Run settings'),
+            pn.pane.Markdown('## Run settings',
+                             stylesheets=[setup_stylesheet,]),
             pn.Row(
                 pn.widgets.TextInput.from_param(self.param.run_name),
                 pn.Column(
@@ -72,7 +77,7 @@ class RunSettings(pn.viewable.Viewer):
                     pn.widgets.Select.from_param(self.param.zoom_configuration),
                     # pn.widgets.MultiSelect.from_param(self.param.output_types),
                 ),
-            ),
+                ),
             pn.pane.Markdown("""
             ## Tracers:
 
@@ -86,7 +91,11 @@ class RunSettings(pn.viewable.Viewer):
                 pn.widgets.Button.from_param(self.param.create_co2_tracer, disabled=True),
                 pn.widgets.Button.from_param(self.param.create_ch4_tracer),
             ),
-            sizing_mode='stretch_width'
+            sizing_mode='stretch_width'# ,
+            # stylesheets=[setup_stylesheet,]
+            ##MVO-AAA:adding stylesheets here doesn't work correctly (why???)
+            ##        similar setting for pn.Column works fine in
+            ##        ExperimentSetupGUI
         )
 
     @param.depends('create_ch4_tracer', watch=True)
