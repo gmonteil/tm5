@@ -59,10 +59,16 @@ class TracerSettings(pn.viewable.Viewer):
         #     msg = f"path for emissions could not be determined"
         #     raise RuntimeError(msg)
         #
-        #-- emission_path currently provided
-        #   by the yaml file that is passed to the GUI constructor
+        #-- emission path comes from user specific file
+        #   $HOME/.config/fitic/gui.conf
         #
-        emission_path = self.parent.gui_settings.emission_path
+        if not host is None:
+            emission_path = host.emission_path
+        #
+        #-- emission path provided by yaml file that is passed to the GUI constructor
+        #
+        else:
+            emission_path = self.parent.gui_settings.emission_path
         if not Path(emission_path).is_dir():
             msg = f"path for TM5 input emissions ***{str(emission_path)}*** " \
                 f"not found on system!"
