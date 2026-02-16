@@ -4,6 +4,7 @@ from pathlib import Path
 from tm5.gui.widgets.emissions import EmissionSettings
 from tm5.gui.widgets.reactions import ReactionSettings
 from tm5.gui import host
+from tm5.gui.css import *
 
 
 class TracerSettings(pn.viewable.Viewer):
@@ -114,10 +115,9 @@ class TracerSettings(pn.viewable.Viewer):
             pn.layout.Card(
                 pn.Column(*components),
                 title=self.param.tracer_name,
-                # styles={'background': '#edfafa'},
                 sizing_mode='stretch_width',
                 hide_header=True),
-            css_classes=['setup-tracer']
+            stylesheets=[setup_stylesheet,], css_classes=['setup-tracer']
             )
         # return pn.layout.Card(pn.Column(*components), title=self.param.tracer_name)
 

@@ -16,11 +16,13 @@ import hvplot.pandas
 from functools import partial
 from typing import List
 from tqdm.contrib.concurrent import process_map
-from tm5 import debug
 import xxhash
 import numpy as np
 import multiprocessing.pool as mp
 from loguru import logger
+
+from tm5 import debug
+from tm5.gui.css import *
 
 
 # ----- utilities -----
@@ -648,7 +650,7 @@ class StationExplorer(pn.viewable.Viewer):
                 self.site_info,
                 self.histogram_of_fit_residuals
             ),
-            css_classes=['precomp-right']
+            stylesheets=[precomp_stylesheet,], css_classes=['precomp-right']
         )
         return widgets
 
@@ -812,7 +814,7 @@ class StatisticsViewer(pn.viewable.Viewer):
             ),
             self.plot_stat_maps,
             self.plot_stats_table,
-            css_classes=['precomp-right']
+            stylesheets=[precomp_stylesheet,], css_classes=['precomp-right']
         )
 
     def _maxnproc(self):

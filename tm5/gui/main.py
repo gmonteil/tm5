@@ -8,6 +8,7 @@ from loguru import logger
 from tm5.gui.widgets import RunSettings
 from tm5.gui.widgets.stations import StationExplorer, StatisticsViewer
 from tm5.gui.widgets.precomputed import PrecomputedInfo
+from tm5.gui.css import *
 from tm5 import debug
 
 
@@ -15,39 +16,7 @@ pn.extension()
 pn.extension('terminal')
 pn.extension('floatpanel')
 
-#
-#-- initial attempts to update layout/appearance
-#
-css = '''
-.bk.precomp-left {
-/*  background: #f0f0f0; */
-/*  background: #BDC9CB; */
-  background: #C1D8E0;
-  border-radius: 5px;
-  border: 1px black solid;
-}
-.bk.precomp-right {
-  background: #D0EAF2;
-  border-radius: 5px;
-  border: 1px black solid;
-}
-.bk.setup-widget-box {
-/*  background: #daf5f6; */
-/*  background: #BDC9CB; */
-  background: #B6E0F0;
-/*  background: #88B4BF; */
-  border-radius: 5px;
-  border: 1px black solid;
-}
-.bk.setup-tracer {
-/*  background: #B6E0F0; */
-  background: #C4EEFE;
-  border-radius: 5px;
-  border: 1px black solid;
-}
-'''
 
-pn.extension(raw_css=[css])
 
 def fix_env() -> None:
     import sys, os
@@ -100,7 +69,7 @@ class ExperimentSetupGUI(pn.viewable.Viewer):
                 self.textbox,
                 self.terminal
             ),
-            css_classes=['setup-widget-box']
+            stylesheets=[setup_stylesheet,], css_classes=['setup-base']
         )
 
     @param.depends('submit_event', watch=True)
@@ -255,11 +224,6 @@ class FitIC_UI(pn.viewable.Viewer):
             raise RuntimeError(msg)
         self.conf = OmegaConf.load(config_file)
         #
-        #--
-        #
-        # self.conf['bgcolor_precomp'] = '#E4EDED'
-        # self.conf['bgcolor_setup']   = '#88B4BF'
-        #
         #-- loguru compatible log level
         #
         loglev = self.conf.loglevel if 'loglevel' in self.conf else "CRITICAL"
@@ -284,7 +248,7 @@ class FitIC_UI(pn.viewable.Viewer):
                 ('Modelled timeseries', StationExplorer(self.conf)),
                 tabs_location='left',
                 dynamic=True,
-                css_classes=['precomp-left'])
+                stylesheets=[precomp_stylesheet,], css_classes=['precomp-left'])
         )
         return pn.Tabs(
             setup_tab,

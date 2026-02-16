@@ -16,12 +16,19 @@ import hvplot.pandas
 from functools import partial
 from typing import List
 from tqdm.contrib.concurrent import process_map
-from tm5 import debug
 import xxhash
 import numpy as np
 import multiprocessing.pool as mp
 from loguru import logger
 
+from tm5 import debug
+from tm5.gui.css import *
+
+CSS2 = """
+:host {
+    --font-size: 64px;
+}
+"""
 
 def experiment_desc( exp : str ) -> str:
     desc = "!!! description missing !!!"
@@ -103,8 +110,8 @@ class PrecomputedInfo(pn.viewable.Viewer):
         """
         pane1 = pn.pane.Markdown(
             info1,
+            # stylesheets=[CSS2]
             )
-            # styles={'background': '#edfafa'})
         pane2 = pn.pane.Markdown(
             f"{self._exptable_html()}"
         )
@@ -130,7 +137,7 @@ class PrecomputedInfo(pn.viewable.Viewer):
             pane1,
             pane2,
             pane3,
-            css_classes=['precomp-right']
+            stylesheets=[precomp_stylesheet,], css_classes=['precomp-right']
             )
 
     def _exptable_html(self):
