@@ -4,7 +4,7 @@ import os
 from datetime import date
 from omegaconf import OmegaConf, DictConfig
 from tm5.gui.widgets import CH4TracerSettings, CO2TracerSettings
-
+from tm5.gui.css import *
 
 class RunSettings(pn.viewable.Viewer):
     """
@@ -80,13 +80,13 @@ class RunSettings(pn.viewable.Viewer):
             - one single tracer with all processes (initial condition, sources and sinks);
             - one tracer for each source process (to be able to track the contribution of each process).
             - several tracers as "sensitivity tests"
-            """),
+            """,
+                             stylesheets=[setup_stylesheet,], css_classes=['setup-base']),
             self.tracers_widgets,
             pn.Row(
                 pn.widgets.Button.from_param(self.param.create_co2_tracer, disabled=True),
                 pn.widgets.Button.from_param(self.param.create_ch4_tracer),
             ),
-            # styles=dict(background='#daf5f6'),
             sizing_mode='stretch_width'
         )
 

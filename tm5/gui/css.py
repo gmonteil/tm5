@@ -6,7 +6,7 @@
 #
 setup_stylesheet = """
 :host(.setup-base) {
-  font-size: 64px;
+  font-size: 1.25em;
   background: #B6E0F0;
   border-radius: 5px;
   border: 1px black solid;
@@ -18,14 +18,14 @@ setup_stylesheet = """
 """
 precomp_stylesheet = """
 :host(.precomp-left) {
-  font-size: 1.5em;
+  font-size: 1.25em;
   background: #C1D8E0;
   border-radius: 5px;
   border: 1px black solid;
 }
 
 :host(.precomp-right) {
-  font-size: 2.5em;
+  font-size: 1.25em;
   background: #D0EAF2;
   border-radius: 5px;
   border: 1px black solid;

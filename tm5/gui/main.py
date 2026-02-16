@@ -17,7 +17,6 @@ pn.extension('terminal')
 pn.extension('floatpanel')
 
 
-
 def fix_env() -> None:
     import sys, os
     from pathlib import Path

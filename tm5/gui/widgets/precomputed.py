@@ -110,10 +110,11 @@ class PrecomputedInfo(pn.viewable.Viewer):
         """
         pane1 = pn.pane.Markdown(
             info1,
-            # stylesheets=[CSS2]
+            stylesheets=[precomp_stylesheet,], css_classes=['precomp-right']
             )
         pane2 = pn.pane.Markdown(
-            f"{self._exptable_html()}"
+            f"{self._exptable_html()}",
+            stylesheets=[precomp_stylesheet,], css_classes=['precomp-right']
         )
         pane3 = pn.pane.Markdown(
             """
@@ -131,13 +132,13 @@ class PrecomputedInfo(pn.viewable.Viewer):
               - time-series of weekly-averaged biases
               - histogram of hourly biases
               - table with metrics (RMSE, bias, correlation coeffient) based on complete time-series
-            """
+            """,
+            stylesheets=[precomp_stylesheet,], css_classes=['precomp-right']
             )
         return pn.Column(
             pane1,
             pane2,
             pane3,
-            stylesheets=[precomp_stylesheet,], css_classes=['precomp-right']
             )
 
     def _exptable_html(self):
