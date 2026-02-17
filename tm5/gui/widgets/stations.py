@@ -89,11 +89,19 @@ def load_experiment(conf, expname, outmode : str = 'dataframe') -> DataFrame | x
         times = [Timestamp(*_) for _ in ds['date_midpoints'][:]]
         tracers = [getattr(ds, f'tracer_{itr + 1:03.0f}') for itr in range(ds.dimensions['tracers'].size)]
         sites = [ds[_].getncattr('name') for _ in ds.groups]
+        sitelat = [ds[_].getncattr('latitude') for _ in ds.groups]
+        sitelon = [ds[_].getncattr('longitude') for _ in ds.groups]
+        #-- MVO::this should be height of simulation (above sea-level)
+        #        (had checked, e.g. Zugspitze 2669 which is 2666m + 3m)
+        sitealt = [ds[_].getncattr('altitude') for _ in ds.groups]
         abbr = [ds[_].getncattr('abbr').split('/')[1] for _ in ds.groups]
 
         # Create output dataset:
         out = xr.Dataset(coords=dict(time=times, tracer=tracers, site=abbr))
         out['station'] = (('site',), sites)
+        out['latitude'] = (('site',), sitelat)
+        out['longitude'] = (('site',), sitelon)
+        out['altitude']  = (('site',), sitealt)
 
         mix = zeros((len(sites), len(times), len(tracers)))
         for isite, site in enumerate(ds.groups):
