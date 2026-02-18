@@ -193,6 +193,85 @@ def load_observations_metadata(fname: Path) -> DataFrame:
     }, index=[ds.attrs['site_name']])
 
 @debug.timer
+def extract_times_of_day( obs_model : DataFrame,
+                          high_altitude : float = 1000.,
+                          hours_high : List = ['00:00','04:00'],
+                          hours_low  : List = ['12:00','16:00'] ):
+    """Function to extract (and average) observed and simulated
+    concentrations for selected times-of-day (local solar time),
+    the times-of-day are differentiated per station according to
+    their altitude.
+
+    The input DataFrame is expected to provide columns
+    'time': measurement times in UTC
+    'longitude': zonal location of stations [degrees East]
+    'altitude': altitude of stations [m]
+    """
+    #
+    #-- initial testing to differentiate
+    #   stations at high and lower altitude with differing hours-of-day
+    #   for the comparison
+    # MVO-NOTE::too expensive to do the work here every time!!
+    # self.model.to_csv(f"~/obs-and-experiments.csv", sep=';', index=False)
+    #
+    #
+    logger.debug(f"start temporal filtering differentiated by altitude")
+    dfx = obs_model.copy()
+    #- Step1:
+    #  - difference between UTC (as in obs/simulations) and LST [s]
+    td = dfx.loc[:,'longitude'].values/15. * 3600
+    #  - convert to timedelta64
+    td = np.array( td.astype('i4'), dtype='timedelta64[s]' )
+    #- Step2:
+    #  - add LST (at station)
+    dfx.loc[:,'time_LST'] = dfx.loc[:,'time'] + td
+    #- Step3:
+    #  - make LST index
+    dfx.index = dfx.loc[:,'time_LST']
+    if 'time_LST' in dfx:
+        dfx = dfx.drop(['time_LST',], axis=1)
+    #- Step4:
+    #  - separate high/low altitude stations
+    cnd_hi = dfx['altitude']>=high_altitude
+    dfx_hi = dfx.loc[cnd_hi, :]
+    dfx_lo = dfx.loc[~cnd_hi, :]
+    nhi = len(dfx_hi.loc[:,'code'].unique())
+    nlo = len(dfx_lo.loc[:,'code'].unique())
+    msg = f"found {nhi}/{nlo} high/low altitude stations " \
+        f"(high_altitude={high_altitude})"
+    logger.debug(msg)
+    #- Step5:
+    #  - high/low differentiated selected hours
+    hrs,hre = hours_high
+    dfx_hi = dfx_hi.between_time(hrs,hre, inclusive='left')
+    hrs,hre = hours_low
+    dfx_lo = dfx_lo.between_time(hrs,hre, inclusive='left')
+    #
+    #-- MVO-TODO::for upstream use it would be more flexible
+    #             not to average (to daily) already here.
+    #             For the time-series plots the daily-averages are good,
+    #             but for the weekly biases plots or the total comparison
+    #             table it might be more consistent to compute those
+    #             on the raw (hourly frequency data in the respective hours
+    #             of day) rather than from the averages over these hours.
+    #- Step6:
+    #  - aggregate to daily averages per station (code)
+    aggr_dict = {}
+    for _ in dfx_hi:
+        if _ in ['value', 'altitude', 'latitude', 'longitude', 'elevation','intake_height', 'filename', 'site_name']:
+            aggr_dict[_] = 'first'
+        elif _=='code':
+            pass
+        else:
+            aggr_dict[_] = 'mean'
+    dfx_hi = dfx_hi.groupby(['code',]).resample('D').agg(aggr_dict).reset_index()
+    dfx_lo = dfx_lo.groupby(['code',]).resample('D').agg(aggr_dict).reset_index()
+    #- Step7:
+    #  - recombine both data frames
+    logger.debug(f"...temporal filtering and aggregation done.")
+    return concat([dfx_lo, dfx_hi])
+
+@debug.timer
 def interp_model_1sta(observations: DataFrame, model: DataFrame, station: str, experiments: List[str]) -> DataFrame:
     # TODO: bad stuff will happen if we have more than one tracer ...
     obs = observations[observations.site_name == station].copy()
@@ -258,10 +337,13 @@ def plot_stations_v3(obs_model: DataFrame, station: str | None, experiments: Lis
 
     cnd_station = (obs_model.site_name == station)
     dfplot = obs_model.loc[cnd_station,:]
-    if experiments is None or len(experiments)==0:
-        title = 'observed concentrations'
-    elif title==None:
-        title = "hourly simulated and observed concentrations"
+    if title==None:
+        if experiments is None or len(experiments)==0:
+            title = 'observed concentrations'
+        else:
+            title = "simulated and observed concentrations"
+    #-- MVO::should not hard-code the concentration units!
+    #        (though, for CH4 simulation we now it is in fact ppb)
     units = '[ppb]'
     plot = dfplot.hvplot.points(
         x='time', y='obs', color='k', s=1, label='observations', width=1200, grid=True, ylabel=units, title=title
@@ -269,7 +351,7 @@ def plot_stations_v3(obs_model: DataFrame, station: str | None, experiments: Lis
     # If no experiment has been requested, return the plot with the obs only
     if experiments is None or len(experiments)==0:
         return plot
-    #-- extend
+    #-- otherwise: add simulated concentrations from selected experiments
     for exp in experiments:
         plot *= dfplot.hvplot(x='time', y=exp, label=exp)
 
@@ -307,7 +389,7 @@ def plot_weekly_bias_v3(obs_model: DataFrame, station: str | None, experiments, 
     wmean = calc_weekly_bias_v3(obs_model, station, experiments)
     if len(wmean)==0:
         return
-    if title==None:
+    if title is None:
         title = "Weekly averaged bias"
     plot = wmean.hvplot(
         x='time', y=[f'bias_{exp}' for exp in experiments], grid=True,
@@ -360,19 +442,22 @@ def plot_histogram_of_fit_residuals(
 
 @debug.timer
 def plot_histogram_of_fit_residuals_v3(
-    obs_model: DataFrame,
-    station: str,
-    experiments: List[str]
+        obs_model: DataFrame,
+        station: str,
+        experiments: List[str],
+        title : str = None
 ) -> hv.Overlay:
     if station is None or experiments is None:
         return
+    if title is None:
+        title = "Histogram of biases"
     cnd_station = (obs_model.site_name == station)
     dfhist = obs_model.loc[cnd_station,:]
     histplots = []
     for exp in experiments:
         histplots.append(dfhist[f'bias_{exp}'].hvplot.hist(bins=100, alpha=.5, line_width=0, label=exp))
     hvplot = hv.Overlay(histplots).opts(
-        title="Histogram of hourly biases",
+        title=title,
         xlabel="[ppb]", ylabel="count")
     return hvplot
 
@@ -629,6 +714,18 @@ class StationExplorer(pn.viewable.Viewer):
         self.expmode = 'v3'
         if 'expmode' in self.settings:
             self.expmode = self.settings.expmode
+        #
+        #-- dedicated comparison of simulated vs observed concentrations
+        #   (1) for high altitude stations using averaged concentration
+        #       of midnight data (midnight to 4am local solar time)
+        #   (2) for lower altitude stations the averaged concentrations
+        #       in the afternoon (12am to 4pm) are taken
+        #
+        self.obs_model_cmp = None
+        self.high_altitude = 1000. #
+        self.hours_of_day = {'high':['00:00','04:00'],
+                             'low':['12:00','16:00'] }
+        self.use_hours_of_day = self.settings.get('use_hours_of_day',False)
         # Initialize widgets
         self.param.experiments.objects = list(self.settings.experiments.list)
 
@@ -670,6 +767,23 @@ class StationExplorer(pn.viewable.Viewer):
         site_start = self.settings.station_first if 'station_first' in self.settings else 'Cabauw'
         return site_start
 
+    def _station_is_high(self):
+        if self.data is None:
+            return False
+        if self.station is None:
+            return False
+        cnd_station = (self.data.site_name==self.station)
+        # logger.info(f"self.data columns ==>{self.data.columns}<==")
+        df = self.data.loc[cnd_station,['altitude']]
+        return np.all(df.loc[:,'altitude']>=self.high_altitude)
+
+    def _station_hours_of_day(self):
+        is_high = self._station_is_high()
+        if is_high:
+            return self.hours_of_day['high']
+        else:
+            return self.hours_of_day['low']
+
     @debug.timer
     def load_observations(self):
         """
@@ -697,11 +811,20 @@ class StationExplorer(pn.viewable.Viewer):
 
         #
         #-- self.model becomes DataFrame containing
-        #   both, observations and model simulations for (potentially)
-        #   multiple experiments
+        #   both, observations and model simulations from
+        #   (potentially) multiple experiments
         #
         if self.expmode=='v3':
             self.model = self.data.copy()
+        #
+        #-- build DataFrame with averaged concentrations over
+        #   dedicated periods of time-of-day.
+        #
+        if self.use_hours_of_day:
+            self.obs_model_cmp = \
+                extract_times_of_day(self.model, high_altitude=self.high_altitude,
+                                     hours_high=self.hours_of_day['high'],
+                                     hours_low=self.hours_of_day['low'])
 
     @pn.depends('experiments', watch=True)
     def load_experiments(self):
@@ -745,20 +868,42 @@ class StationExplorer(pn.viewable.Viewer):
         #
         # if not self.model is None:
         #     logger.debug(f"self.model, columns -->{list(self.model.columns)}<--")
+        #
+        #--
+        #
+        if self.use_hours_of_day:
+            self.obs_model_cmp = \
+                extract_times_of_day(self.model, high_altitude=self.high_altitude,
+                                     hours_high=self.hours_of_day['high'],
+                                     hours_low=self.hours_of_day['low'])
 
     @pn.depends('station', 'experiments')
     def plot_timeseries(self):
-        title = "hourly observed and simulated concentrations"
         if self.expmode=='v3':
-            all_plots = plot_stations_v3(self.model, self.station, self.experiments, title=title)
+            if self.obs_model_cmp is None:
+                title = "hourly observed and simulated concentrations"
+                all_plots = plot_stations_v3(self.model, self.station, self.experiments, title=title)
+            else:
+                hr1,hr2 = self._station_hours_of_day()
+                avg_tag = f"(averaged from {hr1} - {hr2} LST)"
+                title = f"observed and simulated concentrations {avg_tag}"
+                all_plots = plot_stations_v3(self.obs_model_cmp, self.station, self.experiments, title=title)
         else:
+            title = "hourly observed and simulated concentrations"
             all_plots = plot_stations(self.model, self.data, self.station, self.experiments, title=title)
         return all_plots
 
     @pn.depends('station', 'experiments')
     def plot_weekly_bias(self):
         if self.expmode=='v3':
-            dfvisu = plot_weekly_bias_v3(self.model, self.station, self.experiments)
+            if self.obs_model_cmp is None:
+               title = "Weekly averaged bias"
+               dfvisu = plot_weekly_bias_v3(self.model, self.station, self.experiments, title=title)
+            else:
+                hr1,hr2 = self._station_hours_of_day()
+                avg_tag = f"(concentrations taken from {hr1} - {hr2} LST)"
+                title = f"Weekly averaged bias {avg_tag}"
+                dfvisu = plot_weekly_bias_v3(self.obs_model_cmp, self.station, self.experiments, title=title)
             return dfvisu
         else:
             return plot_weekly_bias(self.data, self.model, self.station, self.experiments)
@@ -770,14 +915,24 @@ class StationExplorer(pn.viewable.Viewer):
     @pn.depends('station', 'experiments')
     def histogram_of_fit_residuals(self):
         if self.expmode=='v3':
-            return plot_histogram_of_fit_residuals_v3(self.model, self.station, self.experiments)
+            if self.obs_model_cmp is None:
+                title = "Histogramm of biases (on hourly basis)"
+                return plot_histogram_of_fit_residuals_v3(self.model, self.station, self.experiments, title=title)
+            else:
+                hr1,hr2 = self._station_hours_of_day()
+                avg_tag = f"(concentration taken from {hr1} - {hr2} LST)"
+                title = f"Histogramm of biases {avg_tag}"
+                return plot_histogram_of_fit_residuals_v3(self.obs_model_cmp, self.station, self.experiments, title=title)
         else:
             return plot_histogram_of_fit_residuals(self.data, self.model, self.station, self.experiments)
 
     @pn.depends('station', 'experiments')
     def table_statistics(self):
         if self.expmode=='v3':
-            return plot_table_statistics_v3(self.model, self.station, self.experiments)
+            if self.obs_model_cmp is None:
+                return plot_table_statistics_v3(self.model, self.station, self.experiments)
+            else:
+                return plot_table_statistics_v3(self.obs_model_cmp, self.station, self.experiments)
         else:
             return plot_table_statistics(self.data, self.model, self.station, self.experiments)
         
