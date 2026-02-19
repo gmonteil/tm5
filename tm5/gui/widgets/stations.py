@@ -139,14 +139,14 @@ def load_observations_data(fname: Path) -> DataFrame:
     """
     Read one observation file. Return the content as a dataframe, with the following columns:
     - time
-    - value: observation, in the original units (mol/mol)
-    - altitude: ground altitude (above sea level) of the observation site
+    !dropped - value: observation, in the original units (mol/mol)
+    - altitude: altitude (above sea level) of the measurement/observation (I think)
     - latitude
     - longitude
-    - elevation: altitude (above sea level) of the observations (I think!)
-    - intake_height: sampling height (above ground)
+    !dropped - elevation: ground altitude (above sea level) of the observation site (I think)
+    !dropped - intake_height: sampling height (above ground)
     - code: site code
-    - filename: name of the observation file
+    !dropped - filename: name of the observation file
     - site_name: full name of the site
     - obs: observation, in ppb
 
@@ -169,6 +169,18 @@ def load_observations_data(fname: Path) -> DataFrame:
     df.loc[:, 'value'] = df.loc[:,'value'] * 1.e9
     #-- rename
     df = df.rename(columns={'value':'obs'})
+    #
+    #-- add LOCAL solar time
+    #
+    #- Step1:
+    #  - difference between UTC (as in obs/simulations) and LST [s]
+    td = df.loc[:,'longitude'].values/15. * 3600
+    #  - convert to timedelta64
+    td = np.array( td.astype('i4'), dtype='timedelta64[s]' )
+    #- Step2:
+    #  - add LST (at station)
+    df.loc[:,'LST'] = df.loc[:,'time'] + td
+
     return df
 
 
@@ -207,7 +219,7 @@ def extract_timeperiod_during_day( obs_model : DataFrame,
                                    high_altitude : float = 1000.,
                                    hours_high : List = ['00:00','04:00'],
                                    hours_low  : List = ['12:00','16:00'],
-                                   aggregate : bool = False               ):
+                                   aggregate : bool = False               ) -> DataFrame:
     """Function to extract (and average) observed and simulated
     concentrations for selected times-of-day (local solar time),
     the times-of-day are differentiated per station according to
@@ -228,19 +240,25 @@ def extract_timeperiod_during_day( obs_model : DataFrame,
     #
     logger.debug(f"start temporal filtering differentiated by station altitude")
     dfx = obs_model.copy()
-    #- Step1:
-    #  - difference between UTC (as in obs/simulations) and LST [s]
-    td = dfx.loc[:,'longitude'].values/15. * 3600
-    #  - convert to timedelta64
-    td = np.array( td.astype('i4'), dtype='timedelta64[s]' )
-    #- Step2:
-    #  - add LST (at station)
-    dfx.loc[:,'time_LST'] = dfx.loc[:,'time'] + td
+    #
+    #-- MVO::LST should now have been set already
+    #        (see load_observations)
+    if not 'LST' in dfx.columns:
+        #- Step1:
+        #  - difference between UTC (as in obs/simulations) and LST [s]
+        td = dfx.loc[:,'longitude'].values/15. * 3600
+        #  - convert to timedelta64
+        td = np.array( td.astype('i4'), dtype='timedelta64[s]' )
+        #- Step2:
+        #  - add local solar time
+        dfx.loc[:,'LST'] = dfx.loc[:,'time'] + td
+    
     #- Step3:
     #  - make LST index
-    dfx.index = dfx.loc[:,'time_LST']
-    if 'time_LST' in dfx:
-        dfx = dfx.drop(['time_LST',], axis=1)
+    dfx = dfx.set_index('LST')
+    # dfx.index = dfx.loc[:,'LST']
+    # if 'LST' in dfx:
+    #     dfx = dfx.drop(['LST',], axis=1)
     #- Step4:
     #  - separate high/low altitude stations
     cnd_hi = dfx['altitude']>=high_altitude
@@ -284,8 +302,9 @@ def extract_timeperiod_during_day( obs_model : DataFrame,
         dfx_hi = dfx_hi.reset_index()
     #- Step7:
     #  - recombine both data frames
+    dfout = concat([dfx_lo, dfx_hi])
     logger.debug(f"...temporal filtering done.")
-    return concat([dfx_lo, dfx_hi])
+    return dfout
 
 @debug.timer
 def interp_model_1sta(observations: DataFrame, model: DataFrame, station: str, experiments: List[str]) -> DataFrame:
@@ -990,6 +1009,8 @@ class StatisticsViewer(pn.viewable.Viewer):
         # Set default values:
         self.experiment = self.param.experiment.objects[0]
 
+        #-- MVO::copied from StationExplorer,
+        #        but not used yet!
         #
         #-- dedicated comparison of simulated vs observed concentrations
         #   (1) for high altitude stations using averaged concentration
@@ -1030,10 +1051,12 @@ class StatisticsViewer(pn.viewable.Viewer):
     def load_observations(self):
         self.data = load_all_observations(self.settings.observations.files,
                                           nproc=self._maxnproc())
+        #-- for debugging
         # self.data.to_csv('statisticsviewer_obsdata.csv', index=True)
     @debug.timer
     def load_experiments(self):
         self.model = load_experiments(self.data, self.settings, self.param.experiment.objects)
+        #-- for debugging
         # self.model.to_csv(f"statistics-viewer_model.csv", sep=';')
 
     @pn.depends('statistics_type', 'experiment')
