@@ -153,13 +153,22 @@ def load_observations_data(fname: Path) -> DataFrame:
     The function is very ad-hoc for FitIC => CH4-specific, hardcoded for 2021. But this should be easy enough to fix ...
     I tried making it faster using h5py instead of xarray but it was the same
     """
-    ds = xr.open_dataset(fname, decode_timedelta=False)[['time', 'value', 'altitude', 'latitude', 'longitude', 'elevation', 'intake_height']]
+    vars_select = ['time', 'value', 'altitude', 'latitude', 'longitude', 'elevation', 'intake_height']
+    #-- MVO::restrict to only variables required in upstream use
+    #        - altitude: for switch night-time/afternoon period
+    #        - longitude: for (fast) UTC to LST conversion
+    vars_select = ['time', 'value', 'altitude', 'latitude', 'longitude',]
+    ds = xr.open_dataset(fname, decode_timedelta=False)[vars_select]
     df = ds.sel(obs=ds.time.dt.year == 2021).to_dataframe()
     if len(df) > 0:
         df['code'] = ds.site_code.lower()
-        df['filename'] = ds.encoding['source']
+        #-- MVO::(long) filename also present in meta dataframe
+        # df['filename'] = ds.encoding['source']
         df.loc[:, 'site_name'] = ds.attrs['site_name']
-    df.loc[:, 'obs'] = df['value'] * 1.e9
+    #-- unit conversion [mol mol-1] to [ppb]
+    df.loc[:, 'value'] = df.loc[:,'value'] * 1.e9
+    #-- rename
+    df = df.rename(columns={'value':'obs'})
     return df
 
 
@@ -180,7 +189,8 @@ def load_observations_metadata(fname: Path) -> DataFrame:
     - doi
     - filename
     """
-    ds = xr.open_dataset(fname, decode_timedelta=False)[['time', 'value', 'altitude', 'latitude', 'longitude', 'elevation', 'intake_height']]
+    vars_select = ['time', 'value', 'altitude', 'latitude', 'longitude', 'elevation', 'intake_height']
+    ds = xr.open_dataset(fname, decode_timedelta=False)[vars_select]
     return DataFrame({
         'site_name': ds.attrs['site_name'],
         'site_code': ds.attrs['site_code'],
@@ -193,10 +203,11 @@ def load_observations_metadata(fname: Path) -> DataFrame:
     }, index=[ds.attrs['site_name']])
 
 @debug.timer
-def extract_times_of_day( obs_model : DataFrame,
-                          high_altitude : float = 1000.,
-                          hours_high : List = ['00:00','04:00'],
-                          hours_low  : List = ['12:00','16:00'] ):
+def extract_timeperiod_during_day( obs_model : DataFrame,
+                                   high_altitude : float = 1000.,
+                                   hours_high : List = ['00:00','04:00'],
+                                   hours_low  : List = ['12:00','16:00'],
+                                   aggregate : bool = False               ):
     """Function to extract (and average) observed and simulated
     concentrations for selected times-of-day (local solar time),
     the times-of-day are differentiated per station according to
@@ -215,7 +226,7 @@ def extract_times_of_day( obs_model : DataFrame,
     # self.model.to_csv(f"~/obs-and-experiments.csv", sep=';', index=False)
     #
     #
-    logger.debug(f"start temporal filtering differentiated by altitude")
+    logger.debug(f"start temporal filtering differentiated by station altitude")
     dfx = obs_model.copy()
     #- Step1:
     #  - difference between UTC (as in obs/simulations) and LST [s]
@@ -243,9 +254,9 @@ def extract_times_of_day( obs_model : DataFrame,
     #- Step5:
     #  - high/low differentiated selected hours
     hrs,hre = hours_high
-    dfx_hi = dfx_hi.between_time(hrs,hre, inclusive='left')
+    dfx_hi = dfx_hi.between_time(hrs,hre, inclusive='both')
     hrs,hre = hours_low
-    dfx_lo = dfx_lo.between_time(hrs,hre, inclusive='left')
+    dfx_lo = dfx_lo.between_time(hrs,hre, inclusive='both')
     #
     #-- MVO-TODO::for upstream use it would be more flexible
     #             not to average (to daily) already here.
@@ -256,19 +267,24 @@ def extract_times_of_day( obs_model : DataFrame,
     #             of day) rather than from the averages over these hours.
     #- Step6:
     #  - aggregate to daily averages per station (code)
-    aggr_dict = {}
-    for _ in dfx_hi:
-        if _ in ['value', 'altitude', 'latitude', 'longitude', 'elevation','intake_height', 'filename', 'site_name']:
-            aggr_dict[_] = 'first'
-        elif _=='code':
-            pass
-        else:
-            aggr_dict[_] = 'mean'
-    dfx_hi = dfx_hi.groupby(['code',]).resample('D').agg(aggr_dict).reset_index()
-    dfx_lo = dfx_lo.groupby(['code',]).resample('D').agg(aggr_dict).reset_index()
+    if aggregate:
+        aggr_dict = {}
+        for _ in dfx_hi:
+            if _ in ['altitude', 'latitude', 'longitude', 'elevation', 'intake_height', 'filename', 'site_name']:
+                aggr_dict[_] = 'first'
+            elif _=='code':
+                pass
+            else:
+                aggr_dict[_] = 'mean'
+        dfx_hi = dfx_hi.groupby(['code',]).resample('D').agg(aggr_dict).reset_index()
+        dfx_lo = dfx_lo.groupby(['code',]).resample('D').agg(aggr_dict).reset_index()
+        logger.debug(f"...temporal aggregation done.")
+    else:
+        dfx_lo = dfx_lo.reset_index()
+        dfx_hi = dfx_hi.reset_index()
     #- Step7:
     #  - recombine both data frames
-    logger.debug(f"...temporal filtering and aggregation done.")
+    logger.debug(f"...temporal filtering done.")
     return concat([dfx_lo, dfx_hi])
 
 @debug.timer
@@ -653,7 +669,9 @@ def calc_fit_statistics2(model: xr.Dataset, obs: DataFrame) -> DataFrame:
     total_statistics = obs.groupby('site_name').mean(numeric_only=True)
     total_statistics.loc[:, 'RMSE'] = total_statistics.RMSE ** .5
     total_statistics.loc[:, 'Correlation coefficient'] = obs.groupby('site_name')[['obs', 'model']].corr().obs.values[1::2]
-    total_statistics = total_statistics.reset_index()[['site_name', 'latitude', 'longitude', 'altitude', 'elevation', 'intake_height', 'obs', 'model', 'Bias', 'RMSE', 'Correlation coefficient']]
+    totvar_list = ['site_name', 'latitude', 'longitude', 'altitude', 'elevation', 'intake_height', 'obs', 'model', 'Bias', 'RMSE', 'Correlation coefficient']
+    totvar_list = ['site_name', 'latitude', 'longitude', 'obs', 'model', 'Bias', 'RMSE', 'Correlation coefficient']
+    total_statistics = total_statistics.reset_index()[totvar_list]
     total_statistics.loc[:, 'count'] = obs.groupby('site_name').obs.count().values ** .5
 
     monthly_data = obs.groupby([obs.time.to_numpy().astype('datetime64[M]'), 'site_name'])
@@ -662,7 +680,9 @@ def calc_fit_statistics2(model: xr.Dataset, obs: DataFrame) -> DataFrame:
     monthly_statistics.loc[:, 'Correlation coefficient'] = monthly_data[['obs', 'model']].corr().obs.values[1::2]
     monthly_statistics.index.rename('Month', level=0, inplace=True)
     monthly_statistics.loc[:, 'count'] = obs.groupby([obs.time.to_numpy().astype('datetime64[M]'), 'site_name']).obs.count() ** .5
-    monthly_statistics = monthly_statistics.reset_index()[['Month', 'site_name', 'latitude', 'longitude', 'altitude', 'elevation', 'intake_height', 'obs', 'model', 'Bias', 'RMSE', 'Correlation coefficient', 'count']]
+    monvar_list = ['Month', 'site_name', 'latitude', 'longitude', 'altitude', 'elevation', 'intake_height', 'obs', 'model', 'Bias', 'RMSE', 'Correlation coefficient', 'count']
+    monvar_list = ['Month', 'site_name', 'latitude', 'longitude', 'obs', 'model', 'Bias', 'RMSE', 'Correlation coefficient', 'count']
+    monthly_statistics = monthly_statistics.reset_index()[monvar_list]
 
     return concat([monthly_statistics, total_statistics]).rename(columns={'obs': 'Observations', 'model':'Model'})
 
@@ -821,10 +841,14 @@ class StationExplorer(pn.viewable.Viewer):
         #   dedicated periods of time-of-day.
         #
         if self.use_hours_of_day:
+            hours_high = self.hours_of_day['high']
+            hours_low = self.hours_of_day['low']
             self.obs_model_cmp = \
-                extract_times_of_day(self.model, high_altitude=self.high_altitude,
-                                     hours_high=self.hours_of_day['high'],
-                                     hours_low=self.hours_of_day['low'])
+                extract_timeperiod_during_day(self.model,
+                                              high_altitude=self.high_altitude,
+                                              hours_high=hours_high,
+                                              hours_low=hours_low,
+                                              aggregate=True)
 
     @pn.depends('experiments', watch=True)
     def load_experiments(self):
@@ -872,10 +896,14 @@ class StationExplorer(pn.viewable.Viewer):
         #--
         #
         if self.use_hours_of_day:
+            hours_high = self.hours_of_day['high']
+            hours_low  = =self.hours_of_day['low']
             self.obs_model_cmp = \
-                extract_times_of_day(self.model, high_altitude=self.high_altitude,
-                                     hours_high=self.hours_of_day['high'],
-                                     hours_low=self.hours_of_day['low'])
+                extract_timeperiod_during_day(self.model,
+                                              high_altitude=self.high_altitude,
+                                              hours_high=hours_high,
+                                              hours_low=hours_low,
+                                              aggregate=True)
 
     @pn.depends('station', 'experiments')
     def plot_timeseries(self):
@@ -961,6 +989,20 @@ class StatisticsViewer(pn.viewable.Viewer):
 
         # Set default values:
         self.experiment = self.param.experiment.objects[0]
+
+        #
+        #-- dedicated comparison of simulated vs observed concentrations
+        #   (1) for high altitude stations using averaged concentration
+        #       of midnight data (midnight to 4am local solar time)
+        #   (2) for lower altitude stations the averaged concentrations
+        #       in the afternoon (12am to 4pm) are taken
+        #
+        self.obs_model_cmp = None
+        self.high_altitude = 1000. #
+        self.hours_of_day = {'high':['00:00','04:00'],
+                             'low':['12:00','16:00'] }
+        self.use_hours_of_day = self.settings.get('use_hours_of_day',False)
+
 
     @debug.timer
     def __panel__(self):
