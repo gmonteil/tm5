@@ -897,7 +897,7 @@ class StationExplorer(pn.viewable.Viewer):
         #
         if self.use_hours_of_day:
             hours_high = self.hours_of_day['high']
-            hours_low  = =self.hours_of_day['low']
+            hours_low  = self.hours_of_day['low']
             self.obs_model_cmp = \
                 extract_timeperiod_during_day(self.model,
                                               high_altitude=self.high_altitude,
@@ -1034,6 +1034,7 @@ class StatisticsViewer(pn.viewable.Viewer):
     @debug.timer
     def load_experiments(self):
         self.model = load_experiments(self.data, self.settings, self.param.experiment.objects)
+        # self.model.to_csv(f"statistics-viewer_model.csv", sep=';')
 
     @pn.depends('statistics_type', 'experiment')
     def plot_stat_maps(self):
