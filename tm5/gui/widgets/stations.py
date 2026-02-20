@@ -5,6 +5,7 @@ from pandas import DataFrame, Timestamp, concat, Grouper, merge
 from pathlib import Path
 import xarray as xr
 from netCDF4 import Dataset
+import numpy as np
 from numpy import zeros, corrcoef, where
 import panel as pn
 import param
@@ -46,6 +47,30 @@ def md5(fname: str, chunk_size: int=1024 * 1024):
         for chunk in iter(lambda: f.read(chunk_size), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def utc_to_lst( time_utc : np.ndarray | np.datetime64, longitude : np.ndarray | float ):
+    """conversion of UTC time to local solar time (LST),
+    longitude coordinate may be provided as
+    scalar (equally applied for all time points)
+    array  (individual longitude for each time point)
+    """
+    #-- ensure same length (if both are arrays)
+    if hasattr(time_utc, "__len__") and hasattr(longitude, "__len"):
+        assert len(time_utc)==len(longitude)
+        
+    #-- UTC/LST time difference (15 degrees equals 1 hour)
+    if hasattr(longitude, "__len__"):
+        td = np.asarray(longitude/15. * 3600, dtype='i4') # [s]
+        #-- as timedelta64
+        td = np.array(td, dtype='timedelta64[s]')
+    else:
+        td = int(longitude/15. * 3600) # [s]
+        td = np.timedelta64(td, 's')
+    #--
+    time_LST = time_utc + td
+
+    return time_LST
 
 
 #@debug.timer
@@ -104,12 +129,28 @@ def load_experiment(conf, expname, outmode : str = 'dataframe') -> DataFrame | x
         out['altitude']  = (('site',), sitealt)
 
         mix = zeros((len(sites), len(times), len(tracers)))
+        #
+        #-- add local solar time (differntiated by station)
+        #
+        times_LST = np.empty((len(sites), len(times)), dtype='datetime64[s]')
+        times_utc = np.array(times).astype('datetime64[s]')
         for isite, site in enumerate(ds.groups):
             mix[isite, :, :] = ds[site]['mixing_ratio'][:].transpose()
+            _lon = float(sitelon[isite])
+            # logger.debug(f"@isite={isite} (site={site}, {sites[isite]} lon={_lon})...")
+            times_LST[isite,:] = utc_to_lst(times_utc, _lon)
+            # logger.debug(f"UTC first/last = {times_utc[0]}/{times_utc[-1]}, " \
+            #              f"LST first/last = {times_LST[isite,0]}/{times_LST[isite,-1]}")
+        
     #
     #-- additional data variables
     #
     out['mixing_ratio'] = (('site', 'time', 'tracer'), mix)
+    #-- pass LST with conversion to datetime64[ns] (nano seconds)
+    #   to avoid warning raised by xarray
+    #   (which is not severe but should better not pop-up in the GUI)
+    #
+    out['LST']          = (('site', 'time'), np.asarray(times_LST, dtype='datetime64[ns]'))
     out['sampling_height'] = (('site'), [int(_.split('_')[1]) for _ in out.site.values])
     out['sitecode'] = (('site'), [_.split('_')[0] for _ in out.site.values])
     
@@ -172,14 +213,7 @@ def load_observations_data(fname: Path) -> DataFrame:
     #
     #-- add LOCAL solar time
     #
-    #- Step1:
-    #  - difference between UTC (as in obs/simulations) and LST [s]
-    td = df.loc[:,'longitude'].values/15. * 3600
-    #  - convert to timedelta64
-    td = np.array( td.astype('i4'), dtype='timedelta64[s]' )
-    #- Step2:
-    #  - add LST (at station)
-    df.loc[:,'LST'] = df.loc[:,'time'] + td
+    df.loc[:,'LST'] = utc_to_lst(df.loc[:,'time'].values, df.loc[:,'longitude'].values)
 
     return df
 
@@ -244,14 +278,9 @@ def extract_timeperiod_during_day( obs_model : DataFrame,
     #-- MVO::LST should now have been set already
     #        (see load_observations)
     if not 'LST' in dfx.columns:
-        #- Step1:
-        #  - difference between UTC (as in obs/simulations) and LST [s]
-        td = dfx.loc[:,'longitude'].values/15. * 3600
-        #  - convert to timedelta64
-        td = np.array( td.astype('i4'), dtype='timedelta64[s]' )
-        #- Step2:
-        #  - add local solar time
-        dfx.loc[:,'LST'] = dfx.loc[:,'time'] + td
+        utc_values = dfx.loc[:,'time'].values
+        lon_values = dfx.loc[:,'longitude'].values
+        dfx.loc[:,'LST'] = utc_to_lst(utc_values, lon_values)
     
     #- Step3:
     #  - make LST index
