@@ -1,11 +1,6 @@
 # Tasks (by order of priority)
-
 - GUI (setup)
-    - [ ] (1) MV to get right of the dark background on first screenshot (and potentially larger font size) 
-    - [ ] (2) MV add some short description of the experiments, More text around plots to explain what we see, e.g. time series show hourly values but fit statistics are based on daily averages (as a preparation for the selection of averges over specific periods of the day)
-    - [ ] (3) MV implement only configuration with 3 level zoom "avengers-1", i.e global/Europe/NL+D+CH
-    - [ ] (4) MV new tracer default to CAMS OH
-    - [ ] (5) MV to check why setup of experiment does not work as expected
+    - [ ] 
 - GUI (analysis)
     - [ ] (7) GM: check domain size on plot after change of region
     - [ ] (6) GM+MV: extract TM5 output and obspack for selected stations averaged over a pre-specified period of the day (as in inversions), e.g. above 1000 m height take nighttime data (midnight to 4am local solar time) and below afternoon date (from 12 to 4 local solar time) (there is a flag in obspack for filtering, but don't take it as an absolute reference, just for a sanity check) at highest level
@@ -21,7 +16,7 @@
     - [ ] think about permission for co-working on same code base
 - TM5 speedup
     - [ ] GM: speedup reading emissions
-    - [ ] GM: 7200 seconds for 7 tracer run was much longer than for the single-tracer run (~4800 seconds)
+    - [ ] GM: 7200 seconds for 7 tracer run was much longer than for the single-tracer run (~4800 seconds) -> probably irrelevant of we use the Jacobian for the forward simulation 
 - TM5 analyses, open questions regarding our initial TM5 runs with prior emission fields: to be addressed with long run on COSMOS:
     - [ ] implement and test reading of the CAMS reanalysis OH field (to be used for the troposhere, for the stratosphere we'll rather use Bruehl et al.), this should be the default, Spivakovsky is kept-
     - [ ] (10) MV: check how Vaganovo looks now in global 1 by 1 run (launch on COSMOS), not too urgent
@@ -31,11 +26,11 @@
     - [ ] properly setup github pages with mkdocs
 - Inversion
     - [ ] TXK: implement dummy inversion based on Jacobians to test computational performance
-    - [ ] TXK: to specify how the footprints wil be used in the inverse model (dc/df, no emission caterogies).
+    - [ ] TXK: to specify how the footprints wil be used in the inverse model (dc/df, no emission caterogies) and how to produce the elements of the Jacobian.
     - [ ] TXK/MV: draft a kind of tutorial guiding the user through one of the experiments
     - [ ] (2a) GM: check units of footprint: (On the setup of footprint calculations within the zoom domain: we do those for multi-hour averages, e.g. over the afternoon. This will result in one footprint per day.)
     - [ ] (2b) MV to further test footprint calculation
-    - [ ] GM: make sure that adjoint file is returned in the right place
+    - [ ] MV to check whether this is done already: make sure that adjoint file is returned in the right place
   
           
 # Task ideas / discussion
