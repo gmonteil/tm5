@@ -30,7 +30,7 @@
     - [ ] TXK/MV: draft a kind of tutorial guiding the user through one of the experiments
     - [ ] (2a) GM: check units of footprint: (On the setup of footprint calculations within the zoom domain: we do those for multi-hour averages, e.g. over the afternoon. This will result in one footprint per day.)
     - [ ] (2b) MV to further test footprint calculation
-    - [ ] MV to check whether this is done already: make sure that adjoint file is returned in the right place
+    - [x ] make sure that adjoint file is returned in the right place (write_adj_emis will write to Path(tm.dconf.run.paths.output) / 'adjemis' )
   
           
 # Task ideas / discussion
