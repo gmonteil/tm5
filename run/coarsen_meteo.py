@@ -10,6 +10,7 @@ from pathlib import Path
 import tm5
 from tm5.system import runcmd
 from argparse import ArgumentParser
+from loguru import logger
 import sys
 
 def get_hostname():
@@ -25,6 +26,8 @@ parser.add_argument('--trange',
                     metavar=('tstart','tend'),
                     nargs=2,
                     help="""whether to override simulation start/end time specified in the yaml file (strings must be parseable as pandas Timestamp).""")
+parser.add_argument('--meteo_outdir',
+                    help="""top-level destination directory for coarsened meteorology files (to override settings provided in yaml file)""")
 args = parser.parse_args(sys.argv[1:])
 
 # keys = sorted(os.environ.keys())
@@ -38,6 +41,7 @@ if not yaml_file.exists():
 # 0. Read yaml file
 dconf = OmegaConf.load(str(yaml_file))
 
+
 #
 #-- potential partial override (or extend) configuration
 #
@@ -45,6 +49,17 @@ if args.trange!=None:
     tstart, tend = args.trange
     dconf.run['start'] = tstart
     dconf.run['end']   = tend
+
+if args.meteo_outdir!=None:
+    _oldout = dconf.run.paths.meteo_out
+    dconf.run.paths['meteo_out'] = args.meteo_outdir
+    msg = f"overriding output destination to -->{args.meteo_outdir}<-- " \
+        f"(in yaml file -->{_oldout}<--"
+    logger.info(msg)
+
+# OmegaConf.save(config=dconf, f='xxx.yml')
+# sys.exit(0)
+
 
 # 1. Build the model
 tm = tm5.TM5(dconf, host=args.host)
