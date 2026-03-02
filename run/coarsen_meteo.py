@@ -35,11 +35,19 @@ if not yaml_file.exists():
     msg = f"provided yaml file ***{str(yaml_file)}*** not accessible!"
     raise RuntimeError(msg)
 
-platform = get_hostname()
+# 0. Read yaml file
+dconf = OmegaConf.load(str(yaml_file))
+
+#
+#-- potential partial override (or extend) configuration
+#
+if args.trange!=None:
+    tstart, tend = args.trange
+    dconf.run['start'] = tstart
+    dconf.run['end']   = tend
 
 # 1. Build the model
-tm = tm5.TM5(str(yaml_file), host=args.host,
-             platform=platform, override_trange=args.trange)
+tm = tm5.TM5(dconf, host=args.host)
 
 if args.build :
     tm.build()
