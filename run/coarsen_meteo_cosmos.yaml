@@ -1,0 +1,159 @@
+cosmos_apptainer:
+  container : /home/gmonteil/tm5-intel-ubuntu20.simg
+  makedepf90 : apptainer run -B /lunarc ${.container} makedepf90
+  build_cmd : apptainer run -B /lunarc ${.container} make -C ${build.directory} tm5.x
+  run_cmd : apptainer run -B /lunarc -B /home ${.container} ${run.paths.output}/tm5.x
+  makefile : Makefile.singularity.ifort
+  paths :
+    expdir :  ${run.paths.tgtdir}/coarsen-meteo-${meteo.levels}-${run.region_tag}
+    output : ${.expdir}/output_${run.start}--${run.end}
+    build : ${.expdir}/build
+    meteo : /lunarc/nobackup/projects/ghg_inv/michael/TM5/input/meteo
+    meteo_out : ${run.paths.meteo_out}
+    udunits : /opt/etc/udunits.dat  # included in the container!
+    diffusion : ${.expdir}/diffusion
+    emissions : ${.expdir}/emissions
+    emissions_archive : /home/gmonteil/data/TM5/emissions/CH4/
+    chemistry :
+      ch4_spivakovksy : /home/gmonteil/data/TM5/OH_troposphere-Spivakovsky-2000-ml60-glb100x100.v2.nc
+      ch4_cams : /lunarc/nobackup/projects/ghg_inv/guillaume/TM5/CAMS/OH/oh_cams
+    initial_condition: 
+      CH4: /lunarc/nobackup/projects/ghg_inv/michael/CAMS/ch4
+
+run :
+  platform : unknown #should be set automatically at run-time
+  #-- start/end time (currently need to be set here)
+  start : 2022-01-01
+  end : 2022-01-03
+  paths :
+    tgtdir : /lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir/test-coarsen-meteo-new
+    output : ${host.paths.output}
+    meteo : ${host.paths.meteo}
+    meteo_out : ${.tgtdir}/meteo_coarsened
+    cf_table : ../data/cf-standard-name-table.xml
+    udunits : ${host.paths.udunits}
+    diffusion : ${host.paths.diffusion}/${run.levels}
+    emissions : ${host.paths.emissions}
+  meteo :
+    coarsened : no
+    write : yes  #purpose is exactly to create the coarsened meteo files
+  regions : ${zoom_configuration.${.zoom}}
+  run_cmd : ${host.run_cmd}
+  tracers : [CH4]
+  region_tag : avengers-1
+  zoom : avengers-1
+  levels : tropo34
+
+zoom_configuration: 
+  glb100x100: [glb100x100]
+  glb300x200: [glb300x200]
+  glb600x400: [glb600x400]
+  eur300x200: [glb600x400, eur300x200]
+  avengers-1: [glb600x400, eur300x200, gns100x100]
+
+species :
+  ch4 :
+    species : CH4
+    reactions:
+      oh :
+        file : ${host.paths.chemistry.ch4_cams}
+        version : cams
+        rate : [2.45e-12, -1775]
+        domain : tropo
+        scaling_factor : 1.
+#      ohstrat :
+#        file : /path/to/ohstrat
+#        rate : ${..oh.rate}
+#        domain : strato
+#      cl :
+#        file : /path/to/clfile
+#        rate : [7.3e-12, -1280]
+#        domain : strato
+    flux_unit : TgCH4
+    mix_unit : ppb
+    chemistry : yes
+    emissions : ${emissions.CH4}
+
+tracers :
+  CH4 : ${species.ch4}
+
+#
+#-- emissions will not be used,
+#   but some keys seem to be required when running TM5
+#
+emissions:
+  CH4:
+    prefix : ${run.paths.emissions}/ch4emis
+    categories :
+      wetlands :
+        path : /lunarc/nobackup/projects/ghg_inv/michael/TM5/input/ch4/emissions/cal_lpj_ch4_wetland_forTM5_2021.nc
+        field : ch4_wetland
+        regions : ${run.regions}
+      fossil :
+        path : /lunarc/nobackup/projects/ghg_inv/michael/TM5/input/ch4/emissions/fossil/EDGARv8.0_CH4-TOTALS_daily_2021.nc
+        field : fossil
+        regions : ${run.regions}
+
+
+meteo :
+  levels : ${run.levels}
+  path : ${host.paths.meteo}
+  archive : swestore:TM5/meteo/
+  coarsened : ${run.meteo.coarsened}
+  output    : ${run.meteo.write}
+  regions : ${run.regions}
+  output_path : ${host.paths.meteo_out}
+
+
+build :
+  directory : ${host.paths.build}
+  paths :
+    src :
+      - ../src/base
+      - ../src/proj/macros/tmm_tm5
+      - ../src/proj/levels/ml137
+      - ../src/proj/levels/ml137/${run.levels}a
+      - ../src/proj/linalg/mkl
+      - ../src/proj/openmp_speedups
+      - ../src/proj/era5_met
+      - ../src/proj/output
+      - ../src/proj/regions/fit-ic
+      - ../src/dev
+      - ../src/emissions  # attempt to replace the pyshell emissions by a simpler implementation, without daily cycles
+      - ../src/chemistry  # attempt at a tracer-agnostic chemistry module
+    remove__ : True
+  macros : 
+    mdf.inc : [with_go, with_netcdf4]
+    tm5.inc : [slopes, without_wet_deposition, without_dry_deposition, without_photolysis, without_chemistry]
+    #tm5.inc : [slopes, without_wet_deposition, without_dry_deposition, without_photolysis, without_chemistry]
+  makefile : ${host.makefile}
+  makedepf90 : ${host.makedepf90}
+  build_cmd: ${host.build_cmd}
+
+
+regions :
+  glb100x100 :
+    name : glb100x100
+    lons : [-180, 180, 1]
+    lats : [-90, 90, 1]
+    levels : tropo34
+
+  glb600x400 :
+    name : glb600x400
+    lons : [-180, 180, 6]
+    lats : [-90, 90, 4]
+    levels : ${run.levels}
+
+  eur300x200 :
+    name : eur300x200
+    levels : ${run.levels}
+    lons : [-36, 54, 3]
+    lats : [22, 74, 2]
+    parent : glb600x400
+
+  gns100x100 :
+    name : gns100x100
+    lons : [0, 18, 1]
+    lats : [42, 58, 1]
+    levels : ${run.levels}
+    parent : eur300x200
