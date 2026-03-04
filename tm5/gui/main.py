@@ -15,7 +15,13 @@ from tm5 import debug
 pn.extension()
 pn.extension('terminal')
 pn.extension('floatpanel')
-pn.extension(loading_spinner='petal', loading_color='black')
+#-- MVO::would potentially be nicer to differentiate (widget) loading
+#        indicator more individually...
+#   Reference: https://panel.holoviz.org/how_to/param/examples/loading.html
+#
+pn.extension(loading_spinner='dots', loading_color='#00aa41', template='bootstrap')
+pn.extension(loading_spinner='petal', loading_color='black', template='bootstrap')
+pn.param.ParamMethod.loading_indicator = True
 
 def fix_env() -> None:
     import sys, os
