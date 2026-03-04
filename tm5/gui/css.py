@@ -4,6 +4,9 @@
 #
 #-- https://panel.holoviz.org/how_to/styling/apply_css.html
 #
+# MVO-COMMENT:: should be better not coded in python source code,
+#               but be moved to an external <file>.css
+#
 setup_stylesheet = """
 :host {
   font-size: 1.25em;
@@ -45,3 +48,12 @@ precomp_stylesheet = """
 }
 """
 
+runsettings_style = {
+    'font-size': '1.25em',
+    'background': '#BBE5F5',
+    'border-radius': '5px',
+    'border': '1px solid black',
+    'padding': '15px',
+#    'box-shadow': '5px 5px 5px #bcbcbc',
+    'margin': "5px",
+}

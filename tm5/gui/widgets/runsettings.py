@@ -68,16 +68,16 @@ class RunSettings(pn.viewable.Viewer):
             pn.pane.Markdown('## Run settings',
                              stylesheets=[setup_stylesheet,]),
             pn.Row(
-                pn.widgets.TextInput.from_param(self.param.run_name),
+                pn.widgets.TextInput.from_param(self.param.run_name, styles=runsettings_style),
                 pn.Column(
                     pn.Row(
-                        pn.widgets.DatePicker.from_param(self.param.start),
-                        pn.widgets.DatePicker.from_param(self.param.end),
+                        pn.widgets.DatePicker.from_param(self.param.start, styles=runsettings_style),
+                        pn.widgets.DatePicker.from_param(self.param.end, styles=runsettings_style),
                     ),
-                    pn.widgets.Select.from_param(self.param.zoom_configuration),
+                    pn.widgets.Select.from_param(self.param.zoom_configuration, styles=runsettings_style),
                     # pn.widgets.MultiSelect.from_param(self.param.output_types),
                 ),
-                ),
+            ),
             pn.pane.Markdown("""
             ## Tracers:
 

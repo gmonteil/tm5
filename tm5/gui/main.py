@@ -15,7 +15,7 @@ from tm5 import debug
 pn.extension()
 pn.extension('terminal')
 pn.extension('floatpanel')
-
+pn.extension(loading_spinner='petal', loading_color='black')
 
 def fix_env() -> None:
     import sys, os
@@ -56,7 +56,9 @@ class ExperimentSetupGUI(pn.viewable.Viewer):
     def __panel__(self):
         return pn.Column(
             pn.pane.Markdown("# Setup experiment"),
-            pn.widgets.Select.from_param(self.param.rcfile),
+            # pn.widgets.Select.from_param(self.param.rcfile,
+            #                              stylesheets=[setup_stylesheet,]),
+            pn.widgets.Select.from_param(self.param.rcfile, styles=runsettings_style),
             self.settings,
             pn.layout.Divider(),
             pn.pane.Markdown("# Submit and monitor experiment"),
