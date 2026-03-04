@@ -34,50 +34,39 @@ class TracerSettings(pn.viewable.Viewer):
 
     @param.depends('add_emissions_category', watch=True)
     def add_emis(self):
-        # #
-        # #-- MVO::hack to solve case that 'host' is None
-        # #        (as it may happen, in case of missing/incomplete file
-        # #         $HOME/.config/fitic/gui.conf):
-        # #        This should allow to run 'add_emis' successfully on
-        # #        - ICOS Jupyter Hub
-        # #        - COSMOS (including one of Marko's private nodes)
-        # #
-        # def is_jupyterhub():
-        #     import os
-        #     return 'JUPYTERHUB_API_TOKEN' in os.environ
-        # def is_cosmos():
-        #     import os
-        #     hostname = os.environ['HOSTNAME']
-        #     return (hostname in ['cx02','cx03',]) or hostname.startswith('cosmos')
-        # if not host is None:
-        #     emission_path = host.emission_path
-        # elif is_jupyterhub():
-        #     emission_path = '/data/avengers/fit_ic/input/emissions'
-        # elif is_cosmos():
-        #     emission_path = '/lunarc/nobackup/projects/ghg_inv/michael/TM5/input/ch4/emissions'
-        # else:
-        #     msg = f"path for emissions could not be determined"
-        #     raise RuntimeError(msg)
         #
-        #-- emission path comes from user specific file
-        #   $HOME/.config/fitic/gui.conf
+        #-- emission path from user specific file
+        #   (which is already read in gui/__init__py,
+        #    from file $HOME/.config/fitic/gui.conf)
+        #   
         #
         if not host is None:
             emission_path = host.emission_path
         #
-        #-- emission path provided by yaml file that is passed to the GUI constructor
+        #-- emission path provided by yaml file
+        #   (that is passed to the GUI constructor)
         #
         else:
             emission_path = self.parent.gui_settings.emission_path
+        #
+        #-- minimal consistency check
+        #
         if not Path(emission_path).is_dir():
             msg = f"path for TM5 input emissions ***{str(emission_path)}*** " \
                 f"not found on system!"
             raise RuntimeError(msg)
-        self.emissions.append(EmissionSettings(
+        #
+        #-- create new emission settings instance
+        #
+        newem = EmissionSettings(
             catname=f'emissions_{len(self.emissions) + 1}',
             regions=self.regions,
             path=emission_path
-        ))
+        )
+        #
+        #-- append new emission settings widget
+        #
+        self.emissions.append(newem)
         self.emissions_widgets.append(self.emissions[-1].__panel__())
 
     @param.depends('regions', watch=True)
