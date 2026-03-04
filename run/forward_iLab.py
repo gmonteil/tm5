@@ -54,10 +54,10 @@ if args.trange!=None:
     dconf.run['end']   = tend
 if platform!=None and 'platform' in dconf.run:
         if dconf.run.platform!=platform:
-            dconf.run['platform'] = platform
-            msg = f"overriding dconf.run.platform, {self.dconf.run.platform} " \
-                f"{args.platform}"
+            msg = f"overriding dconf.run.platform, {dconf.run.platform} " \
+                f"{platform}"
             logger.info(msg)
+            dconf.run['platform'] = platform
 
 tm = tm5.TM5(dconf, host=args.host)
 
