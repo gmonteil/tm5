@@ -5,6 +5,18 @@
 import numpy as np
 import xxhash
 
+from tm5 import debug
+
+# @debug.timer
+# def md5_(fname: str) -> str:
+#     """
+#     Returns the md5sum of a file (to check if it has changed or not)
+#     """
+#     hash_md5 = hashlib.md5()
+#     with open(fname, "rb") as f:
+#         for chunk in iter(lambda: f.read(4096), b""):
+#             hash_md5.update(chunk)
+#     return hash_md5.hexdigest()
 
 def md5(fname: str, chunk_size: int=1024 * 1024):
     h = xxhash.xxh32()

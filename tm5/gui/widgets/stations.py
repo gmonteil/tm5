@@ -26,19 +26,6 @@ from tm5.util import md5, utc_to_lst
 from tm5.gui.css import *
 
 
-# ----- utilities -----
-
-
-# @debug.timer
-# def md5_(fname: str) -> str:
-#     """
-#     Returns the md5sum of a file (to check if it has changed or not)
-#     """
-#     hash_md5 = hashlib.md5()
-#     with open(fname, "rb") as f:
-#         for chunk in iter(lambda: f.read(4096), b""):
-#             hash_md5.update(chunk)
-#     return hash_md5.hexdigest()
 
 #@debug.timer
 def load_experiment(conf, expname, outmode : str = 'dataframe') -> DataFrame | xr.Dataset:
