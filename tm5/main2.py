@@ -379,7 +379,13 @@ class TM5:
         self.settings['output.point.sample.parent'] = self.dconf.output.point.get('sample_parent', 'F')
         self.settings['output.point.errors'] = self.dconf.output.point.get('errors', '1')
         self.settings['output.point.interpolation'] = {'linear': 3, 'gridbox': 1, 'slopes': 2}[self.dconf.output.point.interpolation]
-        self.settings['output.point.timewindow'] = int(Timedelta(self.dconf.output.point.assim_window).total_seconds() / 3600)
+        #-- MVO::recent yaml files used for TM5/FIT-IC forward simulations
+        #        did not yet have key 'output.point.assim_window'
+        #        Since it was/is not required in standard forward simulations (I guess)
+        #        is is assigned a default value of 1h
+        #        (equal to value in run/adjoint_20251030_gnx1x1.yaml)
+        assim_window = self.dconf.output.point.get('assim_window','1h')
+        self.settings['output.point.timewindow'] = int(Timedelta(assim_window).total_seconds() / 3600)
         self.settings['output.point.verbose'] = self.dconf.output.point.get('verbose', False)
         
     def setup_output_stations(self):
