@@ -28,6 +28,8 @@ parser.add_argument('--trange',
                     metavar=('tstart','tend'),
                     nargs=2,
                     help="""whether to override simulation start/end time specified in the yaml file (strings must be parseable as pandas Timestamp).""")
+parser.add_argument('--expdir',
+                    help="""over-ride top-level experiment (output) directory as defined in configuration file.""")
 parser.add_argument('config_file')
 args = parser.parse_args(sys.argv[1:])
 
@@ -45,6 +47,9 @@ platform = get_hostname()
 # 1. Build the model
 #=====================================================
 dconf = OmegaConf.load(str(yaml_file))
+if not args.host in dconf.keys():
+    msg = f"selected machine -->{args.host}<-- not found in configuration file."
+    raise RuntimeError(msg)
 #
 #-- potential partial override (or extend) configuration
 #
@@ -52,6 +57,12 @@ if args.trange!=None:
     tstart, tend = args.trange
     dconf.run['start'] = tstart
     dconf.run['end']   = tend
+if args.expdir!=None: #-- note, expdir is currently set in selected machine/host
+    expdir_sav = dconf[args.host].paths.expdir
+    msg = f"setting experiment directory -->{args.expdir}<-- " \
+        f"(overriding configuration file ==>{expdir_sav}<=="
+    logger.info(msg)
+    dconf[args.host].paths.expdir = args.expdir
 if platform!=None and 'platform' in dconf.run:
         if dconf.run.platform!=platform:
             msg = f"overriding dconf.run.platform, {dconf.run.platform} " \
