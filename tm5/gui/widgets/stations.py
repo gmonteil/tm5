@@ -492,13 +492,14 @@ def plot_table_statistics_v3(obs_model: DataFrame, station: str, experiments: Li
 
 
 @debug.timer
-def plot_stat_maps(model: DataFrame, experiment: str, statistics_type: str):
+def plot_stat_maps(model: DataFrame, experiment: str, statistics_type: str, title : str = None):
     #
     #-- make sure only statistics based on total time-series is shown
     #   (see routine calc_fit_statistics2)
     #
     df = model[model.Month.isna() & (model.experiment == experiment)]
-    title = f"{statistics_type} ({experiment}, based on overall time-series)"
+    if title is None:
+        title = f"{statistics_type} ({experiment}, based on overall time-series)"
     return df.hvplot.points(
         x='longitude', y='latitude', c=statistics_type, s='count', geo=True, title=title,
         hover_cols=['site_name', 'Bias', 'RMSE', 'Correlation coefficient'],
@@ -506,13 +507,14 @@ def plot_stat_maps(model: DataFrame, experiment: str, statistics_type: str):
 
 
 @debug.timer
-def plot_stats_table(model: DataFrame, statistics_type: str, experiment_list: List[str], highlighted_experiment: str):
+def plot_stats_table(model: DataFrame, statistics_type: str, experiment_list: List[str], highlighted_experiment: str, title : str = None):
     #
     #-- make sure only statistics based on total time-series is shown
     #   (see routine calc_fit_statistics2)
     #
     df = model[model.Month.isna()]  # & (self.model.experiment == self.experiment)]
-    title = f"{statistics_type} (based on overall time-series)"
+    if title is None:
+        title = f"{statistics_type} (based on overall time-series)"
     fig = df[df.experiment == highlighted_experiment].sort_values(statistics_type).hvplot.scatter(
         x='site_name',
         s='count',
@@ -662,8 +664,41 @@ def interp_model(model: xr.Dataset, obs: DataFrame, column : str = 'model') -> D
     return obs
 
 #@debug.timer
-def calc_fit_statistics2(model: xr.Dataset, obs: DataFrame) -> DataFrame:
+def calc_fit_statistics2(model: xr.Dataset, obs: DataFrame, conf: DictConfig = None) -> DataFrame:
+    """Computation of fit-statistics differentiated by station
+    for one single experiment and for the whole simulation period.
+
+    Simulation time-points are interpolated to those of the observations,
+    depending on the settings provided either
+    - all concentrations in the simulation period
+    - only concentrations at certain periods of day
+      (night-time for high altitude sites, afternoon for lower altitude)
+    will enter the fit statistics.
+    """
+    #
+    #-- interpolate model to observation time points
+    #
     obs = interp_model(model, obs)
+    #
+    #-- potential selection of daily time period for comparision
+    #   (station dependent)
+    #
+    if not conf is None and conf.selected_hours:
+        alt_hi   = conf.high_altitude
+        hours_hi = conf.hours_high_alt
+        hours_lo = conf.hours_low_alt
+        # msg = f"...starting temporal extraction for comparison"
+        # logger.debug(msg)
+        obs = extract_timeperiod_during_day(obs,
+                                            high_altitude = alt_hi,
+                                            hours_high = hours_hi,
+                                            hours_low = hours_lo,
+                                            aggregate = False)
+        # msg = f"......temporal restriction done."
+        # logger.debug(msg)
+    #
+    #--
+    #
     obs.loc[:, 'Bias'] = obs.model - obs.obs
     obs.loc[:, 'RMSE'] = obs.Bias ** 2
     # obs.loc[:, 'chi2'] = obs.rmse / (obs.err ** 2)
@@ -671,8 +706,10 @@ def calc_fit_statistics2(model: xr.Dataset, obs: DataFrame) -> DataFrame:
     total_statistics = obs.groupby('site_name').mean(numeric_only=True)
     total_statistics.loc[:, 'RMSE'] = total_statistics.RMSE ** .5
     total_statistics.loc[:, 'Correlation coefficient'] = obs.groupby('site_name')[['obs', 'model']].corr().obs.values[1::2]
-    totvar_list = ['site_name', 'latitude', 'longitude', 'altitude', 'elevation', 'intake_height', 'obs', 'model', 'Bias', 'RMSE', 'Correlation coefficient']
-    totvar_list = ['site_name', 'latitude', 'longitude', 'obs', 'model', 'Bias', 'RMSE', 'Correlation coefficient']
+    totvar_list = ['site_name', 'latitude', 'longitude', 'altitude', 'elevation', 'intake_height', 'obs', 'model',]
+    #-- MVO::probably no need to keep elevation/intake_height
+    totvar_list = ['site_name', 'latitude', 'longitude', 'altitude', 'obs', 'model',]
+    totvar_list += [ 'Bias', 'RMSE', 'Correlation coefficient', ]
     total_statistics = total_statistics.reset_index()[totvar_list]
     total_statistics.loc[:, 'count'] = obs.groupby('site_name').obs.count().values ** .5
 
@@ -692,11 +729,15 @@ def calc_fit_statistics2(model: xr.Dataset, obs: DataFrame) -> DataFrame:
 #@debug.timer
 def calc_statistics2(exp: str, obs: DataFrame, conf: DictConfig) -> DataFrame:
     model = load_experiment(conf, exp, outmode='xarray')
-    stats = calc_fit_statistics2(model, obs)
+    if 'statistics' in conf:
+        stats_conf = conf.statistics
+    else:
+        stats_conf = None
+    stats = calc_fit_statistics2(model, obs, conf=stats_conf)
     stats.loc[:, 'experiment'] = exp
     return stats
 
-    
+
 def load_experiments(observations: DataFrame, settings: DictConfig, experiments: List[str]) -> DataFrame:
     fn = partial(calc_statistics2, obs=observations, conf=settings)
 
@@ -714,8 +755,8 @@ class StationExplorer(pn.viewable.Viewer):
     experiments = param.ListSelector()
     data = param.DataFrame()
     #-- MVO:model will/may represent combined dataframe
-    #       containing observations *and* model simulations
-    #       Thus naming 'model' is bit misleading...
+    #       containing observations *and* model simulations,
+    #       thus the naming 'model' might be misleading...
     model = param.DataFrame()
     sites = param.DataFrame()
 
@@ -724,18 +765,16 @@ class StationExplorer(pn.viewable.Viewer):
         super().__init__()
         self.settings = settings
         # Loading mode for experiments
-        # - v3:              use new experiment handling
-        # - any other value (e.g. v0): stick with previous implementation
+        # - v3: use new/updated experiment handling (more efficient)
+        # - any other value (e.g. v0): fall-back to original implementation
+        #                              (which performed a bit slow on ICOS)
         # NOTE:
         # - once thoroughly tested we would stick with implementation
         #   of 'v3' and eventually drop this switch!
         # - there is currently one drawback left with 'v3',
         #   which is that the simulated time-series are only shown
         #   for the time-points interpolated to the observation times...
-        self.expmode = 'v0'
-        self.expmode = 'v3'
-        if 'expmode' in self.settings:
-            self.expmode = self.settings.expmode
+        self.expmode = self.settings.get('expmode', 'v3')
         #
         #-- dedicated comparison of simulated vs observed concentrations
         #   (1) for high altitude stations using averaged concentration
@@ -744,10 +783,9 @@ class StationExplorer(pn.viewable.Viewer):
         #       in the afternoon (12am to 4pm) are taken
         #
         self.obs_model_cmp = None
-        self.high_altitude = 1000. #
-        self.hours_of_day = {'high':['00:00','04:00'],
-                             'low':['12:00','16:00'] }
-        self.use_hours_of_day = self.settings.get('use_hours_of_day',False)
+        self.selected_hours = 'statistics' in self.settings \
+            and self.settings.statistics.selected_hours
+
         # Initialize widgets
         self.param.experiments.objects = list(self.settings.experiments.list)
 
@@ -789,22 +827,18 @@ class StationExplorer(pn.viewable.Viewer):
         site_start = self.settings.station_first if 'station_first' in self.settings else 'Cabauw'
         return site_start
 
-    def _station_is_high(self):
-        if self.data is None:
-            return False
-        if self.station is None:
-            return False
-        cnd_station = (self.data.site_name==self.station)
-        # logger.info(f"self.data columns ==>{self.data.columns}<==")
-        df = self.data.loc[cnd_station,['altitude']]
-        return np.all(df.loc[:,'altitude']>=self.high_altitude)
-
     def _station_hours_of_day(self):
-        is_high = self._station_is_high()
-        if is_high:
-            return self.hours_of_day['high']
-        else:
-            return self.hours_of_day['low']
+        assert self.selected_hours
+        high_altitude = self.settings.statistics.high_altitude
+        hours_high_alt = self.settings.statistics.hours_high_alt
+        hours_low_alt = self.settings.statistics.hours_low_alt
+        #-- get altitude of current station
+        cnd_station = (self.data.site_name==self.station)
+        df = self.data.loc[cnd_station,['altitude']]
+        #-- above threshold ?
+        is_high = np.all(df.loc[:,'altitude']>=high_altitude)
+
+        return ( hours_high_alt if is_high else hours_low_alt )
 
     @debug.timer
     def load_observations(self):
@@ -842,12 +876,13 @@ class StationExplorer(pn.viewable.Viewer):
         #-- build DataFrame with averaged concentrations over
         #   dedicated periods of time-of-day.
         #
-        if self.use_hours_of_day:
-            hours_high = self.hours_of_day['high']
-            hours_low = self.hours_of_day['low']
+        if self.selected_hours:
+            high_altitude = self.settings.statistics.high_altitude
+            hours_high = self.settings.statistics.hours_high_alt
+            hours_low = self.settings.statistics.hours_low_alt
             self.obs_model_cmp = \
                 extract_timeperiod_during_day(self.model,
-                                              high_altitude=self.high_altitude,
+                                              high_altitude=high_altitude,
                                               hours_high=hours_high,
                                               hours_low=hours_low,
                                               aggregate=True)
@@ -897,12 +932,13 @@ class StationExplorer(pn.viewable.Viewer):
         #
         #--
         #
-        if self.use_hours_of_day:
-            hours_high = self.hours_of_day['high']
-            hours_low  = self.hours_of_day['low']
+        if self.selected_hours:
+            high_altitude = self.settings.statistics.high_altitude
+            hours_high = self.settings.statistics.hours_high_alt
+            hours_low  = self.settings.statistics.hours_low_alt
             self.obs_model_cmp = \
                 extract_timeperiod_during_day(self.model,
-                                              high_altitude=self.high_altitude,
+                                              high_altitude=high_altitude,
                                               hours_high=hours_high,
                                               hours_low=hours_low,
                                               aggregate=True)
@@ -912,16 +948,20 @@ class StationExplorer(pn.viewable.Viewer):
         if self.expmode=='v3':
             if self.obs_model_cmp is None:
                 title = "hourly observed and simulated concentrations"
-                all_plots = plot_stations_v3(self.model, self.station, self.experiments, title=title)
-            else:
+                ts_plots = plot_stations_v3(self.model, self.station, self.experiments, title=title)
+            else:#-- comparison based on selected hours only
                 hr1,hr2 = self._station_hours_of_day()
                 avg_tag = f"(averaged from {hr1} - {hr2} LST)"
-                title = f"observed and simulated concentrations {avg_tag}"
-                all_plots = plot_stations_v3(self.obs_model_cmp, self.station, self.experiments, title=title)
+                avg_tag = f"({hr1} - {hr2} LST averages)"
+                if self.experiments is None or len(self.experiments)==0:
+                     title = f"observed concentrations {avg_tag}"
+                else:
+                    title = f"observed and simulated concentrations {avg_tag}"
+                ts_plots = plot_stations_v3(self.obs_model_cmp, self.station, self.experiments, title=title)
         else:
             title = "hourly observed and simulated concentrations"
-            all_plots = plot_stations(self.model, self.data, self.station, self.experiments, title=title)
-        return all_plots
+            ts_plots = plot_stations(self.model, self.data, self.station, self.experiments, title=title)
+        return ts_plots
 
     @pn.depends('station', 'experiments')
     def plot_weekly_bias(self):
@@ -931,7 +971,7 @@ class StationExplorer(pn.viewable.Viewer):
                dfvisu = plot_weekly_bias_v3(self.model, self.station, self.experiments, title=title)
             else:
                 hr1,hr2 = self._station_hours_of_day()
-                avg_tag = f"(concentrations taken from {hr1} - {hr2} LST)"
+                avg_tag = f"(concentration values taken from {hr1} - {hr2} LST)"
                 title = f"Weekly averaged bias {avg_tag}"
                 dfvisu = plot_weekly_bias_v3(self.obs_model_cmp, self.station, self.experiments, title=title)
             return dfvisu
@@ -950,7 +990,7 @@ class StationExplorer(pn.viewable.Viewer):
                 return plot_histogram_of_fit_residuals_v3(self.model, self.station, self.experiments, title=title)
             else:
                 hr1,hr2 = self._station_hours_of_day()
-                avg_tag = f"(concentration taken from {hr1} - {hr2} LST)"
+                avg_tag = f"(concentration values taken from {hr1} - {hr2} LST)"
                 title = f"Histogramm of biases {avg_tag}"
                 return plot_histogram_of_fit_residuals_v3(self.obs_model_cmp, self.station, self.experiments, title=title)
         else:
@@ -965,8 +1005,6 @@ class StationExplorer(pn.viewable.Viewer):
                 return plot_table_statistics_v3(self.obs_model_cmp, self.station, self.experiments)
         else:
             return plot_table_statistics(self.data, self.model, self.station, self.experiments)
-        
-
 
 class StatisticsViewer(pn.viewable.Viewer):
 
@@ -980,6 +1018,15 @@ class StatisticsViewer(pn.viewable.Viewer):
         super().__init__()
         self.settings = settings
 
+        #-- dedicated comparison of simulated vs observed concentrations
+        #   (1) for high altitude stations should use averaged concentration
+        #       of midnight data (midnight to 4am local solar time)
+        #   (2) for lower altitude stations the averaged concentrations
+        #       should be in the afternoon (12am to 4pm) are taken
+        #
+        self.selected_hours = 'statistics' in self.settings \
+            and self.settings.statistics.selected_hours
+
         # Initialize widgets
         self.param.experiment.objects = list(self.settings.experiments.list)
 
@@ -991,22 +1038,6 @@ class StatisticsViewer(pn.viewable.Viewer):
 
         # Set default values:
         self.experiment = self.param.experiment.objects[0]
-
-        #-- MVO::copied from StationExplorer,
-        #        but not used yet!
-        #
-        #-- dedicated comparison of simulated vs observed concentrations
-        #   (1) for high altitude stations using averaged concentration
-        #       of midnight data (midnight to 4am local solar time)
-        #   (2) for lower altitude stations the averaged concentrations
-        #       in the afternoon (12am to 4pm) are taken
-        #
-        self.obs_model_cmp = None
-        self.high_altitude = 1000. #
-        self.hours_of_day = {'high':['00:00','04:00'],
-                             'low':['12:00','16:00'] }
-        self.use_hours_of_day = self.settings.get('use_hours_of_day',False)
-
 
     @debug.timer
     def __panel__(self):
@@ -1030,12 +1061,33 @@ class StatisticsViewer(pn.viewable.Viewer):
         nproc = self.settings.maxnproc if 'maxnproc' in self.settings else None
         return nproc
 
+    def _get_title(self):
+        #-- set title
+        if self.statistics_type.lower()=='observations':
+            title = f"{self.statistics_type}"
+        else:
+            title = f"{self.statistics_type} (simulation: {self.experiment})"
+        if self.selected_hours:
+            high_alt = self.settings.statistics.high_altitude
+            hours_high = '--'.join(self.settings.statistics.hours_high_alt)
+            hours_low  = '--'.join(self.settings.statistics.hours_low_alt)
+            # title += '\n' + f"concentrations from {hours_high} " \
+            #     f"for stations above {self.settings.high_altitude}m altitude, " \
+            #     f"elsewhere from {hours_low}."
+            title += '\n' + "concentrations taken at LST from " \
+                f"{hours_high} for stations above {high_alt}m altitude " \
+                f" and from {hours_low} elsewhere."
+        else:
+            title += '\n' + f"based on overall time-series"
+        return title
+
     @debug.timer
     def load_observations(self):
         self.data = load_all_observations(self.settings.observations.files,
                                           nproc=self._maxnproc())
-        #-- for debugging
+        # #-- for debugging
         # self.data.to_csv('statisticsviewer_obsdata.csv', index=True)
+
     @debug.timer
     def load_experiments(self):
         self.model = load_experiments(self.data, self.settings, self.param.experiment.objects)
@@ -1044,9 +1096,10 @@ class StatisticsViewer(pn.viewable.Viewer):
 
     @pn.depends('statistics_type', 'experiment')
     def plot_stat_maps(self):
-        return plot_stat_maps(self.model, self.experiment, self.statistics_type)
+        title = self._get_title()
+        return plot_stat_maps(self.model, self.experiment, self.statistics_type, title=title)
 
     @pn.depends('statistics_type', 'experiment')
     def plot_stats_table(self):
-        return plot_stats_table(self.model, self.statistics_type, self.param.experiment.objects, self.experiment)
-    
+        title = self._get_title()
+        return plot_stats_table(self.model, self.statistics_type, self.param.experiment.objects, self.experiment, title=title)
