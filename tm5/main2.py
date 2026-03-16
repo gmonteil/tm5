@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import os
+relpath = os.path.relpath
 
 from omegaconf import DictConfig, OmegaConf
 import tm5.emissions
@@ -25,8 +26,24 @@ class TM5:
         # Load the config file
         self.dconf = load_config(dconf, host)
         self.settings = TM5Settings()
-        self.tm5exec = Path(self.dconf.run.paths.output) / 'tm5.x'
         self.meteo = Meteo(**self.dconf.meteo)
+        self.tm5exec = Path(self.dconf.run.paths.output) / 'tm5.x'
+        #-- MVO-20260316:added possibility to provide compiled executable
+        #                in yaml file
+        if 'tm5exec' in self.dconf.run.paths:
+            tm5exec = Path(self.dconf.run.paths.tm5exec)
+            if not Path(tm5exec).exists():
+                msg = f"TM5 executable provided in configuration file " \
+                    f"***{tm5exec}*** not found on system."
+                raise RuntimeError(msg)
+            self.tm5exec.parent.mkdir(parents=True, exist_ok=True)
+            Path(self.tm5exec).unlink(missing_ok=True)
+            os.symlink(tm5exec.absolute(), self.tm5exec)
+            # tm5exec_relpath = relpath(tm5exec, self.dconf.run.paths.output)
+            # cwd = os.getcwd()
+            # os.chdir(self.dconf.run.paths.output)
+            # os.symlink(tm5exec_relpath, self.tm5exec.name)
+            # os.chdir(cwd)
 
     @property
     def start(self) -> Timestamp:
@@ -40,7 +57,13 @@ class TM5:
         """
         Build TM5
         """
-        relpath = os.path.relpath
+        if 'tm5exec' in self.dconf.run.paths:
+            msg = f"TM5 executable provided in yaml file " \
+                f"***{self.dconf.run.paths.tm5exec}***, " \
+                f"but detected request to build executable. " \
+                f"This will *NOT* be done!"
+            logger.warning(msg)
+            return
         tm5exec = build_tm5(self.dconf, clean = clean)
         if not self.tm5exec.exists():# or not self.tm5exec.is_symlink():
             self.tm5exec.parent.mkdir(parents=True, exist_ok=True)
@@ -49,10 +72,10 @@ class TM5:
             #--
             #
             if relative_link:
-                relpath = relpath(str(tm5exec), self.dconf.run.paths.output)
+                tm5exec_relpath = relpath(str(tm5exec), self.dconf.run.paths.output)
                 cwd = os.getcwd()
                 os.chdir(self.dconf.run.paths.output)
-                os.symlink(relpath, self.tm5exec.name)
+                os.symlink(tm5exec_relpath, self.tm5exec.name)
                 os.chdir(cwd)
             else:
                 os.symlink(tm5exec.absolute(), self.tm5exec)
