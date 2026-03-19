@@ -433,4 +433,4 @@ class TM5:
         self.settings['output.mix.tstep'] = int(Timedelta(dconf.output_frequency).total_seconds())
         self.settings['output.mix.meteo'] = dconf.get('output_meteo', 'F')
         self.settings['output.mix.filename.prefix'] = dconf.prefix
-        self.settings['output.mix.deflate.leve'] = dconf.get('deflate_level', 1)
+        self.settings['output.mix.deflate.level'] = dconf.get('deflate_level', 1)
