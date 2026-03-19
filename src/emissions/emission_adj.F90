@@ -159,7 +159,7 @@ module Emission_Adj
           if( .not. dir_exist ) &
                call system('mkdir -p '//trim(outdir)//pathsep//trim(subdir_adjemis))
           ! Write the adjoint emissions to a netCDF file (TODO: write the code!)
-          write(filename, '(4a,"adjemis.", a, ".", i4.4, 2i2.2, ".nc")'), &
+          write(filename, '(4a,"adjemis.", a, ".", i4.4, 2i2.2, ".nc")') &
                trim(outdir), pathsep, trim(subdir_adjemis), pathsep,&
                trim(region_name(ireg)), tr(2)%year, tr(2)%month, tr(2)%day
           
@@ -184,7 +184,7 @@ module Emission_Adj
 
           ! Create and the adjoint emission field
           !call nc_dump_var(fid, 'adj_emis', ['tracer   ', 'latitude ', 'longitude'], adj_emis(ireg)%values)
-          call nc_dump_var(fid, 'adj_emis', ['lon', 'lat ', 'tracer   '], adj_emis(ireg)%values)
+          call nc_dump_var(fid, 'adj_emis', ['lon      ', 'lat      ', 'tracer   '], adj_emis(ireg)%values)
           ! print*, shape(adj_emis(ireg)%values)
           ! print*, lli(ireg)%nlon, lli(ireg)%nlat
 
