@@ -22,6 +22,8 @@ def get_hostname():
 parser = ArgumentParser()
 parser.add_argument('-b', '--build', action='store_true', default=False, help='Use this option to compile the code')
 parser.add_argument('--build-only', action='store_true', default=False)
+parser.add_argument('--build-dir',
+                    help="""over-ride default build directory as it is defined in configuration file.""")
 parser.add_argument('--rcfile-only', action='store_true', default=False, help="""only create the TM5 rcfile (nor compiling neither running TM5).""")
 parser.add_argument('-m', '--host', default=os.environ['TM5_HOST'])
 parser.add_argument('--trange',
@@ -33,26 +35,23 @@ parser.add_argument('--expdir',
 parser.add_argument('config_file')
 args = parser.parse_args(sys.argv[1:])
 
+
 yaml_file = Path(args.config_file)
 if not yaml_file.exists():
     msg = f"provided yaml file ***{str(yaml_file)}*** not accessible!"
     raise RuntimeError(msg)
 
 #=====================================================
-# 0. Get hostname of platform used for simulation
+# -1. read configuration, potentiall override part of the settings
 #=====================================================
+machine = args.host
 platform = get_hostname()
-
-#=====================================================
-# 1. Build the model
-#=====================================================
 dconf = OmegaConf.load(str(yaml_file))
-if not args.host in dconf.keys():
+#-- consistency
+if not machine in dconf.keys():
     msg = f"selected machine -->{args.host}<-- not found in configuration file."
     raise RuntimeError(msg)
-#
-#-- potential partial override (or extend) configuration
-#
+#-- override settings
 if args.trange!=None:
     tstart, tend = args.trange
     dconf.run['start'] = tstart
@@ -63,15 +62,25 @@ if args.expdir!=None: #-- note, expdir is currently set in selected machine/host
         f"(overriding configuration file ==>{expdir_sav}<=="
     logger.info(msg)
     dconf[args.host].paths.expdir = args.expdir
+if args.build_dir!=None:
+    dconf[machine].paths.build = args.build_dir
 if platform!=None and 'platform' in dconf.run:
         if dconf.run.platform!=platform:
             msg = f"overriding dconf.run.platform, {dconf.run.platform} " \
                 f"{platform}"
             logger.info(msg)
             dconf.run['platform'] = platform
+# OmegaConf.save(config=dconf, f='xxx.yml')
+# sys.exit(0)
 
+#=====================================================
+# 0. create pre-processor instance
+#=====================================================
 tm = tm5.TM5(dconf, host=args.host)
 
+#=====================================================
+# 1. Build the model
+#=====================================================
 if args.build or args.build_only and not args.rcfile_only:
     tm.build()
 
