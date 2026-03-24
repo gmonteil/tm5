@@ -71,7 +71,7 @@ module iniconc_module
 
         subroutine read_iniconc_cams(itrac, tracname, status)
 
-            use ISO_FORTRAN_ENV
+            use ISO_FORTRAN_ENV, only: INT16
 
             character(len=*), intent(in)    :: tracname
             integer, intent(in)             :: itrac
