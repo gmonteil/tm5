@@ -7,7 +7,7 @@ module chem_param
     use binas,          only : xmair, Avog, grav, amu
     use global_types,   only : emis_data
     use global_data,    only : ntracet
-    use os_specs,       only : MAX_FILENAME_LEN
+    use os_specs,       only : MAX_FILENAME_LEN, MAX_RCVAL_LEN
     use go,             only : gol, goerr, T_Time_Window, NewDate
     use dims,           only : nregions
 
@@ -130,20 +130,22 @@ module chem_param
 
         integer, intent(out) :: status
         integer :: itrac, ireac, nreac
-        character(len=500) :: rcval
+        ! character(len=500) :: rcval
+        character(len=MAX_RCVAL_LEN) :: rcval
         character(len=*), parameter                 :: rname = 'chem_param/init_chem'
 
         call readrc(rcf, 'tracers.number', ntrace, status, default=1)
         if (ntrace == 0) return
         
-        call readrc(rcf, 'tracers.names', rcval, status)
-
+        if( ntrace*tracer_name_len.gt.MAX_RCVAL_LEN ) then
+           write (gol, '("Error: number of tracers likely to large for value buffer", i4 )') MAX_RCVAL_LEN
+           call goErr
+        endif
         allocate(names(ntrace))
         allocate(ra(ntrace))
         allocate(mixrat_unit(ntrace), mixrat_unit_name(ntrace))
         allocate(emis_unit(ntrace), emis_unit_name(ntrace))
         allocate(fscale(ntrace))
-
         allocate(tracers(ntrace))
 
         status = 0
@@ -152,6 +154,10 @@ module chem_param
         ntrace_chem = ntrace - ntracet
         maxtrace = ntrace
 
+        !
+        !-- read tracer names
+        !
+        call readrc(rcf, 'tracers.names', rcval, status)
         read(rcval, *) names
 
         do itrac = 1, ntrace
