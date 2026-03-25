@@ -29,7 +29,7 @@
 
 module GO_Rc
 
-  use os_specs, only : MAX_FILENAME_LEN, MAX_RCKEY_LEN
+  use os_specs, only : MAX_FILENAME_LEN, MAX_RCKEY_LEN, MAX_RCVAL_LEN
 
   implicit none
 
@@ -47,14 +47,18 @@ module GO_Rc
   character(len=*), parameter  ::  mname = 'GO_Rc'
 
   ! maximum line length in rc file:
-  integer, parameter     ::  buflen = 256
-
+  ! integer, parameter     ::  buflen = 256
+  !-- MVO, 2026-03-25: line consists of key and value,
+  !                    with ':' (and some blank) in between
+  integer, parameter     :: buflen = MAX_RCKEY_LEN+MAX_RCVAL_LEN+16
   ! --- types ---------------------------------
 
 
   type RcBuffer
-    character(len=buflen)     :: key
-    character(len=buflen)     :: value
+    ! character(len=buflen)     :: key
+    ! character(len=buflen)     :: value
+    character(len=MAX_RCKEY_LEN)     :: key
+    character(len=MAX_RCVAL_LEN)     :: value
   end type RcBuffer
 
   type TrcFile
@@ -190,7 +194,6 @@ contains
     integer, intent(out)              ::  status
 
     ! --- const ---------------------------
-
     character(len=*), parameter  ::  rname = mname//'/ParseRcfile'
 
     ! --- local -----------------------
@@ -198,7 +201,10 @@ contains
     type(TTextFile)      ::  file
     integer              ::  iostat
     Integer              ::  nfound
-    character(len=MAX_RCKEY_LEN)   ::  s, skey, sdata
+    ! character(len=MAX_RCKEY_LEN)   ::  s, skey, sdata
+    character(len=buflen)  :: s
+    character(len=MAX_RCKEY_LEN) :: skey
+    character(len=MAX_RCVAL_LEN) :: sdata
     integer              ::  l
 
     ! --- begin --------------------------
