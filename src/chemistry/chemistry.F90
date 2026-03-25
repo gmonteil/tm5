@@ -12,8 +12,8 @@ module chemistry
     use dims,           only : im, jm, lm, isr, ier, jsr, jer, nregions
     use meteo,          only : pclim_dat
     use file_netcdf
-    use grid_type_ll,   only : init_grid => init, tllgridinfo
-    use grid_type_hyb,  only : init_levels => init, tlevelinfo
+    use grid_type_ll,   only : init_grid => init, done_grid => done, tllgridinfo
+    use grid_type_hyb,  only : init_levels => init, done_levels => done, tlevelinfo
     use grid_3d,        only : fill3d
     use go,             only : gol, goerr
     use tm5_geometry,   only : lli, levi
@@ -25,9 +25,46 @@ module chemistry
 
     character(len=*), parameter   ::  mname = 'chemistry'
 
-
-    ! Internal variables
-    integer     :: cur_year=-1, i_period   ! Counters for get_conc_field_cams
+    !
+    !-- IMPL-NOTE:
+    !   Internal variables to handle input CAMS OH field information
+    ! 
+    !   - currently supported are monthly CAMS OH concentrations
+    !     and Spivakovsky OH climatology
+    !   - IMPORTANT:
+    !     configuration with different OH fields for the tracers
+    !     (e.g. cams for first tracer, spivakovksy for second tracer)
+    !     are currently not supported!
+    !
+    !   Spivakovsky:
+    !   - get_conc_field_spivakovsky is responsible to fill
+    !     the monthly climatology, grid, and level information.
+    !     It assumes OH concentrations are provided with (NetCDF)
+    !     variable 'field' with units [molec cm-3]
+    !
+    !   CAMS:
+    !   - get_conc_field_cams is responsible for I/O and memory handling
+    !     and makes the assumption that OH concentrations are
+    !     provided at monthly time-resolution in annual NetCDF files.
+    !     OH concentration must be provided as variable 'OH'
+    !     and units [molec / cm ** 3]
+    !
+    ! IMPL-TODO:
+    ! - WE are currently missing to finally dispose memory
+    !   when the simulation has terminated.
+    !
+    type oh_input
+       integer                                  :: year = -1
+       real, dimension(:, :, :, :), allocatable :: conc ![molec / cm**3]
+       type(tllgridinfo)                        :: lli
+       type(tlevelinfo)                         :: levi
+    end type oh_input
+    ! integer                                  :: cur_year=-1
+    ! real, dimension(:, :, :, :), allocatable :: cur_ohfield_in
+    ! type(tllgridinfo)                        :: cur_lli_in
+    ! type(tlevelinfo)                         :: cur_levi_in
+    type(oh_input) :: oh_cams
+    type(oh_input) :: oh_spiva
 
     contains
 
@@ -52,12 +89,19 @@ module chemistry
             real, dimension(:, :, :), allocatable   :: loss_rate
             integer     :: is, ie, js, je
             real        :: dtime
-            
+            character(len=*), parameter             :: rname = &
+                 mname//'/chemistry_step'
+
             dtime = abs(rtotal(period(2) - period(1), 'sec'))
 
             is = isr(region) ; ie = ier(region)
             js = jsr(region) ; je = jer(region)
 
+            !-- MVO,2026-03-24:
+            !   - allocate loss_rate once here, rather than for
+            !     every tracer internally within get_total_loss_rate
+            allocate(loss_rate(im(region), jm(region), lm(region)))
+            
             do itr = 1, ntracet
                 if (tracers(itr)%has_chem) then
 
@@ -79,7 +123,8 @@ module chemistry
                     nullify(rm, rxm, rym, rzm)
                 end if
             end do
-
+            !-- dispose memory 
+            deallocate(loss_rate)
             status = 0
         end subroutine chemistry_step
 
@@ -87,6 +132,8 @@ module chemistry
         subroutine chemistry_done(status)
             integer, intent(out)    :: status
             status = 0
+            ! call ohinput_dispose('cams')
+            ! call ohinput_dispose('spiva')
         end subroutine chemistry_done
 
 
@@ -96,6 +143,46 @@ module chemistry
             status = 0
         end subroutine read_chemistry_fields
 
+        subroutine ohinput_dispose(version)
+          character(len=*), intent(in) :: version
+          character(len=*),parameter :: rname = mname//'/oh_dispose'
+          integer :: status
+          !
+          !-- dispose/reset data from previous year,
+          !   - for derived type cur_lli_in/cur_levi_in
+          !     we (*only*) check one single pointer-typed
+          !     component to decide whether data must be disposed.
+          !
+          select case(version)
+          case ('cams        ')
+!          case ('cams')
+                if( allocated(oh_cams%conc) ) then
+                   deallocate(oh_cams%conc)
+                endif
+                if( associated(oh_cams%lli%lon) ) then
+                   call done_grid(oh_cams%lli, status)
+                   IF_NOTOK_RETURN(status=1)
+                endif
+                if( associated(oh_cams%levi%a) ) then
+                   call done_levels(oh_cams%levi, status)
+                   IF_NOTOK_RETURN(status=1)
+                endif
+             case ('spivakovsky ')
+             case ('spiva')
+                if( allocated(oh_spiva%conc) ) then
+                   deallocate(oh_spiva%conc)
+                endif
+                if( associated(oh_spiva%lli%lon) ) then
+                   call done_grid(oh_spiva%lli, status)
+                   IF_NOTOK_RETURN(status=1)
+                endif
+                if( associated(oh_spiva%levi%a) ) then
+                   call done_levels(oh_spiva%levi, status)
+                   IF_NOTOK_RETURN(status=1)
+                endif
+             end select
+        end subroutine ohinput_dispose
+
 
         subroutine get_total_loss_rate(region, period, tracer, loss_rate)
             ! Get the total tracer loss (i.e. sum of reaction rate * mass * dtime) for a given tracer
@@ -103,11 +190,14 @@ module chemistry
             Type(TDate), dimension(2), intent(in)   :: period
             integer, intent(in)                     :: region
             type(tracer_t), intent(inout)           :: tracer
-            real, dimension(:, :, :), allocatable, intent(out)   :: loss_rate
+            ! real, dimension(:, :, :), allocatable, intent(out)   :: loss_rate
+            real, dimension(:, :, :), intent(out)   :: loss_rate
             integer                                 :: ireac
             real, dimension(:, :, :), allocatable   :: rrate
+            character(len=*), parameter             :: rname = &
+                 mname//'/get_total_loss_rate'
 
-            allocate(loss_rate(im(region), jm(region), lm(region)))
+!            allocate(loss_rate(im(region), jm(region), lm(region)))
 
             loss_rate = 0
 
@@ -253,50 +343,81 @@ module chemistry
             type(tlevelinfo)    :: levi_in
             integer             :: nlay
             integer             :: region
+            integer             :: i_month
 
             reaction%climatology = .false.
             reaction%data_timestep = '1m'
             reaction%data_period = get_new_period(period(1), reaction%data_timestep)
 
-            ! Reset the i_period counter if we change year (i.e. if we change file). This assumes the file is annual ...
-            if (cur_year /= reaction%data_period%t1%year) then
-                cur_year = reaction%data_period%t1%year
-                i_period = 0
-            endif
-
-            ! Increase the position counter
-            i_period = i_period + 1
+            !
+            ! int64 month(month) ;
+            ! double OH(month, pressure_level, lat, lon) ;
+            !     OH:_FillValue = NaN ;
+	    !     OH:units = "molec / cm ** 3" ;
+            !
+            i_month = reaction%data_period%t1%month
 
             ! Load required data from the netCDF file
-            write(reacfile, '(a,i4,a)') trim(reaction%file)//'_', period(1)%year, '_monthly.nc'
-            ncf = nc_open(reacfile, 'r', status)
-            IF_NOTOK_RETURN(status=1)
-            ohfield_in = nc_read_var(ncf, 'OH', status)     ! needs to be pre-converted in molec/cm3!
-            IF_NOTOK_RETURN(status=1)
-            hyb_a = nc_read_var(ncf, 'z_a_grid', status)
-            IF_NOTOK_RETURN(status=1)
-            hyb_b = nc_read_var(ncf, 'z_b_grid', status)
-            IF_NOTOK_RETURN(status=1)
-            call nc_close(ncf)
+            ! assumption is that OH files are annual,
+            ! only re-loading file in case the year has changed!
+            if (oh_cams%year /= reaction%data_period%t1%year) then
+               !
+               !-- dispose resources from previous year (if any)
+               !
+               call ohinput_dispose('cams')
+               !
+               !-- file name for current year
+               !
+               write(reacfile, '(a,i4,a)') trim(reaction%file)//'_', period(1)%year, '_monthly.nc'
+               print*, 'DEBUG@'//rname//':: reading OH from file ***'//&
+                    trim(reacfile)//'***'
+               ncf = nc_open(reacfile, 'r', status)
+               IF_NOTOK_RETURN(status=1)
+               ohfield_in = nc_read_var(ncf, 'OH', status)     ! needs to be pre-converted in molec/cm3!
+               IF_NOTOK_RETURN(status=1)
+               hyb_a = nc_read_var(ncf, 'z_a_grid', status)
+               IF_NOTOK_RETURN(status=1)
+               hyb_b = nc_read_var(ncf, 'z_b_grid', status)
+               IF_NOTOK_RETURN(status=1)
+               call nc_close(ncf)
 
-            ! Create the horizontal and vertical grids for the input file
-            nlay = size(hyb_a) - 1
-            call init_grid(lli_in, -179.5, 1.0, 360, -89.5, 1.0, 180, status)
-            IF_NOTOK_RETURN(status=1)
+               !-- update (global) CAMS OH input
+               oh_cams%year = reaction%data_period%t1%year
+               !--  move CAMS OH to global variable
+               call move_alloc(ohfield_in, oh_cams%conc)
+               
+               ! Create the horizontal and vertical grids for the input file
+               nlay = size(hyb_a) - 1
+               call init_grid(oh_cams%lli, -179.5, 1.0, 360, -89.5, 1.0, 180, status)
+               IF_NOTOK_RETURN(status=1)
+               
+               call init_levels(oh_cams%levi, nlay, hyb_a, hyb_b, status, name='OH')
+               IF_NOTOK_RETURN(status=1)
+               !
+               !-- dispose locally allocated variables
+               !
+               deallocate( hyb_a, hyb_b )
+            endif
 
-            call init_levels(levi_in, nlay, hyb_a, hyb_b, status, name='OH')
-            IF_NOTOK_RETURN(status=1)
-
+            !-- MVO-TODO, 2026-03-24
+            !   - next improvement would be to store the regionally
+            !     regridded values to global fields,
+            !     and then have only pointers to those at the
+            !     tracers!
+            !
             ! Do the regridding, for each region
             do region = 1, nregions
                 if (.not. allocated(reaction%conc(region)%values)) allocate(reaction%conc(region)%values(im(region), jm(region), lm(region)))
 
                 reaction%conc(region)%values = 0.
-
+                ! print*, 'DEBUG@'//rname//' region=',region,&
+                !      'i_period=',i_period, 'i_month=',i_month,&
+                !      'mean(ohfield_in)=',&
+                !      sum(ohfield_in(:,:,:,i_month))/size(ohfield_in(:,:,:,i_month))
                 call fill3d( &
                     lli(region), levi, 'n', pclim_dat(region)%data(:, :, 1), &
-                    reaction%conc(region)%values, lli_in, levi_in, &
-                    ohfield_in(:, :, :, i_period), &
+                    reaction%conc(region)%values, oh_cams%lli, oh_cams%levi, &
+                    oh_cams%conc(:, :, :, i_month), &
                     'mass-aver', status &
                 )
                 IF_NOTOK_RETURN(status=1)
@@ -310,11 +431,8 @@ module chemistry
             ! Return the concentration field of a reactive species (in units of ...), during the requested time interval
             type(react_t), intent(inout)                :: reaction
             type(TDate), dimension(2), intent(in)       :: period
-            real(4), dimension(:, :, :, :), allocatable :: tmp
-            real, dimension(:, :, :, :), allocatable    :: field4d
+            real, dimension(:, :, :, :), allocatable    :: ohfield_in
             character(len=*), parameter                 :: rname = mname//'/get_conc_field_spivakovsky'
-            type(tllgridinfo)   :: lli_in
-            type(tlevelinfo)    :: levi_in
             integer             :: ncf
             integer             :: status
             integer             :: region
@@ -333,16 +451,25 @@ module chemistry
             ! MACC OH in molec . cm ** -3
             ! Lrate(i,j,l) = rrates(kCH4OH, itemp(i,j,l) * OHconc(i,j,l))
 
-            ncf = nc_open(reaction%file, 'r', status)
-            IF_NOTOK_RETURN(status=1)
-            field4d = nc_read_var(ncf, 'field', status)
-            IF_NOTOK_RETURN(status=1)
+            if( .not. allocated(oh_spiva%conc) ) then
+               print*, 'DEBUG@'//rname//':: reading OH from file ***'//&
+                    trim(reaction%file)//'***'
+               ncf = nc_open(reaction%file, 'r', status)
+               IF_NOTOK_RETURN(status=1)
+               ohfield_in = nc_read_var(ncf, 'field', status)
+               IF_NOTOK_RETURN(status=1)
+               call nc_close(ncf)
 
-            ! Create coordinates for the OH field
-            call init_grid(lli_in, -179.5, 1.0, 360, -89.5, 1.0, 180, status)
-            IF_NOTOK_RETURN(status=1)
-            call init_levels(levi_in, 'tm60', status)
-            IF_NOTOK_RETURN(status=1)
+               !--  move CAMS OH to global variable
+               call  move_alloc(ohfield_in, oh_spiva%conc)
+
+               ! Create coordinates for the OH field
+               call init_grid(oh_spiva%lli, -179.5, 1.0, 360, -89.5, 1.0, 180, status)
+               IF_NOTOK_RETURN(status=1)
+               call init_levels(oh_spiva%levi, 'tm60', status)
+               IF_NOTOK_RETURN(status=1)
+               
+            endif
 
             ! Apply regridding
             do region = 1, nregions
@@ -352,12 +479,11 @@ module chemistry
 
                 call fill3d( &
                     lli(region), levi, 'n', pclim_dat(region)%data(:, :, 1), &
-                    reaction%conc(region)%values, lli_in, levi_in, &
-                    field4d(:, :, :, reaction%data_period%t1%month), &
+                    reaction%conc(region)%values, oh_spiva%lli, oh_spiva%levi, &
+                    oh_spiva%conc(:, :, :, reaction%data_period%t1%month), &
                     'mass-aver', status)
                 IF_NOTOK_RETURN(status=1)
             enddo
-            deallocate(field4d)
 
         end subroutine get_conc_field_spivakovsky
 
