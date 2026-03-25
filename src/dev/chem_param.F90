@@ -152,7 +152,7 @@ module chem_param
         ntrace_chem = ntrace - ntracet
         maxtrace = ntrace
 
-        read(rcval, *), names
+        read(rcval, *) names
 
         do itrac = 1, ntrace
             call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.molar_mass', ra(itrac), status)
