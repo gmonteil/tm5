@@ -227,7 +227,10 @@ contains
       do ichild = 1, ntimer
         ! set accumulated time to zero:
        !StopWatch(itimer,itimer)%total_cpu = 0.0
-        StopWatch(itimer,itimer)%total_sys = 0.0
+         ! StopWatch(itimer,itimer)%total_sys = 0.0
+         !-- MVO-FIXED, 2026-03-26:
+         !   - second index is for the child (and only starts with 1)
+         StopWatch(itimer,ichild)%total_sys = 0.0
       end do
     end do
 
