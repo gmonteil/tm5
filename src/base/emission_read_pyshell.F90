@@ -209,7 +209,7 @@ contains
                                 ref_emissions_apri(region)%tracer(itr)%cat(i_cat)%field(:,:,1,itime) = dummy_array(:,:,etime)
                                 ! Also print for debugging purposes
                                 write(*,'("Using window ", i3, " (", a, " to ", a, ")", " to fill model time window ", &
-                                        i3, " (", a, " to ", a, ")")'), etime, trim(Pretty(emis_file_time_profile%period(etime)%t1)), &
+                                        i3, " (", a, " to ", a, ")")') etime, trim(Pretty(emis_file_time_profile%period(etime)%t1)), &
                                         trim(Pretty(emis_file_time_profile%period(etime)%t2)), itime, &
                                         trim(Pretty(em_cat_info(region)%tracer(itr)%cat(i_cat)%time_profile%period(itime)%t1)), &
                                         trim(Pretty(em_cat_info(region)%tracer(itr)%cat(i_cat)%time_profile%period(itime)%t2))
