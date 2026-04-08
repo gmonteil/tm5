@@ -9,12 +9,12 @@ from pandas import DataFrame
 def read_obs_table(filename: Path | str) -> DataFrame:
     obs_table = xr.open_dataset(filename).to_dataframe()
     
-    # Add a "label" column to identify each "tracer", if not already present in the obs table
-    if 'obs_label' not in obs_table:
+    # Add a "obsid" column to identify each "tracer", if not already present in the obs table
+    if 'obsid' not in obs_table:
         for tracer in set(obs_table.tracer):
             df = obs_table[obs_table.tracer == tracer].reset_index()
-            label = df.tracer + '_' + df.index.astype(str)
-            obs_table.loc[obs_table.tracer == tracer, 'obsid'] = label.values
+            obsid = df.tracer + '_' + df.index.astype(str)
+            obs_table.loc[obs_table.tracer == tracer, 'obsid'] = obsid.values
     return obs_table
 
     
