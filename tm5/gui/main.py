@@ -9,6 +9,7 @@ from tm5.gui.widgets import RunSettings
 from tm5.gui.widgets.stations import StationExplorer, StatisticsViewer
 from tm5.gui.widgets.precomputed import PrecomputedInfo
 from tm5.gui.css import *
+# from tm5.gui.widgets.emis import EmissionExplorer
 from tm5 import debug
 
 
@@ -253,6 +254,7 @@ class FitIC_UI(pn.viewable.Viewer):
                 ("Description", PrecomputedInfo(self.conf)),
                 ("Fit statistics", StatisticsViewer(self.conf)),
                 ('Modelled timeseries', StationExplorer(self.conf)),
+                # ('Emissions', EmissionExplorer(self.conf)),
                 tabs_location='left',
                 dynamic=True,
                 stylesheets=[precomp_stylesheet,], css_classes=['precomp-left'])

@@ -12,7 +12,7 @@ from tm5.units import units_registry as ureg
 from tm5.settings import TM5Settings
 from tm5 import species as chem
 from pathlib import Path
-from pandas import Timestamp, Timedelta
+from pandas import Timestamp, Timedelta, DataFrame
 from loguru import logger
 
 
@@ -338,7 +338,16 @@ class TM5:
                     self.settings[f'emissions.{tracer}.{region}.{cat}'] = {'MS': 'monthly', 'D': 'daily'}[catfreq]
                     # Since these are probably not needed, I just hardcode them ...
                     # self.settings[f'emission.{tracer}.{region}.category{icat+1:.0f}'] = f'{cat}; 100.0 ; 200.0-g ; 0.0-e-monthly ; 0 ; dummy'
-# 
+
+    def setup_adjoint_tracers(self, obs_table: DataFrame) -> None:
+        # Create the new tracers in the config object:
+        for obs in obs_table.itertuples():
+            self.dconf.tracers[obs.label] = self.dconf.tracers._get_node(obs.tracer)
+        self.dconf.run.tracers = list(obs_table.label)
+        
+        # call setup_tracers normally:
+        self.setup_tracers()
+ 
     def setup_tracers(self) -> None:
         """
         Setup rc keys required by chem_params.F90:

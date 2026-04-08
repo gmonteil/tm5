@@ -116,6 +116,7 @@ interface nc_set_var
     module procedure nc_set_var_r8_5d
     module procedure nc_set_var_r8_6d
     module procedure nc_set_var_r8_7d
+    module procedure nc_set_var_s_1d
 end interface nc_set_var
 
 interface nc_dump_var
@@ -154,6 +155,7 @@ interface nc_dump_var
     module procedure nc_dump_var_r8_5d
     module procedure nc_dump_var_r8_6d
     module procedure nc_dump_var_r8_7d
+    module procedure nc_dump_var_s_1d
 end interface nc_dump_var
 
 interface nc_set_attrs
@@ -506,6 +508,8 @@ function nc_create_var(nc_id, var_name, dim_list, var_type, io_status) result (o
             nc_status = nf90_def_var(nc_id, trim(adjustl(var_name)), NF90_FLOAT, dim_id_list, j)
         case ('double')
             nc_status = nf90_def_var(nc_id, trim(adjustl(var_name)), NF90_DOUBLE, dim_id_list, j)
+        case ('char')
+            nc_status = nf90_def_var(nc_id, trim(adjustl(var_name)), NF90_CHAR, dim_id_list, j)
         case default
             write(*,*) 'Error from nc_create_var : ', trim(nf90_strerror(nc_status))
             stop
@@ -2247,6 +2251,21 @@ subroutine nc_dump_var_r8_7d(nc_id, var_name, dim_list, var_value, attr_names, a
 
 end subroutine nc_dump_var_r8_7d
 
+subroutine nc_dump_var_s_1d(nc_id, var_name, dim_list, var_value, attr_names, attr_values)
+    character(len=*), intent(in)    :: var_value(:)
+    character(len=*), intent(in)    :: var_name
+    integer, intent(in)             :: nc_id
+    character(len=*), intent(in)    :: dim_list(:)
+    type(t_ncVar)                   :: nc_var
+    character(len=*), optional, intent(in)   :: attr_names(:), attr_values(:)
+    integer                         :: strlen
+
+    nc_status = nf90_redef(nc_id)
+    nc_var = nc_create_var(nc_id, var_name, dim_list, 'char')
+    if (present(attr_names) .and. present(attr_values)) call nc_set_attrs_var(nc_var, attr_names, attr_values)
+    call nc_set_var(nc_var, var_value(:))
+end subroutine nc_dump_var_s_1d
+
 subroutine nc_set_var_i1_1d(nc_var, var_value)
     type(t_ncVar), intent(in)  :: nc_var
     integer(1), intent(in)     :: var_value(:)
@@ -2526,6 +2545,14 @@ subroutine nc_set_var_r8_7d(nc_var, var_value)
     nc_status = nf90_put_var(nc_var%nc_id, nc_var%var_id, var_value(:,:,:,:,:,:,:))
     nc_status = nf90_sync(nc_var%nc_id)
 end subroutine nc_set_var_r8_7d
+
+subroutine nc_set_var_s_1d(nc_var, var_value)
+    type(t_ncVar), intent(in)       :: nc_var
+    character(len=*), intent(in)    :: var_value(:)
+    nc_status = nf90_enddef(nc_var%nc_id)
+    nc_status = nf90_put_var(nc_var%nc_id, nc_var%var_id, var_value(:))
+    nc_status = nf90_sync(nc_var%nc_id)
+end subroutine nc_set_var_s_1d
 
 function pad(input_str, length) result (output_str)
 

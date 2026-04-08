@@ -30,6 +30,7 @@ class RectiLinearGrid:
             self.cyclic = False
         if self.cyclic and self.south == -90 and self.north == 90:
             self._global = True
+        self._area = None
 
     @property
     def lonc(self) -> NDArray:
@@ -73,12 +74,14 @@ class RectiLinearGrid:
     
     @property
     def area(self) -> NDArray:
-        dlon_rad = self.dlon * pi / 180.
-        area = zeros((self.nlat+1, self.nlon), float64)
-        lats = (pi / 180.) * self.latb
-        for ilat, lat in enumerate(lats):
-            area[ilat, :] = self.radius_earth**2 * dlon_rad * sin(lat)
-        return diff(area, axis=0)
+        if self._area is None:
+            dlon_rad = self.dlon * pi / 180.
+            area = zeros((self.nlat+1, self.nlon), float64)
+            lats = (pi / 180.) * self.latb
+            for ilat, lat in enumerate(lats):
+                area[ilat, :] = self.radius_earth**2 * dlon_rad * sin(lat)
+            self._area = diff(area, axis=0)
+        return self._area
 
     def calc_overlap_matrices(self, other : "RectiLinearGrid") -> SimpleNamespace:
         """

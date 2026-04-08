@@ -156,6 +156,8 @@ def write_point_obs(df: DataFrame, filename: Path | str) -> Path: # dconf: DictC
 #    )
     
     # The part after this should be independent from the reader
+    if 'id' not in df: 
+        df['id'] = range(len(df))
     ds = df.set_index('id').to_xarray()
     
     # Add a "date_components" variable that TM5 can read:

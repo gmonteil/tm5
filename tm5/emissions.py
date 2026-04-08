@@ -370,6 +370,8 @@ def prepare_emissions(conf: DictConfig) -> None:
         reg = TM5Grids.from_corners(west=reg.lons[0], east=reg.lons[1], south=reg.lats[0], north=reg.lats[1], dlon=reg.lons[2], dlat=reg.lats[2])
         
         # Regrid the emissions for that region and tracer
+        if 'emissions' not in conf:
+            continue
         for trname, tracer in conf.emissions.items():
 
             if 'categories' not in tracer:
