@@ -46,7 +46,7 @@ def create_departure_files(dconf: DictConfig):
             outp = xr.open_dataset(Path(dconf.run.paths.output) / 'point/point_output.nc4', group=f'{region}/{tracer}')
 
             # Select the slice of the input file corresponding to that region
-            reg_inp = inp.isel(id=inp.id.isin(oup.id))
+            reg_inp = inp.isel(id=inp.id.isin(outp.id))
             
             # Copy the data:
             for varname in ['lat', 'lon', 'alt', 'time_window_length']:
@@ -55,7 +55,7 @@ def create_departure_files(dconf: DictConfig):
             outp['date_components'] = (('samples', 'idate'), reg_inp.date_components.values)
                 
             # Set the "forcing" to 1:
-            outp['forcing'] = ('samples', [1.] * oup.sizes['samples'])
+            outp['forcing'] = ('samples', [1.] * outp.sizes['samples'])
             
             # Write into the dep file:
             for iobs in range(outp.sizes['samples']):
