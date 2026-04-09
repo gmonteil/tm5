@@ -8,12 +8,14 @@
 module Emission_Adj
 
     use GO,             only : gol, goErr, goPr, tdate, rtotal, operator(-)
+    use GO,             only : ReadRc, pathsep
     use emission_data,  only : source_apply, adj_emissions, tracers_em_info, t_tracer_info
     use emission_fwd,   only : emission_fwd_setup
     use dims,           only : nregions, isr, ier, jsr, jer, itau, region_name, itaui, itaur, ndyn, tref
     use chem_param,     only : ntracet
-    use os_specs,       only : MAX_FILENAME_LEN
+    use os_specs,       only : MAX_FILENAME_LEN, MAX_RCKEY_LEN
     use global_data,    only : region_dat, mass_dat
+    use global_data,    only : rcF, outdir
     use datetime,       only : tau2date, get_num_days
     use tm5_geometry,   only : lli
 
@@ -45,7 +47,8 @@ module Emission_Adj
         subroutine emission_adj_init(status)
             integer, intent(out)    :: status
             integer                 :: ireg, ilon, ilat, itrac
-
+            logical                 :: dir_exist
+            character(len=*), parameter :: rname = mname//'/emission_adj_init'
             ! Read the output folder for adjoint emissions, and make sure it exists
             call ReadRc(rcF, 'output.adjemis', subdir_adjemis, status, default='adjemis')
             IF_ERROR_RETURN(status=1)
@@ -227,7 +230,7 @@ module Emission_Adj
             call nc_dump_var(fid, 'lat', ['lat'], lli(ireg)%lat_deg, ['units    '], ['degrees_north'])
             call nc_dump_var(fid, 'lon', ['lon'], lli(ireg)%lon_deg, ['units    '], ['degrees_east'])
             call nc_dump_var(fid, 'time', ['time'], [nsec])
-            call nc_dump_var(fid, 'tracer', ['tracer_nchar', 'tracer'], names)
+            call nc_dump_var(fid, 'tracer', ['tracer_nchar', 'tracer      '], names)
 
         !   ! Create and the adjoint emission field
         !   !call nc_dump_var(fid, 'adj_emis', ['tracer   ', 'latitude ', 'longitude'], adj_emis(ireg)%values)
