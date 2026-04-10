@@ -4,6 +4,7 @@ import xarray as xr
 from pathlib import Path
 from omegaconf import DictConfig
 from pandas import DataFrame
+from loguru import logger
 
 
 def read_obs_table(filename: Path | str) -> DataFrame:
@@ -42,26 +43,31 @@ def create_departure_files(dconf: DictConfig):
     for tracer in trlist:
         inp = xr.open_dataset(Path(dconf.output.point.input_dir) / 'point_input.nc4', group=tracer)
         for region in reglist:
-            outp = xr.open_dataset(Path(dconf.run.paths.output) / 'point/point_output.nc4', group=f'{region}/{tracer}')
+            try:
+                outp = xr.open_dataset(Path(dconf.run.paths.output) / 'point/point_output.nc4', group=f'{region}/{tracer}')
 
-            # Select the slice of the input file corresponding to that region
-            reg_inp = inp.isel(id=inp.id.isin(outp.id))
+                # Select the slice of the input file corresponding to that region
+                reg_inp = inp.isel(id=inp.id.isin(outp.id))
             
-            # Copy the data:
-            for varname in ['lat', 'lon', 'alt', 'time_window_length', 'obsid']:
-                outp[varname] = ('samples', reg_inp[varname].values)
+                # Copy the data:
+                for varname in ['lat', 'lon', 'alt', 'time_window_length', 'obsid']:
+                    outp[varname] = ('samples', reg_inp[varname].values)
                 
-            outp['date_components'] = (('samples', 'idate'), reg_inp.date_components.values)
+                outp['date_components'] = (('samples', 'idate'), reg_inp.date_components.values)
                 
-            # Set the "forcing" to 1:
-            outp['forcing'] = ('samples', [1.] * outp.sizes['samples'])
+                # Set the "forcing" to 1:
+                outp['forcing'] = ('samples', [1.] * outp.sizes['samples'])
             
-            # Write into the dep file:
-            for iobs in range(outp.sizes['samples']):
+                # Write into the dep file:
+                for iobs in range(outp.sizes['samples']):
                 
-                # Select the subset containing just one obs
-                data_out = outp.isel(samples=[iobs])
+                    # Select the subset containing just one obs
+                    data_out = outp.isel(samples=[iobs])
                 
-                # Write it to its own netCDF group, following the "obsid" value
-                data_out.to_netcdf(dep_file, group=f'{region}/{outp.obsid.values[iobs]}', mode='a')
+                    # Write it to its own netCDF group, following the "obsid" value
+                    data_out.to_netcdf(dep_file, group=f'{region}/{outp.obsid.values[iobs]}', mode='a')
+            except OSError:
+                # This can happen when there is no obs in that region. In this case, just cycle to the next ...
+                logger.info(f"No observations found for region {region} in point_output file")
+                pass
                 

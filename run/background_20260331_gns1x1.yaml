@@ -26,7 +26,7 @@ cosmos:
 
 run :
   start : 1 jan 2021
-  end : 21 jan 2021
+  end : 1 march 2021
   name : background_${.zoom}
   verbose: no
   paths :
@@ -81,7 +81,7 @@ species :
 #        domain : strato
     flux_unit : TgCH4
     mix_unit : ppb
-    chemistry : no
+    chemistry : yes
     emissions : ${emissions.CH4}
 
 
@@ -199,7 +199,7 @@ output :
 
 
 observations:
-  file: sample_obstable.nc
+  file: sample_obstable_cbw.nc
   point:
     CH4:
       default_assim_window: 3

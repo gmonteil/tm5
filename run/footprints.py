@@ -59,7 +59,7 @@ rcf = tm.settings.write(Path(tm.dconf.run.paths.output) / 'forward.rc')
 # =====================================================
 # Do a forward run
 # =====================================================
-runcmd(tm.dconf.run.run_cmd.split() + [str(rcf)])
+# runcmd(tm.dconf.run.run_cmd.split() + [str(rcf)])
 
 
 # =====================================================
