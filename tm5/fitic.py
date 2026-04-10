@@ -35,7 +35,6 @@ def create_departure_files(dconf: DictConfig):
     """
     reglist = dconf.run.regions
     trlist = dconf.run.tracers   # This refers to the *forward* tracers!!!
-        
     # Remove any pre-existing file
     dep_file = Path(dconf.run.paths.output) / 'point/point_departures.nc4'
     dep_file.unlink(missing_ok=True)
@@ -49,7 +48,7 @@ def create_departure_files(dconf: DictConfig):
             reg_inp = inp.isel(id=inp.id.isin(outp.id))
             
             # Copy the data:
-            for varname in ['lat', 'lon', 'alt', 'time_window_length']:
+            for varname in ['lat', 'lon', 'alt', 'time_window_length', 'obsid']:
                 outp[varname] = ('samples', reg_inp[varname].values)
                 
             outp['date_components'] = (('samples', 'idate'), reg_inp.date_components.values)
