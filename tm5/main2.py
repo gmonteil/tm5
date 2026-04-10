@@ -327,6 +327,22 @@ class TM5:
                     # Since these are probably not needed, I just hardcode them ...
                     # self.settings[f'emission.{tracer}.{region}.category{icat+1:.0f}'] = f'{cat}; 100.0 ; 200.0-g ; 0.0-e-monthly ; 0 ; dummy'
 
+    def setup_adjoint_tracers(self, obs_table: DataFrame) -> None:
+        # Create the new tracers in the config object:
+        # print(self.dconf.tracers)
+        # print("="*10)
+        # print(obs_table.head(n=2))
+        # print("-"*30)
+        # for obs in obs_table.itertuples():
+        #     self.dconf.tracers[obs.label] = self.dconf.tracers._get_node(obs.tracer)
+        # self.dconf.run.tracers = list(obs_table.label)
+        for obs in obs_table.itertuples():
+            self.dconf.tracers[obs.obsid] = self.dconf.tracers._get_node(obs.tracer)
+        self.dconf.run.tracers = list(obs_table.obsid)
+        
+        # call setup_tracers normally:
+        self.setup_tracers()
+ 
     def setup_tracers(self) -> None:
         """
         Setup rc keys required by chem_params.F90:
