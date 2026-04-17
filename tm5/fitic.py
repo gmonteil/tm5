@@ -4,11 +4,20 @@ import xarray as xr
 from pathlib import Path
 from omegaconf import DictConfig
 from pandas import DataFrame
+import numpy as np
 from loguru import logger
 
 
 def read_obs_table(filename: Path | str) -> DataFrame:
     obs_table = xr.open_dataset(filename).to_dataframe()
+    #
+    #-- adjust type sampling_strategy/time_window_length
+    #
+    convert_dict = {
+        'sampling_strategy': np.int32,
+        'time_window_length': np.int32,
+        }
+    obs_table = obs_table.astype(convert_dict)
     
     # Add a "obsid" column to identify each "tracer", if not already present in the obs table
     if 'obsid' not in obs_table:
