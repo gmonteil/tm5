@@ -129,8 +129,9 @@ rcf = tm.settings.write(Path(tm.dconf.run.paths.output) / 'forward.rc')
 # copy originating yaml file
 #=====================================================
 dst = Path(tm.dconf.run.paths.output) / yaml_file.name
-#-- copy2 tries to preserve file attributes (as far as possible)
-shutil.copy2(args.config_file, str(dst))
+# #-- copy2 tries to preserve file attributes (as far as possible)
+# shutil.copy2(args.config_file, str(dst))
+OmegaConf.save(config=dconf, f=str(dst))
 
 #=====================================================
 # Run TM5
