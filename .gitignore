@@ -11,3 +11,6 @@ bin/congrad.exe
 .vscode
 .*~
 *~
+demos/*
+plotsdir/
+plotsdir.old/
