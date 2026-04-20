@@ -303,7 +303,8 @@ elif args.mode=='visu_footp':
     df_tot = load_adjoint_footprint(conf, obs_table)
     logger.info(f"...footprints done.")
 
-    
+    print(tstart, tend, (tend - tstart).days)
+    sys.exit(0)
     # Store all footprints in a single array
     # - array is global with dimensions time/lat/lon/obs
     #
@@ -369,6 +370,7 @@ elif args.mode=='visu_footp':
         #-- footprint w.r.t. to contributions from all time(s)
         #
         elif args.footp_mode=='daily':
+            
             msg = f"daily footprints not yet supported..."
             raise NotImplementedError(msg)
 else:
