@@ -1,9 +1,10 @@
 # Tasks (by order of priority)
 - GUI (setup)
-    - [ ] 
+    - [ ] (4) GM: Reactivate "Emission Explorer" in the "master GUI"
+    - [ ] (5) GM: Distribute the H*f + c0 computation such that (1) the user-specified emission field f is passed from the Jupyter Hub to pancake, (2) H*f (Jacobian times emission) + c0 (response to initial concentration) for 31 daily obs in Jan at Cabauw (highest level) are computed on pancake and (3) the resulting time series of 31 simulated concentrations returned to the Jupyter frontend. 
 - GUI (analysis)
     - [ ] (7) GM: check domain size on plot after change of region
-    - [ ] (6) GM+MV: extract TM5 output and obspack for selected stations averaged over a pre-specified period of the day (as in inversions), e.g. above 1000 m height take nighttime data (midnight to 4am local solar time) and below afternoon date (from 12 to 4 local solar time) (there is a flag in obspack for filtering, but don't take it as an absolute reference, just for a sanity check) at highest level
+    - [ ] (2) GM+MV: extract TM5 output and obspack for selected stations averaged over a pre-specified period of the day (as in inversions), e.g. above 1000 m height take nighttime data (midnight to 4am local solar time) and below afternoon date (from 12 to 4 local solar time) (there is a flag in obspack for filtering, but don't take it as an absolute reference, just for a sanity check) at highest level
     - [x partly] Add Chi2 with sigma = sqrt (sigma_obs**2 + sigma_model **2), and sigma model from a crude approximation derived from short scale variability of the obs, or the variability of the meteo (representation error approximation from slopes may also be there ...
     - [ ] (8) GM: Integrate some visualisation of the emission budget in configuration part of the GUI (to allow perform a quick sanity check)
     - [ ] GM: Add plot or table that indicates relative contribution of each sector to total signal at each site (only if we run sectors separately), this is not urgent, can be added later ...
@@ -26,13 +27,14 @@
     - [ ] properly setup github pages with mkdocs
 - Inversion
     - [ ] TXK: implement dummy inversion based on Jacobians to test computational performance
-    - [ ] TXK: to specify how the footprints wil be used in the inverse model (dc/df, no emission caterogies) and how to produce the elements of the Jacobian.
+    - [ ] TXK: to specify how the footprints wil be used in the inverse model (dc/df, no emission categories) and how to produce the elements of the Jacobian.
     - [ ] TXK/MV: draft a kind of tutorial guiding the user through one of the experiments
-    - [ ] (2a) GM: check units of footprint: (On the setup of footprint calculations within the zoom domain: we do those for multi-hour averages, e.g. over the afternoon. This will result in one footprint per day.)
-    - [ ] (2b) MV to further test footprint calculation
-    - [x ] make sure that adjoint file is returned in the right place (write_adj_emis will write to Path(tm.dconf.run.paths.output) / 'adjemis' )
-  
-          
+    - [ ] GM (1) to compute Jacobians for the 34 (?) sites in the zoom domain using the zoom setup.Jacobian should be computed for the average of the available over the preferred time of the day (afternoon for low alt and morning for heigh alt). So, for each observation day, we have a single sensitivity. 
+    - [ ] GM (3) to compute Jacobiains for global network of ~20 sites using the global 6x4 setup for monthly mean obs. Jacobian should be computed for the instantaneous concentrations at the points in the time, when flasks are filled. So for each flask pair we have one sensitivity.
+    - [ ] GM (2) to suggest small (10-20) site global network
+    - [ ] MV (1) to look at CBW footprint and separate it into one footprint for each emission day
+    - [ ] MV (2) to make sure that (only for plotting), we change the unit from ppb/(kg Tracer/gridcell/s) to ppb/(kg Tracer/m^2/s).
+            
 # Task ideas / discussion
 - avoid misuse through implementation of "accepted ranges" => *That's essentially built-in the GUI*
 - Documentation: could be overleaf or a shared word document ... https://lumia.nateko.lu.se/ using a package mkdoc, could be combined with a markedown file on nextcloud ... => *actually, there's already a squeletton in place. Just install the `mkdocs` python package and run `mkdocs serve` from within the root of the repo. The content of the resulting page is based on the markdown files in the `docs` folder*
