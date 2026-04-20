@@ -18,7 +18,9 @@ from matplotlib.pyplot import subplots,colorbar
 from cartopy import crs
 from tm5.fitic import read_obs_table
 from tm5.gridtools import TM5Grids
+from tm5.post.plot_util import cnorm_set
 
+##plt.rcParams['text.usetex'] = True
 
 def load_adjemis_region_total( conf : DictConfig, obs_table : DataFrame ) -> DataFrame:
 
@@ -247,7 +249,9 @@ conf = OmegaConf.load(str(yaml_file))
 conf.host = conf[host]
 tstart = Timestamp(conf.run.start)
 tend   = Timestamp(conf.run.end)
-
+#-- temporal range (last day excluded)
+trange = list(date_range(conf.run.start, conf.run.end, freq='1d'))[:-1]
+nday = len(trange)
 # Load the observations tabled
 msg = f"load observation table from file ***{conf.observations.file}***"
 logger.info(msg)
@@ -303,12 +307,10 @@ elif args.mode=='visu_footp':
     df_tot = load_adjoint_footprint(conf, obs_table)
     logger.info(f"...footprints done.")
 
-    print(tstart, tend, (tend - tstart).days)
-    sys.exit(0)
     # Store all footprints in a single array
     # - array is global with dimensions time/lat/lon/obs
     #
-    fp = zeros(((tend - tstart).days, 180, 360, len(obsids)))
+    fp = zeros((nday, 180, 360, len(obsids)))
     fp[df_tot.itime, df_tot.ilat, df_tot.ilon, df_tot.itrac] = df_tot.value
     adjemis_units = "ppb/kgCH4/cell/s"
     msg = f"...global adjoint emissions assembled, " \
@@ -332,6 +334,8 @@ elif args.mode=='visu_footp':
             staid = obs_table.loc[obsid,'station_name']
         else:
             staid = obsid
+        #-- coordinates of current obs/station
+        coords = obs_table.loc[obsid,['lat', 'lon']]##.drop_duplicates()
         if args.stationids!=None and not staid in args.stationids:
             msg = f"...current footprint for -->{staid}<-- not within selected stations."
             logger.info(msg)
@@ -349,9 +353,11 @@ elif args.mode=='visu_footp':
             cbar.set_label(f"[{footp_units}]")
             #
             # Add the obs coordinates
-            coords = obs_table.loc[obsid,['lat', 'lon']]##.drop_duplicates()
             ax.plot(coords.lon, coords.lat, 'c+', ms=30, alpha=1)
-            ax.set_title(f"{staid} ({obs_info})")
+            # title = rf"$\frac{\delta conc}{\delta emis}$, {staid} ({obs_info})"
+            # title = r'$\delta conc$'
+            title = f"footprint@{staid} ({obs_info})"
+            ax.set_title(title)
             # Restrict to a smaller domain:
             ax.set_xlim(*plotlim_lon)
             ax.set_ylim(*plotlim_lat)
@@ -369,10 +375,45 @@ elif args.mode=='visu_footp':
         #
         #-- footprint w.r.t. to contributions from all time(s)
         #
-        elif args.footp_mode=='daily':
-            
-            msg = f"daily footprints not yet supported..."
-            raise NotImplementedError(msg)
+        elif args.footp_tmode=='daily':
+            for iday,day in enumerate(trange):
+                #-- contribution from current day
+                fpplot = fp[iday,..., itrac]
+                vmin = fpplot.min()
+                vmean = fpplot.mean()
+                vmax = fpplot.max()
+                f, ax = subplots(1, 1, figsize=args.figsize, subplot_kw=dict(projection=crs.PlateCarree()))
+                ax.set_global()
+                ax.coastlines()
+                # pkw = {'lognorm':True}
+                # pkw, cnorm = cnorm_set(pkw, vmin, vmax)
+                cnorm = None #-- don't yet impose user-defined norm
+                img = ax.imshow(fpplot, norm=cnorm, origin='lower', extent=(-180, 180, -90, 90), cmap='Reds')
+                cbar = colorbar(img)
+                cbar.set_label(f"[{footp_units}]")
+                #
+                # Add the obs coordinates
+                ax.plot(coords.lon, coords.lat, 'c+', ms=30, alpha=1)
+                title = f"footprint@{staid} w.r.t. emissions on " \
+                    f"{day.strftime('%Y-%m-%d')} ({obs_info})"
+                title += '\n' + \
+                    f"min/mean/max = {fpplot.min():.4E}/{fpplot.mean():.4E}/{fpplot.max():.4E}"
+                ax.set_title(title)
+                # Restrict to a smaller domain:
+                ax.set_xlim(*plotlim_lon)
+                ax.set_ylim(*plotlim_lat)
+                outdir = args.outdir if args.outdir!=None else 'tm5_footprint-plots_test'
+                sampling_tag = obs_table.loc[obsid,'sampling_tag']
+                location_tag = f'{staid.replace('_','-')}'
+                emis_tag = f"{day.strftime('emis-%Y%m%d')}"
+                outname_tokens = ['tm5_footprint', location_tag, emis_tag, sampling_tag,]
+                outname = '_'.join(outname_tokens) + '.png'
+                outname = Path(outdir) / outname
+                outname.parent.mkdir(parents=True, exist_ok=True)
+                plt.tight_layout()
+                plt.savefig(str(outname), dpi=args.dpi)
+                plt.close()
+                logger.info(f"generated ***{outname}***")
 else:
     msg = f"mode {args.mode} not supported."
     raise RuntimeError(msg)
