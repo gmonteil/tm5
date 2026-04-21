@@ -13,12 +13,15 @@ import xarray as xr
 import numpy as np
 from numpy import zeros, tile
 from netCDF4 import Dataset
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.pyplot import subplots,colorbar
 from cartopy import crs
+from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 from tm5.fitic import read_obs_table
 from tm5.gridtools import TM5Grids
 from tm5.post.plot_util import cnorm_set
+from tm5.post.utilities import lonstr,latstr
 
 ##plt.rcParams['text.usetex'] = True
 
@@ -229,6 +232,12 @@ parser.add_argument('--dpi',
                     type=int,
                     default=300,
                     help="""dots-per-inch (default: %(default)s).""")
+parser.add_argument('--cbmin',
+                    type=float,
+                    help="""explicit minimum at colorbar.""")
+parser.add_argument('--cbmax',
+                    type=float,
+                    help="""explicit maximum at colorbar.""")
 parser.add_argument('--outdir',
                     help="""top-level directory for any generated outputs..""")
 
@@ -257,6 +266,7 @@ msg = f"load observation table from file ***{conf.observations.file}***"
 logger.info(msg)
 obs_table = read_obs_table(conf.observations.file).set_index('obsid')
 obsids = list(obs_table.index)
+nobs = len(obsids)
 msg = f"...observations read (#obs = {len(obsids)})."
 logger.info(msg)
 # print(obs_table)
@@ -298,8 +308,14 @@ if args.mode=='visu_timeseries':
     raise NotImplementedError(msg)
 
 elif args.mode=='visu_footp':
-    plotlim_lon = (-15, 35)
-    plotlim_lat = (33, 73)
+    lonw, lone = (-15, 35)
+    lats, latn = (33, 73)
+    plotlim_lon = (lonw,lone)
+    plotlim_lat = (lats,latn)
+    if lonw==-180 and lone==180 and lats==-90 and latn==90:
+        domain_tag = 'global'
+    else:
+        domain_tag = f"{lonstr(lonw)}-{lonstr(lone)}x{latstr(lats)}-{latstr(latn)}"
     #=====================================================
     # read footprints
     #=====================================================
@@ -310,7 +326,7 @@ elif args.mode=='visu_footp':
     # Store all footprints in a single array
     # - array is global with dimensions time/lat/lon/obs
     #
-    fp = zeros((nday, 180, 360, len(obsids)))
+    fp = zeros((nday, 180, 360, nobs))
     fp[df_tot.itime, df_tot.ilat, df_tot.ilon, df_tot.itrac] = df_tot.value
     adjemis_units = "ppb/kgCH4/cell/s"
     msg = f"...global adjoint emissions assembled, " \
@@ -324,9 +340,25 @@ elif args.mode=='visu_footp':
     msg = f"...apply unit conversion {adjemis_units} --> {footp_units}"
     logger.info(msg)
     fp = fp / grid1x1.area[np.newaxis,:,:,np.newaxis]
-    msg = f"...footprint statistics after unit conversion, " \
+    msg = f"...global footprint statistics after unit conversion, " \
         f"min/mean/max = {fp.min()}/{fp.mean()}/{fp.max()} [{footp_units}]"
     logger.info(msg)
+    da = xr.DataArray(
+        fp,
+        dims=('iday','lat','lon','itrac'),
+        coords = {
+            'iday': np.arange(nday),
+            'lat': grid1x1.latc,
+            'lon': grid1x1.lonc,
+            'itrac': np.arange(nobs)
+            }
+        )
+    #
+    glbmin = da.min().values
+    glbmean = da.mean().values
+    glbmax  = da.max().values
+    print(f"glbmin/glbmean/glbmax =  {glbmin:.15f}/{glbmean:.15f}/{glbmax:.15f}")
+    
     for itrac,obsid in enumerate(obsids):# in range(len(obsids)):
         obsid = obsids[itrac]
         obs_info = obs_table.loc[obsid,'obstime_info']
@@ -340,6 +372,14 @@ elif args.mode=='visu_footp':
             msg = f"...current footprint for -->{staid}<-- not within selected stations."
             logger.info(msg)
             continue
+        #
+        #-- footprint restricted to plotted domain
+        #
+        datrac = da.sel(iday=np.arange(nday),lat=slice(lats,latn),lon=slice(lonw,lone),itrac=itrac)
+        dmin = datrac.min().values
+        dmean = datrac.mean().values
+        dmax  = datrac.max().values
+        print(f"dmin/dmean/dmax =  {dmin:.15f}/{dmean:.15f}/{dmax:.15f}")
         #
         #-- footprint w.r.t. to contributions from all time(s)
         #
@@ -378,30 +418,54 @@ elif args.mode=='visu_footp':
         elif args.footp_tmode=='daily':
             for iday,day in enumerate(trange):
                 #-- contribution from current day
-                fpplot = fp[iday,..., itrac]
+                fpplot = fp[iday,..., itrac] #-- global field(!)
+                #-- dataset restricted to domain for plot
+                daplot = da.sel(iday=iday,lat=slice(lats,latn),lon=slice(lonw,lone),itrac=itrac)
                 vmin = fpplot.min()
                 vmean = fpplot.mean()
                 vmax = fpplot.max()
-                f, ax = subplots(1, 1, figsize=args.figsize, subplot_kw=dict(projection=crs.PlateCarree()))
+                pltmin  = daplot.min().values
+                pltmean = daplot.mean().values
+                pltmax  = daplot.max().values
+                # msg = f"...@{day},itrac={itrac}: vmin/vmean/vmax = {vmin}/{vmean}/{vmax}"
+                # logger.info(msg)
+                msg = f"...@{day},itrac={itrac}: {pltmin}/{pltmean}/{pltmax}"
+                logger.info(msg)
+                f, ax = subplots(1, 1, figsize=args.figsize,
+                                 subplot_kw=dict(projection=crs.PlateCarree()))
                 ax.set_global()
                 ax.coastlines()
                 # pkw = {'lognorm':True}
-                # pkw, cnorm = cnorm_set(pkw, vmin, vmax)
-                cnorm = None #-- don't yet impose user-defined norm
-                img = ax.imshow(fpplot, norm=cnorm, origin='lower', extent=(-180, 180, -90, 90), cmap='Reds')
+                pkw = { 'cbmin':args.cbmin, 'cbmax':args.cbmax }
+                pkw, cnorm = cnorm_set(pkw, pltmin, pltmax)
+                # cnorm = None #-- don't yet impose user-defined norm
+                # img = ax.imshow(fpplot, norm=cnorm,
+                #                 origin='lower', extent=(-180, 180, -90, 90), cmap='Reds')
+                img = ax.imshow(daplot, norm=cnorm,
+                                origin='lower', extent=(lonw, lone, lats, latn), cmap='Reds')
+                # Restrict to a smaller domain:
+                ax.set_xlim(*plotlim_lon)
+                ax.set_ylim(*plotlim_lat)
+                #-- add colorbar
                 cbar = colorbar(img)
                 cbar.set_label(f"[{footp_units}]")
                 #
                 # Add the obs coordinates
                 ax.plot(coords.lon, coords.lat, 'c+', ms=30, alpha=1)
+                #-- add title
                 title = f"footprint@{staid} w.r.t. emissions on " \
                     f"{day.strftime('%Y-%m-%d')} ({obs_info})"
                 title += '\n' + \
-                    f"min/mean/max = {fpplot.min():.4E}/{fpplot.mean():.4E}/{fpplot.max():.4E}"
+                    f"min/mean/max = {pltmin:.4E}/{pltmean:.4E}/{pltmax:.4E}"
                 ax.set_title(title)
-                # Restrict to a smaller domain:
-                ax.set_xlim(*plotlim_lon)
-                ax.set_ylim(*plotlim_lat)
+                gl = ax.gridlines(crs=crs.PlateCarree(),
+                                  draw_labels=True, linewidth=0.5, color='gray')
+                gl.top_labels = False
+                gl.xformatter = LONGITUDE_FORMATTER
+                gl.yformatter = LATITUDE_FORMATTER
+                gl.xlabel_style = {'size': 8, 'color':'gray'}
+                gl.ylabel_style = {'size': 8, 'color':'gray'}
+                #--
                 outdir = args.outdir if args.outdir!=None else 'tm5_footprint-plots_test'
                 sampling_tag = obs_table.loc[obsid,'sampling_tag']
                 location_tag = f'{staid.replace('_','-')}'
