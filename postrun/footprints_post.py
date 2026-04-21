@@ -238,6 +238,11 @@ parser.add_argument('--cbmin',
 parser.add_argument('--cbmax',
                     type=float,
                     help="""explicit maximum at colorbar.""")
+parser.add_argument('--extent',
+                    type=float,
+                    nargs=4,
+                    default=(-180,180,-90,90),
+                    help="""selected domain for spatial footprint plots (default: %(default)s).""")
 parser.add_argument('--outdir',
                     help="""top-level directory for any generated outputs..""")
 
@@ -308,14 +313,17 @@ if args.mode=='visu_timeseries':
     raise NotImplementedError(msg)
 
 elif args.mode=='visu_footp':
-    lonw, lone = (-15, 35)
-    lats, latn = (33, 73)
+    lonw, lone, lats, latn = args.extent
+    # lonw, lone = (-15, 35)
+    # lats, latn = (33, 73)
     plotlim_lon = (lonw,lone)
     plotlim_lat = (lats,latn)
     if lonw==-180 and lone==180 and lats==-90 and latn==90:
         domain_tag = 'global'
     else:
         domain_tag = f"{lonstr(lonw)}-{lonstr(lone)}x{latstr(lats)}-{latstr(latn)}"
+    msg = f"...using domain tag -->{domain_tag}<--"
+    logger.info(msg)
     #=====================================================
     # read footprints
     #=====================================================
@@ -470,7 +478,7 @@ elif args.mode=='visu_footp':
                 sampling_tag = obs_table.loc[obsid,'sampling_tag']
                 location_tag = f'{staid.replace('_','-')}'
                 emis_tag = f"{day.strftime('emis-%Y%m%d')}"
-                outname_tokens = ['tm5_footprint', location_tag, emis_tag, sampling_tag,]
+                outname_tokens = ['tm5_footprint', location_tag, emis_tag, sampling_tag, domain_tag]
                 outname = '_'.join(outname_tokens) + '.png'
                 outname = Path(outdir) / outname
                 outname.parent.mkdir(parents=True, exist_ok=True)
