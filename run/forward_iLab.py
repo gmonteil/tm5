@@ -30,12 +30,18 @@ parser.add_argument('--trange',
                     metavar=('tstart','tend'),
                     nargs=2,
                     help="""whether to override simulation start/end time specified in the yaml file (strings must be parseable as pandas Timestamp).""")
-parser.add_argument('--expdir',
-                    help="""over-ride top-level experiment (output) directory as defined in configuration file.""")
+parser.add_argument('--outdir',
+                    help="""override top-level experiment (output) directory as defined in configuration file.""")
+# parser.add_argument('--expdir',
+#                     help="""over-ride top-level experiment (output) directory as defined in configuration file.""")
+parser.add_argument('--tm5exec',
+                    help="""specify an already compiled TM5 executablea as an *absolute* path, user is responsible to ensure it is consistent with the spatial settings of the provided yaml configuration file. NOTE, that the provided executable will *not* be used in case one of the options '--build' or --build-only' war provided, too!""")
 parser.add_argument('config_file')
 args = parser.parse_args(sys.argv[1:])
 
-
+#
+#-- check yaml file exists
+#
 yaml_file = Path(args.config_file)
 if not yaml_file.exists():
     msg = f"provided yaml file ***{str(yaml_file)}*** not accessible!"
@@ -56,12 +62,18 @@ if args.trange!=None:
     tstart, tend = args.trange
     dconf.run['start'] = tstart
     dconf.run['end']   = tend
-if args.expdir!=None: #-- note, expdir is currently set in selected machine/host
-    expdir_sav = dconf[args.host].paths.expdir
-    msg = f"setting experiment directory -->{args.expdir}<-- " \
-        f"(overriding configuration file ==>{expdir_sav}<=="
+if args.outdir!=None:
+    outdir_sav = dconf[args.host].paths.output
+    msg = f"setting experiment directory -->{args.outdir}<-- " \
+        f"(overriding configuration file ==>{outdir_sav}<=="
     logger.info(msg)
-    dconf[args.host].paths.expdir = args.expdir
+    dconf[args.host].paths.output = args.outdir
+# if args.expdir!=None: #-- note, expdir is currently set in selected machine/host
+#     expdir_sav = dconf[args.host].paths.expdir
+#     msg = f"setting experiment directory -->{args.expdir}<-- " \
+#         f"(overriding configuration file ==>{expdir_sav}<=="
+#     logger.info(msg)
+#     dconf[args.host].paths.expdir = args.expdir
 if args.build_dir!=None:
     dconf[machine].paths.build = args.build_dir
 if platform!=None and 'platform' in dconf.run:
@@ -70,6 +82,22 @@ if platform!=None and 'platform' in dconf.run:
                 f"{platform}"
             logger.info(msg)
             dconf.run['platform'] = platform
+if args.tm5exec!=None:
+    if args.build or args.build_only:
+        msg = f"discarding provided executable ***{args.tm5exec}*** " \
+            f"because request for building it is also triggered via command line!"
+        logger.warn(msg)
+    else:
+        exe = Path(args.tm5exec)
+        if not exe.is_absolute():
+            msg = f"provided executable must be an absolute path (-->{str(exe)}<--)"
+            raise RuntimeError(msg)
+        elif not exe.exist():
+            msg = f"provided executable not found on sysstem (-->{str(exe)}<--)"
+            raise RuntimeError(msg)
+        else:
+            dconf.run.paths['tm5exec'] = str(exe)
+
 # OmegaConf.save(config=dconf, f='xxx.yml')
 # sys.exit(0)
 
@@ -83,10 +111,9 @@ tm = tm5.TM5(dconf, host=args.host)
 #=====================================================
 if args.build or args.build_only and not args.rcfile_only:
     tm.build()
-
-if args.build_only:
-    logger.info(f"TM5 compilation done, exiting now")
-    sys.exit()
+    if args.build_only:
+        logger.info(f"TM5 compilation done, exiting now")
+        sys.exit()
 
 #=====================================================
 # 2. Setup input files:
@@ -129,6 +156,7 @@ rcf = tm.settings.write(Path(tm.dconf.run.paths.output) / 'forward.rc')
 # copy originating yaml file
 #=====================================================
 dst = Path(tm.dconf.run.paths.output) / yaml_file.name
+dst = Path(tm.dconf.run.paths.output) / 'tm5.yaml'
 # #-- copy2 tries to preserve file attributes (as far as possible)
 # shutil.copy2(args.config_file, str(dst))
 OmegaConf.save(config=dconf, f=str(dst))

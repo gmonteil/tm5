@@ -23,9 +23,12 @@ parser.add_argument('--obsfile',
                     help="""whether to override the observations file used to create the departures for the adjoint run.""")
 parser.add_argument('--outdir',
                     help="""override top-level experiment (output) directory as defined in configuration file.""")
+parser.add_argument('--tm5exec',
+                    help="""specify an already compiled TM5 executablea as an *absolute* path, user is responsible to ensure it is consistent with the spatial settings of the provided yaml configuration file. NOTE, that the provided executable will *not* be used in case one of the options '--build' or --build-only' war provided, too!""")
 parser.add_argument('config_file')
 args = parser.parse_args(sys.argv[1:])
 
+#-- check yaml file exists
 yaml_file = Path(args.config_file)
 if not yaml_file.exists():
     msg = f"provided yaml file ***{str(yaml_file)}*** not accessible!"
@@ -58,17 +61,36 @@ if args.outdir!=None:
         f"(overriding configuration file ==>{outdir_sav}<=="
     logger.info(msg)
     dconf[args.host].paths.output = args.outdir
+if args.tm5exec!=None:
+    if args.build or args.build_only:
+        msg = f"discarding provided executable ***{args.tm5exec}*** " \
+            f"because request for building it is also triggered via command line!"
+        logger.warn(msg)
+    else:
+        exe = Path(args.tm5exec)
+        if not exe.is_absolute():
+            msg = f"provided executable must be an absolute path (-->{str(exe)}<--)"
+            raise RuntimeError(msg)
+        elif not exe.exists():
+            msg = f"provided executable not found on sysstem (-->{str(exe)}<--)"
+            raise RuntimeError(msg)
+        else:
+            dconf.run.paths['tm5exec'] = str(exe)
+
+# =====================================================
+# 0. create configuration instance
+# =====================================================
+tm = tm5.TM5(dconf, host=args.host)
+
 
 # =====================================================
 # 1. Build the model
 # =====================================================
-tm = tm5.TM5(dconf, host=args.host)
-if args.build :
+if args.build or args.build_only:
     tm.build()
+    if args.build_only:
+        sys.exit()
 
-if args.build_only:
-    sys.exit()
-    
 
 # =====================================================
 # 2. Setup the observations
@@ -102,7 +124,7 @@ rcf = tm.settings.write(Path(tm.dconf.run.paths.output) / 'forward.rc')
 #=====================================================
 # copy originating yaml file
 #=====================================================
-dst = Path(tm.dconf.run.paths.output) / yaml_file.name
+dst = Path(tm.dconf.run.paths.output) / 'tm5.yaml'
 OmegaConf.save(config=dconf, f=str(dst))
 
 # =====================================================
