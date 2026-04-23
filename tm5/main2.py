@@ -424,6 +424,8 @@ class TM5:
         #        is is assigned a default value of 1h
         #        (equal to value in run/adjoint_20251030_gnx1x1.yaml)
         assim_window = self.dconf.output.point.get('assim_window','1h')
+        #-- MVO-20260423: 'timewindow' must be provided as number of hours
+        #                 (user_output_flask.F90, line 530: "case (1) ! N-hour window")
         self.settings['output.point.timewindow'] = int(Timedelta(assim_window).total_seconds() / 3600)
         self.settings['output.point.verbose'] = self.dconf.output.point.get('verbose', False)
         
