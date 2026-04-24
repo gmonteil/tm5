@@ -16,6 +16,7 @@ def read_obs_table(filename: Path | str) -> DataFrame:
     convert_dict = {
         'sampling_strategy': np.int32,
         'time_window_length': np.int32,
+        'station_id': np.int32
         }
     obs_table = obs_table.astype(convert_dict)
     
