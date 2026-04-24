@@ -172,7 +172,6 @@ for row in obs_table.iterrows():
         case other:
             msg = f"sampling strategy ***{_cols.sampling_strategy}*** not handled yet."
             logger.error(msg)
-
 #
 #--
 #
@@ -205,7 +204,7 @@ elif args.mode=='write_footp':
     #
     ds = fp.to_dataset(name='footprint')
     #
-    #-- add time variable
+    #-- add time variable (*this refers to the adj. emissions!*)
     #
     refday = fpresult.days[0]
     days_since = [ (_-refday).days for _ in fpresult.days ]
@@ -228,6 +227,18 @@ elif args.mode=='write_footp':
         dims=('iobs',),
         )
     ds['obsids'] = da
+    #
+    #-- add observational time-points
+    #
+    obs_secsince = [ (_-refday).total_seconds() for _ in obs_table.time ]
+    da = xr.DataArray(
+        obs_secsince,
+        dims=('iobs',),
+        attrs = {
+            'units': refday.strftime(f"seconds since %Y-%m-%d")
+            }
+        )
+    ds['obstime'] = da
     #
     #-- global attributes
     #
