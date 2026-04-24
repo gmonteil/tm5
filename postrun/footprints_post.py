@@ -251,8 +251,14 @@ elif args.mode=='write_footp':
         obs_tag = f"{len(obsids)}obs"
     else:
         obs_tag = '--'.join( [_.replace('_','-') for _ in fpresult.obsids] )
-    time_tag = "{fpresult.days[0].strftime('%Y%m%d')}-{fpresult.days[-1].strftime('%Y%m%d')}"
-    outname_tokens = ['tm5-footprint', obs_tag, time_tag,]
+    time_tag = f"{fpresult.days[0].strftime('%Y%m%d')}-{fpresult.days[-1].strftime('%Y%m%d')}"
+    #--
+    obs_days = np.array([_.strftime('%Y%m%d') for _ in obs_table.time])
+    if len(np.unique(obs_days))==1:
+        obsday_tag = f"obsday-{obs_days[0]}"
+    else:
+        obsday_tag = 'multiple-obsdays'
+    outname_tokens = ['tm5-footprint', obs_tag, obsday_tag, time_tag,]
     outfile = args.outname if args.outname!=None else '_'.join(outname_tokens)+'.nc'
     if args.outdir!=None:
         if Path(outfile).is_absolute():
