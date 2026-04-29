@@ -13,6 +13,8 @@ from tm5.fitic import read_obs_table, create_departure_files
                 
 parser = ArgumentParser()
 parser.add_argument('-b', '--build', action='store_true', default=False, help='Use this option to compile the code')
+parser.add_argument('--build-dir',
+                    help="""over-ride default build directory as it is defined in configuration file.""")
 parser.add_argument('--build-only', action='store_true', default=False)
 parser.add_argument('-m', '--host', default=os.environ['TM5_HOST'])
 parser.add_argument('--trange',
@@ -55,6 +57,8 @@ if args.obsfile!=None:
         f"(overriding entry in configuration file ==>{obsfile_sav}<=="
     logger.info(msg)
     dconf.observations.file = args.obsfile
+if args.build_dir!=None:
+    dconf[args.host].paths.build = args.build_dir
 if args.outdir!=None:
     outdir_sav = dconf[args.host].paths.output
     msg = f"setting experiment directory -->{args.outdir}<-- " \
