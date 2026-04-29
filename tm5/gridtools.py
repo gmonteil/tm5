@@ -63,7 +63,11 @@ class RectiLinearGrid:
     @property
     def south(self) -> float:
         return self.latb.min()
-    
+
+    @property
+    def domain(self) -> list[float]:
+        return [self.west, self.east, self.south, self.north,]
+
     @property
     def nlon(self) -> int:
         return len(self.lonc)
