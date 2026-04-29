@@ -7,6 +7,7 @@ import sys
 import os
 from omegaconf import OmegaConf, DictConfig
 from pathlib import Path
+from collections import OrderedDict
 from loguru import logger
 from pandas import date_range, DataFrame
 from pandas import Timestamp, Timedelta, concat
@@ -19,6 +20,286 @@ from types import SimpleNamespace
 from tm5.gridtools import TM5Grids
 
 
+#-- naming pattern: adjemis.{region}.%Y%m%d.nc
+region_table = OrderedDict()
+region_table['glb600x400'] = SimpleNamespace(
+    grid=TM5Grids.from_corners(west=-180, east=180, south=-90, north=90, dlon=6, dlat=4),
+    # domain=[-180., 180., -90., 90.],
+    # dlon=6, dlat=4,
+    child='eur300x200', parent=None)
+region_table['eur300x200'] = SimpleNamespace(
+    grid=TM5Grids.from_corners(west=-36, east=54, south=22, north=74, dlon=3, dlat=2),
+    # domain=[-36., 54., 22., 74.],
+    # dlon=3, dlat=2,
+    child='gns100x100', parent='glb600x400')
+region_table['gns100x100'] = SimpleNamespace(
+    grid=TM5Grids.from_corners(west=0, east=18, south=42, north=58, dlon=1, dlat=1),
+    # domain=[0., 18., 42., 58.],
+    # dlon=1, dlat=1,
+    child=None, parent='eur300x200')
+
+
+def regiondomain_halo( region : str ) -> SimpleNamespace:
+    reginfo = region_table[region]
+    lonmin,lonmax,latmin,latmax = reginfo.grid.domain
+    if reginfo.parent!=None:
+        dlon = region_table[reginfo.parent].grid.dlon
+        dlat = region_table[reginfo.parent].grid.dlat
+        lonmin = lonmin+dlon
+        lonmax = lonmax-dlon
+        latmin = latmin+dlat
+        latmax = latmax-dlat
+    return [lonmin,lonmax,latmin,latmax,]
+
+
+def tm5_fitic_footprint4jacobian_v1( outpath : str|Path, trange : date_range = None, obsid : str|None = None ) -> SimpleNamespace:
+    #
+    #-- load footprints into dataframe, plus ancillary information
+    #
+    fpinfo = tm5_fitic_adjoint_corrected_halos_todataframe(outpath, trange)
+    footp_df = fpinfo.data
+    obsids   = fpinfo.obsids
+    days     = fpinfo.days
+    nobs = len(obsids)
+    nday = len(days)
+    msg = f"...footprint data read, nfootp={len(footp_df)} for nobs/nday = {nobs}/{nday}"
+    logger.debug(msg)
+    if obsid!=None:
+        msg = f"...extract only for observation -->{obsid}<--"
+        logger.info(msg)
+        itrac = obsids.index(obsid) #-- position of obs. in list of tracers/obs
+        cnd_obs = footp_df.loc[:,'itrac']==itrac
+        footp_df = footp_df.loc[cnd_obs,:]
+        msg = f"......{len(footp_df)} remaining footprints."
+        logger.info(msg)
+        nobs = 1
+    #
+    #--
+    #
+    jac_table = OrderedDict()
+    for region in region_table.keys():
+        cnd_reg = footp_df.loc[:,'region']==region
+        footp_reg = footp_df.loc[cnd_reg, :]
+        west,east,south,north = region_table[region].grid.domain
+        dlon,dlat = region_table[region].grid.dlon, region_table[region].grid.dlat
+        grid = TM5Grids.from_corners(west=west, east=east, south=south, north=north, dlon=dlon, dlat=dlat)
+        if nobs>1:
+            fpfield = zeros((nday, grid.nlat, grid.nlon, nobs))
+            fpfield[footp_reg.itime, footp_reg.ilat, footp_reg.ilat, footp_reg.itrac] = footp_reg.value
+            fpda = xr.DataArray(
+                fpfield,
+                dims=('iday','lat','lon','iobs'),
+                coords = {
+                    'iday': np.arange(nday),
+                    'lat': grid.latc,
+                    'lon': grid.lonc,
+                    'iobs': np.arange(nobs)
+                    },
+                attrs = {
+                    'units' : "ppb/kgCH4/cell/s"
+                    }
+                )
+        else:
+            fpfield = zeros((nday, grid.nlat, grid.nlon))
+            fpfield[footp_reg.itime, footp_reg.ilat, footp_reg.ilat] = footp_reg.value
+            fpda = xr.DataArray(
+                fpfield,
+                name='jac',
+                dims=('iday','lat','lon'),
+                coords = {
+                    'iday': np.arange(nday),
+                    'lat': grid.latc,
+                    'lon': grid.lonc
+                    },
+                attrs = {
+                    'units' : "ppb/kgCH4/cell/s"
+                    }
+                )
+        jac_table[region] = fpda
+        print(f"@{region}, fpfield.shape={fpfield.shape}")
+    return SimpleNamespace(jac_table=jac_table, days=days, obsids=obsids)
+
+
+def tm5_fitic_adjoint_corrected_halos_todataframe( outpath : str|Path, trange : date_range = None) -> SimpleNamespace:
+    """Function to read and collect footprint information from one TM5 adjoint run
+    for selected period of time into a pandas dataframe for further processing.
+    outpath must be the toplevel output directory of the TM5 forward and adjoint run,
+    that also contains the rc-configuration files.
+    The dataframe will contain 
+
+    Currently it is expected that the simulation was carried on the FIT-IC spatial zoom
+    domain.
+
+    This routine handles the HALOs of the two inner zoom domains (eur300x200, gns100x100).
+    """
+    adjemis_dir = Path(outpath) / 'adjemis'
+    
+    #
+    #-- determine tracers
+    #   -> adjoint emissions directory should contain files adjemis.<region>.%Y%m%d.nc
+    #      (expected at daily temporal resolution),
+    #      all for the equal list of tracers.
+    #   -> we deliberatly extract them from the first file
+    #   -> MVO-NOTE, 20260424:
+    #      - what is named here "tracer" is actually the (unique) observation identifier
+    #        (taken from the point departure file) ingested into the adoint TM5 run.
+    emisfile_list = sorted(list(adjemis_dir.glob(f"adjemis.*.nc")))
+    emisfile = emisfile_list[0]
+    with Dataset(emisfile, 'r') as ds:
+        msg = f"...reading tracer information from file ***{emisfile}***"
+        logger.debug(msg)
+        nobs = ds.dimensions['tracer'].size
+        tracer = chartostring(ds['/tracer'][:])
+        tracer = [ _.strip() for _ in tracer ]
+    msg = f"...detected tracer/obs -->{tracer}<--"
+    logger.info(msg)
+    #
+    #-- determine regions
+    #
+    region_list = list(region_table.keys())
+    region_set = set()
+    for f in emisfile_list:
+        region_set.add(f.name.split('.')[1])
+    if not len(region_set)==3:
+        msg = f"expected regions -->{region_list}<-- but detected -->{region_set}<--"
+        raise RuntimeError(msg)
+    else:
+        for reg in region_set:
+            if not reg in region_list:
+                msg = f"detected region -->{reg}<-- not in expected setup -->{region_list}<--"
+                raise RuntimeError(msg)
+    #
+    #-- temporal domain
+    #
+    if trange is None:
+        trange = []
+        for f in emisfile_list:
+            reg = f.name.split('.')[1]
+            day = f.name.split('.')[2]
+            if reg!='glb600x400':
+                continue
+            else:
+                trange.append(Timestamp(day))
+        trange = sorted(trange)
+    #
+    #-- dictionary for collecint footp results
+    #
+    footprints = { 'ilat':[],
+                   'ilon':[],
+                   'latc':[],  #-- only for diagnostics
+                   'lonc':[],  #-- only for diagnostics
+                   'itime':[],
+                   'value':[],
+                   'region':[],
+                   'itrac':[]   }
+    #
+    #-- MVO-20260424:
+    #   - dataasets in adjoint emissions files are written as long 1D arrays (dimension: point),
+    #     variable 'int itrac(point)' provides index of associated tracer
+    #   - Thus, there should be *no* need to loop along the tracer !?
+    for iday, day in enumerate(trange):
+        for ireg, region in enumerate(region_list):
+            fname = adjemis_dir / day.strftime(f'adjemis.{region}.%Y%m%d.nc')
+            # Adjoint files are written only if needed, so it may not exist for a given day/region
+            if not fname.exists():
+                continue
+            with Dataset(fname, 'r') as ds:
+                ilat = ds['ilat'][:].data
+                ilon = ds['ilon'][:].data
+                itrac = ds['itrac'][:].data
+                values = ds['values'][:].data
+                lonc = ds['lon'][:].data
+                latc = ds['lat'][:].data
+                lonc = lonc[ilon]
+                latc = latc[ilat]
+                nfootp = len(ilat)
+            print(f"@{region},{day.strftime('%Y-%m-%d')}: " \
+                  f"ilon min/max={min(ilon)}/{max(ilon)}, " \
+                  f"ilat min/max={min(ilat)}/{max(ilat)}, ")
+            #
+            #-- halo correction
+            #
+            # if iday==0:
+            #     nfootp = len(ilat)
+            #     print(f"@{region},{day.strftime('%Y-%m-%d')}: #footprints={nfootp}")
+            if region=='gns100x100':
+                #
+                #- on zonal and 
+                #
+                lonmin,lonmax,latmin,latmax = regiondomain_halo(region)
+                cnd_lon = (lonc>=lonmin)&(lonc<=lonmax)
+                cnd_lat = (latc>=latmin)&(latc<=latmax)
+                cnd_halo = cnd_lon&cnd_lat
+                print(f"@{region},{day.strftime('%Y-%m-%d')}, nfootp prior/post filtering = " \
+                      f"{nfootp}/{np.count_nonzero(cnd_halo)}")
+            elif region=='eur300x200':
+                lonmin1,lonmax2,latmin1,latmax2 = regiondomain_halo(region)
+                lonmax1,lonmin2,latmax1,latmin2 = regiondomain_halo(region_table[region].child)
+                # if iday==0:
+                #     print(f"{region}, -->{lonmin1}/{lonmax2}/{latmin1}/{latmax2}<--" \
+                #           f"  -->{lonmax1}/{lonmin2}/{latmax1}/{latmin2}<--")
+                # lonmin1 = -30 #-- -36 + 6
+                # lonmax1 =   3 # western bound of halo-corrected gns1x1
+                # lonmin2 =  15 # eastern bound of halo-corrected gns1x1
+                # lonmax2 =  48 #--  54 - 6
+                # latmin1 =  26 #--  22 + 4
+                # latmax1 =  44 #-- southern bound of halo-corrected gns1x1
+                # latmin2 =  56 #-- northern bound of halo-corrected gns1x1
+                # latmax2 =  70 #--  74 - 4
+                cnd_lon = ((lonc>=lonmin1)&(lonc<=lonmax1))|((lonc>=lonmin2)&(lonc<=lonmax2))
+                cnd_lat = ((latc>=latmin1)&(latc<=latmax1))|((latc>=latmin2)&(latc<=latmax2))
+                cnd_halo = cnd_lon&cnd_lat
+                print(f"@{region},{day.strftime('%Y-%m-%d')}, nfootp prior/post filtering = " \
+                      f"{nfootp}/{np.count_nonzero(cnd_halo)}")
+            elif region=='glb600x400':
+                lonmin1,lonmax2,latmin1,latmax2 = regiondomain_halo(region)
+                lonmax1,lonmin2,latmax1,latmin2 = regiondomain_halo(region_table[region].child)
+                # if iday==0:
+                #     print(f"{region}, -->{lonmin1}/{lonmax2}/{latmin1}/{latmax2}<--" \
+                #           f"  -->{lonmax1}/{lonmin2}/{latmax1}/{latmin2}<--")
+                # lonmin1 = -180
+                # lonmax1 =  -30 # western bound of halo-corrected eur3x2
+                # lonmin2 =   48 # eastern bound of halo-corrected eur3x2
+                # lonmax2 =  180
+                # latmin1 =  -90
+                # latmax1 =   26 # southern bound of halo-corrected eur3x2
+                # latmin2 =   70 # northern bound of halo-corrected eur3x2
+                # latmax2 =   90
+                cnd_lon = ((lonc>=lonmin1)&(lonc<=lonmax1))|((lonc>=lonmin2)&(lonc<=lonmax2))
+                cnd_lat = ((latc>=latmin1)&(latc<=latmax1))|((latc>=latmin2)&(latc<=latmax2))
+                cnd_halo = cnd_lon&cnd_lat
+                print(f"@{region},{day.strftime('%Y-%m-%d')}, nfootp prior/post filtering = " \
+                      f"{nfootp}/{np.count_nonzero(cnd_halo)}")
+            ##
+            idxs_halo = np.where(cnd_halo)
+            ilat = ilat[idxs_halo]
+            ilon = ilon[idxs_halo]
+            itrac = itrac[idxs_halo]
+            values = values[idxs_halo]
+            lonc = lonc[idxs_halo]
+            latc = latc[idxs_halo]
+            nfootp = len(ilat)
+            if iday==0:
+                msg = f"@{region},{day.strftime('%Y-%m-%d')}: after halo-correction " \
+                    f"remaining footprints={len(idxs_halo[0])}"
+                print(msg)
+
+            footprints['ilat'].extend(ilat)
+            footprints['ilon'].extend(ilon)
+            footprints['latc'].extend(latc)
+            footprints['lonc'].extend(lonc)
+            footprints['itime'].extend([iday] * nfootp)
+            footprints['value'].extend(values)
+            footprints['itrac'].extend(itrac)
+            footprints['region'].extend([region] * nfootp)
+    footprints = DataFrame.from_dict(footprints)
+    msg = f"#footprints={len(footprints)}"
+    logger.info(msg)
+    return SimpleNamespace(data=footprints, days=trange, obsids=tracer)
+    # footprints.to_csv('footp_native.csv')
+    # sys.exit(0)
+
+
 def load_adjoint_fitic_footprint(conf : DictConfig) -> SimpleNamespace:
     """
     """
@@ -27,6 +308,7 @@ def load_adjoint_fitic_footprint(conf : DictConfig) -> SimpleNamespace:
     start = Timestamp(conf.run.start)
     end = Timestamp(conf.run.end)
 
+    
     #
     #-- be carefull regarding potential limitations we still have...
     #
@@ -52,85 +334,90 @@ def load_adjoint_fitic_footprint(conf : DictConfig) -> SimpleNamespace:
         nobs = ds.dimensions['tracer'].size
         tracer = chartostring(ds['/tracer'][:])
         tracer = [ _.strip() for _ in tracer ]
-
-        
-    footprints = { 'ilat':[],
-                   'ilon':[],
-                   'itime':[],
-                   'value':[],
-                   'region':[],
-                   'itrac':[]   }
-    coords_table = {}
-    #-- MVO-20260424:
-    #   - dataasets in adjoint emissions files are written as long 1D arrays (dimension: point),
-    #     variable 'int itrac(point)' provides index of associated tracer
-    #   - Thus, there should be *no* need to loop along the tracer !?
-    #-- temporal range (simulation ends at last day 0:00, this day is (typically) not simulated!)
+    #
+    #--
+    #
     trange = list(date_range(conf.run.start, conf.run.end, freq='1d'))[:-1]
     nday = len(trange)
-    for iday, day in enumerate(trange):
-        for ireg, region in enumerate(regions):
-            fname = outpath / day.strftime(f'adjemis.{region}.%Y%m%d.nc')
-            # Adjoint files are written only if needed, so it may not exist for a given day/region
-            if not fname.exists():
-                continue
-            with Dataset(fname, 'r') as ds:
-                ilat = ds['ilat'][:].data
-                ilon = ds['ilon'][:].data
-                itrac = ds['itrac'][:].data
-                values = ds['values'][:].data
-                lonc = ds['lon'][:].data
-                latc = ds['lat'][:].data
-            ndat = len(ilat)
 
-            footprints['ilat'].extend(ilat)
-            footprints['ilon'].extend(ilon)
-            footprints['itime'].extend([iday] * ndat)
-            footprints['value'].extend(values)
-            footprints['itrac'].extend(itrac)
-            footprints['region'].extend([region] * ndat)
-            #-- store spatial coordinates for region (only once)
-            if not region in coords_table:
-                coords_table[region] = (lonc,latc)
-    # for itrac in range(ntracer):
-    #     for iday, day in enumerate(date_range(start, end, freq='d')):
-    #         for ireg, region in enumerate(regions):
-    #             fname = outpath / day.strftime(f'adjemis.{region}.%Y%m%d.nc')
-    #             # Adjoint files are written only if needed, so it may not exist for a given day/region
-    #             if not fname.exists():
-    #                 continue
-    #             with Dataset(fname, 'r') as ds:
-    #                 ilat = ds['ilat'][:].data
-    #                 ilon = ds['ilon'][:].data
-    #                 itrac = ds['itrac'][:].data
-    #                 values = ds['values'][:].data
-    #                 lonc = ds['lon'][:].data
-    #                 latc = ds['lat'][:].data
-    #             ndat = len(ilat)
+    footprints = tm5_fitic_adjoint_corrected_halos_todataframe(Path(conf.run.paths.output), trange)
+    
+    # footprints = { 'ilat':[],
+    #                'ilon':[],
+    #                'itime':[],
+    #                'value':[],
+    #                'region':[],
+    #                'itrac':[]   }
+    # coords_table = {}
+    # #-- MVO-20260424:
+    # #   - dataasets in adjoint emissions files are written as long 1D arrays (dimension: point),
+    # #     variable 'int itrac(point)' provides index of associated tracer
+    # #   - Thus, there should be *no* need to loop along the tracer !?
+    # #-- temporal range (simulation ends at last day 0:00, this day is (typically) not simulated!)
+    # for iday, day in enumerate(trange):
+    #     for ireg, region in enumerate(regions):
+    #         fname = outpath / day.strftime(f'adjemis.{region}.%Y%m%d.nc')
+    #         # Adjoint files are written only if needed, so it may not exist for a given day/region
+    #         if not fname.exists():
+    #             continue
+    #         with Dataset(fname, 'r') as ds:
+    #             ilat = ds['ilat'][:].data
+    #             ilon = ds['ilon'][:].data
+    #             itrac = ds['itrac'][:].data
+    #             values = ds['values'][:].data
+    #             lonc = ds['lon'][:].data
+    #             latc = ds['lat'][:].data
+    #         ndat = len(ilat)
 
-    #             footprints['ilat'].extend(ilat)
-    #             footprints['ilon'].extend(ilon)
-    #             footprints['itime'].extend([iday] * ndat)
-    #             footprints['value'].extend(values)
-    #             footprints['itrac'].extend(itrac)
-    #             footprints['region'].extend([region] * ndat)
-    #             #-- store spatial coordinates for region (only once)
-    #             if not region in coords_table:
-    #                 coords_table[region] = (lonc,latc)
-    footprints = DataFrame.from_dict(footprints)
+    #         footprints['ilat'].extend(ilat)
+    #         footprints['ilon'].extend(ilon)
+    #         footprints['itime'].extend([iday] * ndat)
+    #         footprints['value'].extend(values)
+    #         footprints['itrac'].extend(itrac)
+    #         footprints['region'].extend([region] * ndat)
+    #         #-- store spatial coordinates for region (only once)
+    #         if not region in coords_table:
+    #             coords_table[region] = (lonc,latc)
+    # # for itrac in range(ntracer):
+    # #     for iday, day in enumerate(date_range(start, end, freq='d')):
+    # #         for ireg, region in enumerate(regions):
+    # #             fname = outpath / day.strftime(f'adjemis.{region}.%Y%m%d.nc')
+    # #             # Adjoint files are written only if needed, so it may not exist for a given day/region
+    # #             if not fname.exists():
+    # #                 continue
+    # #             with Dataset(fname, 'r') as ds:
+    # #                 ilat = ds['ilat'][:].data
+    # #                 ilon = ds['ilon'][:].data
+    # #                 itrac = ds['itrac'][:].data
+    # #                 values = ds['values'][:].data
+    # #                 lonc = ds['lon'][:].data
+    # #                 latc = ds['lat'][:].data
+    # #             ndat = len(ilat)
 
-    # Correct the halos:
-    r2 = footprints[footprints.region == 'eur300x200']
-    # print("r2.ilon=",r2.ilon.values)
-    # print("r2.ilat=",r2.ilat.values)
-    footprints.loc[footprints.region == 'eur300x200', 'ilon'] = r2.ilon.values - 2
-    footprints.loc[footprints.region == 'eur300x200', 'ilat'] = r2.ilat.values - 2
-    r3 = footprints[footprints.region == 'gns100x100']
-    # print("r3.ilon=",r3.ilon.values)
-    # print("r3.ilat=",r3.ilat.values)
-    footprints.loc[footprints.region == 'gns100x100', 'ilon'] = r3.ilon.values - 3
-    footprints.loc[footprints.region == 'gns100x100', 'ilat'] = r3.ilat.values - 2
+    # #             footprints['ilat'].extend(ilat)
+    # #             footprints['ilon'].extend(ilon)
+    # #             footprints['itime'].extend([iday] * ndat)
+    # #             footprints['value'].extend(values)
+    # #             footprints['itrac'].extend(itrac)
+    # #             footprints['region'].extend([region] * ndat)
+    # #             #-- store spatial coordinates for region (only once)
+    # #             if not region in coords_table:
+    # #                 coords_table[region] = (lonc,latc)
+    # footprints = DataFrame.from_dict(footprints)
 
+    # # Correct the halos:
+    # r2 = footprints[footprints.region == 'eur300x200']
+    # # print("r2.ilon=",r2.ilon.values)
+    # # print("r2.ilat=",r2.ilat.values)
+    # footprints.loc[footprints.region == 'eur300x200', 'ilon'] = r2.ilon.values - 2
+    # footprints.loc[footprints.region == 'eur300x200', 'ilat'] = r2.ilat.values - 2
+    # r3 = footprints[footprints.region == 'gns100x100']
+    # # print("r3.ilon=",r3.ilon.values)
+    # # print("r3.ilat=",r3.ilat.values)
+    # footprints.loc[footprints.region == 'gns100x100', 'ilon'] = r3.ilon.values - 3
+    # footprints.loc[footprints.region == 'gns100x100', 'ilat'] = r3.ilat.values - 2
+
+    
     # ------------------
     # Reproject the eur3x2 data on a 1x1 grid
     eur_west, eur_east = conf.regions['eur300x200'].lons[:2]
