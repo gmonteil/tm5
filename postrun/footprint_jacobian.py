@@ -20,22 +20,45 @@ from matplotlib.pyplot import subplots,colorbar
 from cartopy import crs
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 from tm5.fitic import read_obs_table
+from tm5.gridtools import TM5Grids
+from tm5.observations import read_obspack_file
 from tm5.post.footprint_io import tm5_fitic_adjoint_corrected_halos
 from tm5.post.footprint_io import tm5_fitic_footprint4jacobian_v1
-from tm5.post.footprint_io import tm5rundir_obsids_extra
+from tm5.post.footprint_io import tm5rundir_obsids_extra, tm5rundir_obstable
+from tm5.post.footprint_io import tm5rundir_iniconc
 from tm5.post.footprint_io import tm5rundir_emissions1D
 from tm5.post.footprint_io import tm5rundir_jacobian2D
-from tm5.gridtools import TM5Grids
+from tm5.post.footprint_io import load_adjoint_fwd
 from tm5.post.plot_util import cnorm_set
-from tm5.post.utilities import lonstr,latstr
+from tm5.post.utilities import lonstr,latstr,set_outname
 
+
+def subcmd_test_jacobianfwd_1day(args):
+    tm5rundir = args.tm5rundir
+    obsid     = args.obsid
+    if args.trange!=None:
+        trange = date_range(args.trange[0], args.trange[1], freq='1d')
+        print(trange)
+    else:
+        trange = args.trange
+
+    df_fwd = load_adjoint_fwd(tm5rundir, trange=trange)
+
+    cndobs = df_fwd.loc[:,'obs']==obsid
+    df_obs = df_fwd.loc[cndobs,:]
+    print(df_obs)
+    #-- sum over regions
+    df_out = df_obs.groupby(['obs', 'region']).sum(numeric_only=True).reset_index()
+    print(df_out)
+    csim = df_obs.loc[:,'mix'].sum()
+    print(f"csim={csim}")
 
 
 def subcmd_testbuild_jacobian_1day( args ):
-    outpath_tm5 = args.outpath_tm5
-    obsid       = args.obsid
+    tm5rundir = args.tm5rundir
+    obsid     = args.obsid
     
-    # footp_info = tm5_fitic_adjoint_corrected_halos(outpath_tm5)
+    # footp_info = tm5_fitic_adjoint_corrected_halos(tm5rundir)
     # print(footp.loc[:,'itime'].unique())
     if args.trange!=None:
         trange = date_range(args.trange[0], args.trange[1], freq='1d')
@@ -45,7 +68,7 @@ def subcmd_testbuild_jacobian_1day( args ):
     #
     #-- load obs table used for this simulation
     #
-    obs_table = tm5rundir_obsids_extra(outpath_tm5)
+    obs_table = tm5rundir_obsids_extra(tm5rundir)
     if not obsid in obs_table:
         msg = f"selected observation identifier -->{obsid}<-- not present in simulation " \
             f"(==>{list(obs_table.keys())}<==)"
@@ -57,13 +80,14 @@ def subcmd_testbuild_jacobian_1day( args ):
     #
     msg = f"start preparing emissions..."
     logger.info(msg)
-    emis1D = tm5rundir_emissions1D(outpath_tm5, trange=trange)
+    emis_info = tm5rundir_emissions1D(tm5rundir, trange=trange)
+    emis1D = emis_info.emissions
     msg = f"...emissions done."
     logger.info(msg)
     #
     #-- load Jacobian
     #
-    # jacobian_info = tm5_fitic_footprint4jacobian_v1(outpath_tm5, trange=trange, obsid=obsid)
+    # jacobian_info = tm5_fitic_footprint4jacobian_v1(tm5rundir, trange=trange, obsid=obsid)
     # jac_table = jacobian_info.jac_table
     # days = jacobian_info.days #-- [emission days]
     # nday = len(days)
@@ -105,7 +129,7 @@ def subcmd_testbuild_jacobian_1day( args ):
     # #
     # jacobian2D = jacobian1D.reshape(1,len(jacobian1D))
     #
-    jac_info = tm5rundir_jacobian2D(outpath_tm5, trange=trange, obsid=obsid)
+    jac_info = tm5rundir_jacobian2D(tm5rundir, trange=trange, obsid=obsid)
     jacobian2D = jac_info.jac2D
     nobs,nemis = jacobian2D.shape
     # print(f"jacobian2D.shape={jacobian2D.shape}")
@@ -119,75 +143,105 @@ def subcmd_testbuild_jacobian_1day( args ):
     print(f"cobs -->{cobs}<--")
 
 
-def subcmd_testbuild_jacobian_1month(args):
-    outpath_tm5 = Path(args.outpath_tm5)
-    month = args.month
+def subcmd_testbuild_jacobian_period(args):
+    """Test preparation of inputs for Fortran-based inversion environment
+    based on sensitivities for one single observational site *and* a selected
+    period of observational days.
+    """
+    #-- arguments
+    topdir = Path(args.outpath_tm5)
+    dayl = args.selday
+    host = args.__dict__.get('host', 'cosmos')
+    # dayf, dayl = args.period
     obsid = args.obsid
-    #--
-    dayf = Timestamp(f"2021-{month:02d}-01")          #-- 
-    dayl = (dayf + Timedelta(days=31)).replace(day=1) - Timedelta(days=1) #-- last day in month
+    complevel = args.__dict__.get('complevel',4)
+    
+    #-- turn dates into timestamp
+    dayl = Timestamp(dayl)
+    dayf = dayl - Timedelta(days=args.days) #Timestamp(dayf)
+
     #
     #-- naming pattern used by Guillaume: footprints_gns100x100_%Y%m%d,
     #   where '%Y%m%d' refers to last day of simulation at 0:00 !
     # e.g. for February we need to pick directories
     # footprints_gns100x100_20210202 to footprints_gns100x100_20210301
-    odayf = dayf + Timedelta(days=1)
-    odayl = dayf.replace(month=month+1)
-    obs_trange = date_range(odayf, odayl, freq='1d')
-    flx_trange = date_range(dayf, dayl, freq='1d')
-    nobs = len(obs_trange)
-    nday = len(flx_trange)  #-- number of emission days
+    ddayf = dayf + Timedelta(days=1)
+    ddayl = dayl + Timedelta(days=1)
+    dir_trange = date_range(ddayf, ddayl, freq='1d')
+    day_range = date_range(dayf, dayl, freq='1d')
+    nday = len(day_range)
+    fdir = topdir / f"footprints_gns100x100_{dir_trange[0].strftime('%Y%m%d')}"
+    #
+    #--
+    #
+    obs_table = tm5rundir_obstable(fdir, host=host)
+    obs_info = obs_table.loc[obsid,:]
+    print(obs_info)
+    #->
+    obs_hr = obs_info.time.hour
+    obs_tw = obs_info.time_window_length #-- time-window length [s]
+    #-- start/end hour
+    obs_hrs = (obs_info.time - Timedelta(seconds=obs_tw)).hour
+    obs_hre = (obs_info.time + Timedelta(seconds=obs_tw)).hour
+    assert obs_hre>obs_hrs, \
+        f"obs-time crossing 0:00 not yet supported (hrs={hrs},hre={hre})"
+    #-- "station list"
+    station_list = [obsid,]
+    
+    #
+    #-- load emissions
+    #
+    ldir = topdir / f"footprints_gns100x100_{dir_trange[-1].strftime('%Y%m%d')}"
+    emis_info = tm5rundir_emissions1D(ldir, trange=day_range)
+    emis1D = emis_info.emis1D
+    iday1D = emis_info.iday1D
+    region1D = emis_info.region1D
+    nemis = len(emis1D)
+    #
+    #-- iniconc
+    #
+    inic_info = tm5rundir_iniconc(fdir, obsid, trange=day_range)
+    iniconc = inic_info.iniconc
+    iniconc_time = inic_info.initime
+    iniconc_a = np.full(1, iniconc)
+    #
+    #-- load observations
+    #
+    obs_info = read_obspack_file(args.obsfile, start=dayf, end=dayl+Timedelta(seconds=86399))
+    obs_df = obs_info.data
+    # print(obs_df.columns)
+    obs_list = []
+    for day in day_range:
+        _ostart = day + Timedelta(hours=obs_hr) - Timedelta(seconds=obs_tw)
+        _oend   = day + Timedelta(hours=obs_hr) + Timedelta(seconds=obs_tw)
+        cnd_day = (obs_df['time']>=_ostart)&(obs_df['time']<=_oend)
+        mix_day = obs_df.loc[cnd_day,'value'].mean()
+        print(f"@{day}, _ostart/_oend = {_ostart}/{_oend}, mix={mix_day}")
+        obs_list.append(mix_day*1.e9) #-- convert [mol/mol] to [ppb]
+
     #
     #-- load Jacobians (differentiated by zoom region) for each observational time
     #
     jacobian_list = []
-    for iobs,obsday in enumerate(obs_trange):
-        msg = f"obs@{obsday.strftime('%Y-%m-%d')}, starting..."
+    for idir,dirday in enumerate(dir_trange):
+        #-- this was only to trace back consistency differences,
+        #   at it turned out, Guillaume had been using differing
+        #   emission files for
+        #   footprints_gns100x100_20210301 and the (obs/simulation) days before
+        # if iobs<nobs-2:
+        #     continue
+        msg = f"dir@{dirday.strftime('%Y-%m-%d')}, starting..."
         logger.info(msg)
-        rundir = outpath_tm5 / f"footprints_gns100x100_{obsday.strftime('%Y%m%d')}"
+        rundir = topdir / dirday.strftime(f"footprints_gns100x100_%Y%m%d")
         if not rundir.is_dir():
             msg = f"...expected directory -->{str(rundir)}<-- not found!"
             raise RuntimeError(msg)
-        #
         #--
         #
-        if iobs==1:
-            #
-            #-- load emissions
-            #
-            msg = f"start preparing emissions..."
-            logger.info(msg)
-            emis1D = tm5rundir_emissions1D(rundir, trange=flx_trange)
-            msg = f"...emissions done."
-            logger.info(msg)
-        # #
-        # #--
-        # #
-        # jac_info = tm5_fitic_footprint4jacobian_v1(rundir, trange=flx_trange, obsid=obsid)
-        # jac_table = jac_info.jac_table
-        # #
-        # #-- consistency checks
-        # #
-        # assert list(jac_table.keys())==['glb600x400','eur300x200','gns100x100',], \
-        #             f"unexpected regions in jacobian table -->{jac_table.keys()}<--"
-        # for reg,reg_jac in jac_table.items():
-        #     assert reg_jac.dims==('iday','lat','lon'), \
-        #         f"unexpected dimensions in jacobian table -->{jac_table.dims}<--"
-        # #
-        # #-- reformat Jacobian values to 1D in spatial dimensions
-        # #
-        # jacobian_a = np.array([]) #empty()
-        # for iday in range(nday):
-        #     for reg,reg_jac in jac_table.items():
-        #         dayreg_jac = reg_jac.values[iday,:,:]
-        #         jacobian_a = np.concat( (jacobian_a, dayreg_jac.ravel()))
-        #     print(f"@iday={iday}, jacobian_a.shape={jacobian_a.shape}")
-        #
-        # jacobian_list.append(jacobian_a)
-        #--
-        #
-        jac_info = tm5rundir_jacobian2D(rundir, trange=flx_trange, obsid=obsid)
+        jac_info = tm5rundir_jacobian2D(rundir, trange=day_range, obsid=obsid)
         jacobian_list.append(jac_info.jac2D)
+        xsim = np.dot(jac_info.jac2D, emis1D)
+        print(f"{dirday}, xsim = {xsim}")
     #
     #--
     #
@@ -196,6 +250,83 @@ def subcmd_testbuild_jacobian_1month(args):
 
     csim = np.dot(jac2D, emis1D)
     print(f"csim -->{csim}<--")
+
+    #
+    #--
+    #
+    trange_tag = f"{dayf.strftime('%Y%m%d')}--{dayf.strftime('%Y%m%d')}"
+    outname_tokens = ["fitic-inversion-input", obsid, trange_tag,]
+    outname = '_'.join(outname_tokens) + '.nc'
+    outname = set_outname(args, outname)
+    msg = f"writing inversion inputs to file ***{outname}***..."
+    logger.info(msg)
+
+    #
+    #--
+    #
+    fp = Dataset(outname, 'w')
+    fp.createDimension('nemis', nemis)
+    fp.createDimension('nday', nday)
+    fp.createDimension('nsta', len(station_list))
+
+    #-- 
+    ncvar = fp.createVariable('emission', 'f8', ('nemis',),
+                              compression='zlib', complevel=complevel)
+    ncvar.long_name = "CH4 emissions"
+    ncvar.units = 'kgCH4/cell/s'
+    ncvar[:] = emis1D[:]
+    #
+    ncvar = fp.createVariable('iday', iday1D.dtype, ('nemis',),
+                              compression='zlib', complevel=complevel)
+    ncvar.long_name = 'index_of_emission_day'
+    ncvar.units = ''
+    ncvar[:] = iday1D[:]
+    #
+    # ncvar = fp.createVariable('region', region1D.dtype, ('nemis',),
+    #                           compression='zlib', complevel=complevel)
+    ncvar = fp.createVariable('region', region1D.dtype, ('nemis',))
+    ncvar.long_name = f"emission_region_identifier"
+    ncvar.units = ''
+    ncvar[:] = region1D[:]
+    #
+    ncvar = fp.createVariable('obs_jacobian', 'f8', ('nday','nemis',),
+                              compression='zlib', complevel=complevel)
+    ncvar.units = 'ppb/(kgCH4/cell/s)'
+    ncvar.comment = f"quantifies change of concentration at selected days w.r.t. emissions."
+    ncvar[:] = jac2D[:]
+    #
+    ncvar = fp.createVariable('obs', 'f8', ('nday',),
+                              compression='zlib', complevel=complevel)
+    ncvar.long_name = f"observed CH4 concentration"
+    ncvar.units = 'ppb'
+    ncvar[:] = np.array(obs_list)
+    #
+    ncvar = fp.createVariable('iniconc', 'f8', ('nsta',),
+                              compression='zlib', complevel=complevel)
+    ncvar.long_name = f"initial_concentration"
+    ncvar.units = 'ppb'
+    ncvar[:] = iniconc_a
+    #
+    ncvar = fp.createVariable('day', str, ('nday',))
+    for iday,day in enumerate(day_range):
+        ncvar[iday] = day.strftime('%Y%m%d')
+    ncvar.long_name = f"day of emission *and* day of observation."
+    ncvar.units = ''
+    #
+    ncvar = fp.createVariable('station', str, ('nsta',))
+    ncvar.long_name = f"station_identifier"
+    ncvar.units = ''
+    for ista,staid in enumerate(station_list):
+        ncvar[ista] = staid
+    #-- global attributes
+    fp.description = f"Jacobian quantifies sensitivity of concentration at each individual day " \
+        f"w.r.t. to emissions from first to last day."
+    fp.history = f"{' '.join(sys.argv)}"
+    fp.date_created = Timestamp.utcnow().isoformat()
+    fp.close()
+    msg = f"generated file ***{outname}***"
+    logger.info(msg)
+
 
 ################################################################################
 #
@@ -212,10 +343,11 @@ subparsers = parser.add_subparsers( title='Available Subcommands',
                                     dest='subcmds',
                                     help='')
 #
-#--       testbuild_jacobian_1day
+#--       test_jacobianfwd_1day
 #
-sparser = subparsers.add_parser('testbuild_jacobian_1day')
-sparser.add_argument('outpath_tm5',
+sparser = subparsers.add_parser('test_jacobianfwd_1day',
+                                help="""compute contribution of emissions to selected observation""")
+sparser.add_argument('tm5rundir',
                      help="""top-level directory of TM5 adjoint run for footprint creation.""")
 sparser.add_argument('--trange',
                     metavar=('tstart','tend'),
@@ -228,24 +360,50 @@ sparser.add_argument('--outdir',
                     help="""top-level directory for any generated outputs..""")
 sparser.add_argument('--outname',
                     help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
+
 #
-#--       testbuild_jacobian_1month
+#--       testbuild_jacobian_1day
 #
-sparser = subparsers.add_parser('testbuild_jacobian_1month')
-sparser.add_argument('outpath_tm5',
-                     help="""top-level directory of series of TM5 adjoint runs for footprint creation each of those for one observation day.""")
-sparser.add_argument('--month',
-                     type=int,
-                     choices=list(np.arange(1,13)),
-                     default=2,
-                     help="""selected month in 2021 (default: %(default)s).""")
-# sparser.add_argument('--trange',
-#                     metavar=('tstart','tend'),
-#                     nargs=2,
-#                     help="""whether to override simulation start/end time specified in the yaml file (strings must be parseable as pandas Timestamp).""")
+sparser = subparsers.add_parser('testbuild_jacobian_1day',
+                                help="""test Jacobian generation for one particular observation day.""")
+sparser.add_argument('tm5rundir',
+                     help="""top-level directory of TM5 adjoint run for footprint creation.""")
+sparser.add_argument('--trange',
+                    metavar=('tstart','tend'),
+                    nargs=2,
+                    help="""whether to override simulation start/end time specified in the yaml file (strings must be parseable as pandas Timestamp).""")
 sparser.add_argument('--obsid',
                      default='cbw_207',
                      help="""restrict Jacobian to one single observational location (default: %(default)s).""")
+sparser.add_argument('--outdir',
+                    help="""top-level directory for any generated outputs..""")
+sparser.add_argument('--outname',
+                    help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
+
+#
+#--       testbuild_jacobian_period
+#
+sparser = subparsers.add_parser('testbuild_jacobian_period',
+                                help="""test preparation of inputs for Fortran inversion system.""")
+sparser.add_argument('outpath_tm5',
+                     help="""top-level directory of series of TM5 adjoint runs for footprint creation each of those for one observation day.""")
+sparser.add_argument('obsfile',
+                     help="""obspack NetCDF file providing CH4 observations at tthe selected station/site.""")
+sparser.add_argument('--obsid',
+                     default='cbw_207',
+                     help="""select one single observational location (default: %(default)s).""")
+sparser.add_argument('--selday',
+                     default="20210208",
+                     help="""last observational day of accumulation period (default: %(default)s).""")
+sparser.add_argument('--days',
+                     type=int,
+                     default=14,
+                     help="""number of days backwards of accumulation period (default: %(default)s).""")
+# sparser.add_argument('--period',
+#                      nargs=2,
+#                      metavar=('dayfirst/daylast'),
+#                      default=["20210221","20210228",],
+#                      help="""alternative specification of accumulation period (default: %(default)s).""")
 sparser.add_argument('--outdir',
                     help="""top-level directory for any generated outputs..""")
 sparser.add_argument('--outname',
@@ -259,11 +417,14 @@ sparser.add_argument('--outname',
 #
 def main(args):
 
+    if args.subcmds=='test_jacobianfwd_1day':
+        subcmd_test_jacobianfwd_1day(args)
+
     if args.subcmds=='testbuild_jacobian_1day':
         subcmd_testbuild_jacobian_1day(args)
 
-    if args.subcmds=='testbuild_jacobian_1month':
-        subcmd_testbuild_jacobian_1month(args)
+    if args.subcmds=='testbuild_jacobian_period':
+        subcmd_testbuild_jacobian_period(args)
 
 if __name__ == '__main__':
     import datetime as dtm

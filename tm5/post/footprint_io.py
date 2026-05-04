@@ -19,6 +19,7 @@ from netCDF4 import Dataset, chartostring
 from types import SimpleNamespace
 #-- library packages
 from tm5.gridtools import TM5Grids
+from tm5.fitic import read_obs_table
 
 
 #
@@ -53,30 +54,17 @@ def regiondomain_halo( region : str ) -> list:
     return [lonmin,lonmax,latmin,latmax,]
 
 
-def tm5rundir_obsids( outpath : str | Path ) -> list:
-    adjemis_dir = Path(outpath) / 'adjemis'
-    
-    #
-    #-- determine tracers
-    #   -> adjoint emissions directory should contain files adjemis.<region>.%Y%m%d.nc
-    #      (expected at daily temporal resolution),
-    #      all for the equal list of tracers.
-    #   -> deliberatly extract them from the first emission file
-    #   -> MVO-NOTE, 20260424:
-    #      - what is named here "tracer" is actually the (unique) observation identifier
-    #        (taken from the point departure file) ingested into the adoint TM5 run.
-    emisfile_list = sorted(list(adjemis_dir.glob(f"adjemis.*.nc")))
-    emisfile = emisfile_list[0]
-    with Dataset(emisfile, 'r') as ds:
-        msg = f"...reading tracer information from file ***{emisfile}***"
-        logger.debug(msg)
-        nobs = ds.dimensions['tracer'].size
-        tracer = chartostring(ds['/tracer'][:])
-        tracer = [ _.strip() for _ in tracer ]
-    # msg = f"...detected tracer/obsids -->{tracer}<--"
-    # logger.info(msg)
+def tm5rundir_obstable( outpath : str | Path, host : str = 'cosmos') -> DataFrame:
+    yamlfile = Path(outpath) / 'tm5.yaml'
+    if not yamlfile.exists():
+        msg = f"yaml configuration file ***{str(yamlfile)}*** not found on system."
+        raise FileNotFoundError(msg)
+    conf = OmegaConf.load(yamlfile)
+    conf.host = conf[host]
 
-    return tracer
+    # Load the observations tabled
+    obs_table = read_obs_table(conf.observations.file).set_index('obsid')
+    return obs_table
 
 
 def tm5rundir_obsids_extra(outpath : str | Path) -> OrderedDict:
@@ -117,7 +105,68 @@ def tm5rundir_obsids_extra(outpath : str | Path) -> OrderedDict:
     return obs_table
 
 
-def tm5rundir_emissions1D( outpath : str | Path, trange : date_range = None ) -> NDArray:
+def tm5rundir_iniconc( outpath : str | Path, obsid : str, host : str = 'cosmos', trange : date_range = None ) -> SimpleNamespace:
+    """
+    """
+    yamlfile = Path(outpath) / 'tm5.yaml'
+    if not yamlfile.exists():
+        msg = f"yaml configuration file ***{str(yamlfile)}*** not found on system."
+        raise FileNotFoundError(msg)
+    dconf = OmegaConf.load(yamlfile)
+    dconf.host = dconf[host]
+    if trange is None:
+        tstart = Timestamp(dconf.run.start)
+        tend   = Timestamp(dconf.run.end)
+        trange = date_range(tstart, tend, freq='1d')
+    else:
+        tstart = trange[0]
+        tend   = trange[-1]
+    station_file = Path(outpath) / 'stations' / 'stations.nc4'
+    ds = Dataset(station_file)
+    assert ds.dimensions['tracers'].size==1, \
+        f"multiple tracers in station file not yet supported " \
+        f"({str(station_file)})"
+    grp_fnd = None
+    for g,gg in ds.groups.items():
+        if gg.abbr.endswith(obsid):
+            grp_fnd = gg
+    #
+    if grp_fnd is None:
+        raise RuntimeError(f"-->{obsid}<-- not found in station file ***{str(station_file)}***")
+    else:
+        print(grp_fnd)
+    #
+    #-- closes time-point to detected tstart
+    #
+    times = np.array([Timestamp(*_) for _ in ds['date_midpoints'][:]]).astype('datetime64[s]')
+    istart = np.argmin(np.abs(times-tstart.to_datetime64()))
+    tini = times[istart]
+    msg = f"closest time-point to {tstart} detected at istart={istart} -->{tini}"
+    print(msg)
+    ncvar = grp_fnd['/mixing_ratio']
+    if not ncvar.dimensions!=('tracer','samples'):
+        msg = f"mixing_ratio with unexpected dimensions -->{ncvar.dimensions}<--"
+        raise RuntimeError(msg)
+    iniconc = ncvar[0,istart]
+    msg = f"...{obsid}@{tini}, conc={iniconc}"
+    print(msg)
+    ds.close()
+    # iniconcdir = dconf.host.paths.initial_condition.CH4
+    # # print(f"===>{iniconcdir}<===")
+    # #-- hard-coded to monthly data files with naming pattern like
+    # #   -->cams73_v23r1_ch4_conc_surface_inst_202101.nc<--
+    # fname = Path(iniconcdir) / tstart.strftime("cams73_v23r1_ch4_conc_surface_inst_%Y%m.nc")
+    # if not fname.exists():
+    #     msg = f"datafile with initial concentrations not found ==>{str(fname)}<=="
+    #     raise FileNotFoundError(msg)
+    # ds = xr.open_dataset(fname)
+    
+    # ds = ds.sel(longitude=4.93, latitude=51.97, method='nearest')
+    # print(ds)
+    return SimpleNamespace(iniconc=iniconc, initime=tini)
+
+    
+def tm5rundir_emissions1D( outpath : str | Path, trange : date_range = None ) -> SimpleNamespace:
     """
     """
     yamlfile = Path(outpath) / 'tm5.yaml'
@@ -147,6 +196,8 @@ def tm5rundir_emissions1D( outpath : str | Path, trange : date_range = None ) ->
     #   .
     #   .
     emissions_list = []
+    iday_list = []
+    region_list = []
     for iday,day in enumerate(trange):
         for reg in regions:
             #-- TODO:: 'CH4' is hard-coded here!
@@ -159,10 +210,15 @@ def tm5rundir_emissions1D( outpath : str | Path, trange : date_range = None ) ->
             emtot = em.to_array().sum('variable').values
             #-- turn 2D spatial part into 1D
             emtot = emtot.ravel()
+            nemis = len(emtot)
             emissions_list.append(emtot)
+            iday_list.append(np.full((nemis,), iday, dtype='i4'))
+            region_list.append(np.array([reg,]*nemis))
     #-- stack into single 1D array
     emissions1D = np.hstack(emissions_list)
-    return emissions1D
+    iday1D = np.hstack(iday_list)
+    region1D = np.hstack(region_list)
+    return SimpleNamespace(emis1D=emissions1D, iday1D=iday1D, region1D=region1D)
 
 
 def tm5rundir_jacobian2D( outpath : str | Path, trange : date_range = None, obsid : str|None = None ) -> NDArray:
@@ -347,7 +403,8 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, trange : date_range =
     #
     #-- get name of tracer/obsids
     #
-    tracer = tm5rundir_obsids(outpath)
+    obs_table = tm5rundir_obstable(outpath)
+    tracer = list(obs_table.index)
     
     #
     #-- collect adjoint emission files
@@ -431,8 +488,8 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, trange : date_range =
                 cnd_lon = (lonc>=lonmin)&(lonc<=lonmax)
                 cnd_lat = (latc>=latmin)&(latc<=latmax)
                 cnd_halo = cnd_lon&cnd_lat
-                print(f"@{region},{day.strftime('%Y-%m-%d')}, nfootp prior/post filtering = " \
-                      f"{nfootp}/{np.count_nonzero(cnd_halo)}")
+                # print(f"@{region},{day.strftime('%Y-%m-%d')}, nfootp prior/post filtering = " \
+                #       f"{nfootp}/{np.count_nonzero(cnd_halo)}")
             elif region=='glb600x400':
                 #-- initial approach:
                 #   (1) restrict to halo corrected domain of region
@@ -464,9 +521,9 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, trange : date_range =
             #
             icbw = np.where(itrac==1)
             vcbw = values[icbw]
-            msg = f"DEBUG@cbw_207, {day.strftime('%Y-%m-%d')}, {region}: " \
-                f"values min/mean/max = {vcbw.min()}/{vcbw.mean()}/{vcbw.max()}"
-            print(msg)
+            # msg = f"DEBUG@cbw_207, {day.strftime('%Y-%m-%d')}, {region}: " \
+            #     f"values min/mean/max = {vcbw.min()}/{vcbw.mean()}/{vcbw.max()}"
+            # print(msg)
             # if iday==0:
             #     msg = f"@{region},{day.strftime('%Y-%m-%d')}: after halo-correction " \
             #         f"remaining footprints={len(idxs_halo[0])}"
@@ -700,3 +757,71 @@ def load_adjoint_fitic_footprint(conf : DictConfig) -> SimpleNamespace:
         )
     
     return SimpleNamespace(data_table=df_tot, data=da, obsids=tracer, days=trange)
+
+
+def load_adjoint_fwd(outpath : str | Path, host : str = 'cosmos', trange : date_range = None) -> DataFrame:
+    """Function that codes the first cell of Guillaume's initial jupyter notebook.
+
+    Returns pandas dataframe, where each row contains the contribution of one (emission)
+    date and region to one specific obs.
+    """
+    yamlfile = Path(outpath) / 'tm5.yaml'
+    if not yamlfile.exists():
+        msg = f"yaml configuration file ***{str(yamlfile)}*** not found on system."
+        raise FileNotFoundError(msg)
+    conf = OmegaConf.load(yamlfile)
+    conf.host = conf[host]
+
+    # Load the observations tabled
+    obs_table = read_obs_table(conf.observations.file).set_index('obsid')
+    tracers = set(obs_table.tracer)
+    # print(f"-->{obs_table.index}<--")
+    # sta = 'cbw_207'
+    # ii = np.where(obs_table.index==sta)
+    # ista = ii[0][0]
+    # print(f"{sta} detected at position {ista}")
+    # Accumulators:
+    date, region, obs, dmix = [], [], [], []
+
+    if trange is None:
+        trange = date_range(conf.run.start, conf.run.end, freq='1d')
+
+    dmix_sta = []
+    for day in trange:
+        for reg in conf.run.regions:
+            adjfile = day.strftime(f'{conf.run.paths.output}/adjemis/adjemis.{reg}.%Y%m%d.nc')
+
+            # Adjoint files are written only if needed, so it may not exist for a given day/region
+            if not Path(adjfile).exists():
+                continue
+
+            # I don't know which key should code for that exact path ... for now I guessed ...
+            adj = xr.open_dataset(day.strftime(f'{conf.run.paths.output}/adjemis/adjemis.{reg}.%Y%m%d.nc'))
+
+            ilons = adj.ilon.values
+            ilats = adj.ilat.values
+            sensi = adj['values'].values
+            itrac = adj.itrac.values
+
+            # Read the emissions. For now, I'm hardcoding this to CH4 ...
+            em = xr.open_dataset(day.strftime(f'{conf.emissions.CH4.prefix}.CH4.{reg}.%Y%m%d.nc'))
+            emtot = em.to_array().sum('variable').values
+
+            for itr in set(itrac):
+                date.append(day)
+                region.append(reg)
+                obs.append(adj.tracer.values[itr].strip().decode())
+
+                subset = itrac == itr
+                sensi_trac = sensi[subset]
+                _dmix = (emtot[ilats[subset], ilons[subset]] * sensi[subset]).sum()
+                # if itr==ista:
+                #     msg = f"@{sta}, {day.strftime('%Y-%m-%d')}, {reg}: dmix = {_dmix}, sensi_trac min/mean/max = " \
+                #     f"{sensi_trac.min()}/{sensi_trac.mean()}/{sensi_trac.max()}"
+                #     # print(msg)
+                #     dmix_sta.append(_dmix)
+                dmix.append(_dmix)
+    # print(f"@{sta}, {runend}: sum(dmix_sta)={sum(dmix_sta)}")
+    # Store everything in a common dataframe. Each row contains the contribution of one date and region to one specific obs
+    fwd = DataFrame.from_dict({'obs': obs, 'region': region, 'date': date, 'mix': dmix})
+    return fwd
