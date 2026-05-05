@@ -8,12 +8,12 @@ import sys
 import os
 import shutil
 from omegaconf import OmegaConf
-import tm5
 from argparse import ArgumentParser
 from pathlib import Path
-from tm5.system import runcmd
 from loguru import logger
-
+import tm5
+from tm5.system import runcmd
+from tm5.fitic import read_obs_table
 def get_hostname():
     import socket
     hostname = socket.gethostname()
@@ -34,6 +34,8 @@ parser.add_argument('--outdir',
                     help="""override top-level experiment (output) directory as defined in configuration file.""")
 # parser.add_argument('--expdir',
 #                     help="""over-ride top-level experiment (output) directory as defined in configuration file.""")
+parser.add_argument('--obsfile',
+                    help="""whether to override the observations file used to create the departures for the adjoint run.""")
 parser.add_argument('--tm5exec',
                     help="""specify an already compiled TM5 executablea as an *absolute* path, user is responsible to ensure it is consistent with the spatial settings of the provided yaml configuration file. NOTE, that the provided executable will *not* be used in case one of the options '--build' or --build-only' war provided, too!""")
 parser.add_argument('config_file')
@@ -68,6 +70,12 @@ if args.outdir!=None:
         f"(overriding configuration file ==>{outdir_sav}<=="
     logger.info(msg)
     dconf[args.host].paths.output = args.outdir
+if args.obsfile!=None:
+    obsfile_sav = dconf.observations.file
+    msg = f"setting observations file -->{args.obsfile}<-- " \
+        f"(overriding entry in configuration file ==>{obsfile_sav}<=="
+    logger.info(msg)
+    dconf.observations.file = args.obsfile
 # if args.expdir!=None: #-- note, expdir is currently set in selected machine/host
 #     expdir_sav = dconf[args.host].paths.expdir
 #     msg = f"setting experiment directory -->{args.expdir}<-- " \
@@ -92,7 +100,7 @@ if args.tm5exec!=None:
         if not exe.is_absolute():
             msg = f"provided executable must be an absolute path (-->{str(exe)}<--)"
             raise RuntimeError(msg)
-        elif not exe.exist():
+        elif not exe.exists():
             msg = f"provided executable not found on sysstem (-->{str(exe)}<--)"
             raise RuntimeError(msg)
         else:
@@ -115,6 +123,14 @@ if args.build or args.build_only and not args.rcfile_only:
         logger.info(f"TM5 compilation done, exiting now")
         sys.exit()
 
+# =====================================================
+# 1.5 Setup the observations
+# =====================================================
+if 'observations' in tm.dconf:
+    observations_table = read_obs_table(tm.dconf.observations.file)
+    tm.setup_observations(observations_table)
+
+    
 #=====================================================
 # 2. Setup input files:
 #=====================================================
