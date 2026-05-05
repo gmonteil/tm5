@@ -14,6 +14,7 @@ import xarray as xr
 import numpy as np
 from numpy import zeros, tile
 from netCDF4 import Dataset
+from types import SimpleNamespace
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.pyplot import subplots,colorbar
@@ -31,6 +32,47 @@ from tm5.post.footprint_io import tm5rundir_jacobian2D
 from tm5.post.footprint_io import load_adjoint_fwd
 from tm5.post.plot_util import cnorm_set
 from tm5.post.utilities import lonstr,latstr,set_outname
+
+
+def tm5refdir_load_stationconc( refdir : str | Path, obsid : str ) -> xr.DataArray:
+    station_file = Path(refdir) / 'stations' / 'stations.nc4'
+    if not station_file.exists():
+        msg = f"stations result file ***{str(station_file)}*** not found on system."
+        raise FileNotFoundError(msg)
+    #
+    #--
+    #
+    ds = Dataset(station_file)
+    assert ds.dimensions['tracers'].size==1, \
+        f"multiple tracers in station file not yet supported " \
+        f"({str(station_file)})"
+    grp_fnd = None
+    for g,gg in ds.groups.items():
+        if gg.abbr.endswith(obsid):
+            grp_fnd = gg
+    #
+    if grp_fnd is None:
+        raise RuntimeError(f"-->{obsid}<-- not found in station file ***{str(station_file)}***")
+    else:
+        msg = f"obsid={obsid} found at group {grp_fnd.abbr}"
+        logger.info(msg)
+    #
+    time_list = np.array([Timestamp(*_) for _ in ds['date_midpoints'][:]])
+    ncvar = grp_fnd['/mixing_ratio']
+    if not ncvar.dimensions!=('tracer','samples'):
+        msg = f"mixing_ratio with unexpected dimensions -->{ncvar.dimensions}<--"
+        raise RuntimeError(msg)
+    conc = ncvar[0,:]
+    df_conc = DataFrame.from_dict( {'time':time_list, 'conc': conc} )
+    # conc_da = xr.DataArray(
+    #     conc,
+    #     dims = ('time',),
+    #     coords = {
+    #         'time': time_list
+    #         }
+    #     )
+    # return conc_da
+    return df_conc
 
 
 def subcmd_test_jacobianfwd_1day(args):
@@ -172,9 +214,11 @@ def subcmd_testbuild_jacobian_period(args):
     nday = len(day_range)
     fdir = topdir / f"footprints_gns100x100_{dir_trange[0].strftime('%Y%m%d')}"
     #
-    #--
+    #-- load observation table
+    #   -> we expect ethedeliberately select from the rundir of the first day of the selected
+    #      period
     #
-    obs_table = tm5rundir_obstable(fdir, host=host)
+    obs_table = tm5rundir_obstable(fdir)
     obs_info = obs_table.loc[obsid,:]
     # print(obs_info, type(obs_info))
     #->
@@ -208,12 +252,12 @@ def subcmd_testbuild_jacobian_period(args):
             raise RuntimeError(msg)
         inic_info = tm5rundir_iniconc_1obs(rundir, obs_info)
         iniconc_list.append(inic_info.conc)
-    iniconc_a = np.array(iniconc_list)
+    # iniconc_a = np.array(iniconc_list)
     #
     #-- load observations
     #
-    obs_info = read_obspack_file(args.obsfile, start=dayf, end=dayl+Timedelta(seconds=86399))
-    obs_df = obs_info.data
+    obspack_info = read_obspack_file(args.obsfile, start=dayf, end=dayl+Timedelta(seconds=86399))
+    obs_df = obspack_info.data
     # print(obs_df.columns)
     obs_list = []
     for day in day_range:
@@ -245,17 +289,56 @@ def subcmd_testbuild_jacobian_period(args):
         #
         jac_info = tm5rundir_jacobian2D(rundir, trange=day_range, obsid=obsid)
         jacobian_list.append(jac_info.jac2D)
-        xsim = np.dot(jac_info.jac2D, emis1D)
-        print(f"{dirday}, xsim = {xsim}")
+        # xsim = np.dot(jac_info.jac2D, emis1D)
+        # print(f"{dirday}, xsim = {xsim}")
     #
     #--
     #
     jac2D = np.vstack(jacobian_list)
-    print(f"jac2D.shape={jac2D.shape}")
+    # print(f"jac2D.shape={jac2D.shape}")
+    # csim = np.dot(jac2D, emis1D)
+    # print(f"csim -->{csim}<--")
 
-    csim = np.dot(jac2D, emis1D)
-    print(f"csim -->{csim}<--")
-
+    #
+    #-- verification
+    #
+    if args.refdir!=None:
+        refdir = Path(args.refdir)
+        #
+        #-- emissions used in reference run
+        #
+        msg = f"reading emissions from reference directory ***{refdir}***..."
+        logger.info(msg)
+        tm5rundir_emissions1D(refdir, trange=day_range)#, host='cosmos_apptainer')
+        refemis_info = tm5rundir_emissions1D(ldir, trange=day_range)
+        refemis1D = emis_info.emis1D
+        #
+        #--
+        #
+        refconc = tm5refdir_load_stationconc(refdir, obsid)
+        refconc_list = []
+        msg = f"verification based on " \
+            f"footprint directory ***{str(topdir)}*** and refdir ***{str(refdir)}***"
+        print(msg)
+        for iday,day in enumerate(day_range):
+            _ostart = day + Timedelta(hours=obs_hr) - Timedelta(seconds=obs_tw)
+            _oend   = day + Timedelta(hours=obs_hr) + Timedelta(seconds=obs_tw)
+            cnd_day = (refconc['time']>=_ostart)&(refconc['time']<=_oend)
+            refconc_day = refconc.loc[cnd_day,'conc'].mean()
+            refconc_list.append(refconc_day)
+            linconc_day = np.dot(jac2D[iday,:], refemis1D) + iniconc_list[iday]
+            msg = f"@{day.strftime('%Y%m%d')}, " \
+                f"refconc/linconc/iniconc / obsconc = " \
+                f"{refconc_day}/{linconc_day}/{iniconc_list[iday]} / {obs_list[iday]}"
+            print(msg)
+        try:
+            refconc_info = tm5rundir_iniconc_1obs(refdir, obs_info)
+            print(refconc_info.conc)
+        except FileNotFoundError:
+            pass
+        msg = f"verification modus, terminating without generating output!"
+        logger.info(msg)
+        sys.exit(0)
     #
     #--
     #
@@ -310,7 +393,7 @@ def subcmd_testbuild_jacobian_period(args):
                               compression='zlib', complevel=complevel)
     ncvar.long_name = f"initial_concentration"
     ncvar.units = 'ppb'
-    ncvar[0,:] = iniconc_a
+    ncvar[0,:] = iniconc_list
     #
     ncvar = fp.createVariable('day', str, ('nday',))
     for iday,day in enumerate(day_range):
@@ -409,6 +492,8 @@ sparser.add_argument('--days',
 #                      metavar=('dayfirst/daylast'),
 #                      default=["20210221","20210228",],
 #                      help="""alternative specification of accumulation period (default: %(default)s).""")
+sparser.add_argument('--refdir',
+                     help="""TM5 forward simulation, can be used to verify the Jacobian approach.""") 
 sparser.add_argument('--outdir',
                     help="""top-level directory for any generated outputs..""")
 sparser.add_argument('--outname',
