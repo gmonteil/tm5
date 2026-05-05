@@ -9,7 +9,7 @@ from omegaconf import OmegaConf, DictConfig
 from pathlib import Path
 from collections import OrderedDict
 from loguru import logger
-from pandas import date_range, DataFrame
+from pandas import date_range, DataFrame, Series
 from pandas import Timestamp, Timedelta, concat
 import xarray as xr
 import numpy as np
@@ -105,7 +105,55 @@ def tm5rundir_obsids_extra(outpath : str | Path) -> OrderedDict:
     return obs_table
 
 
-def tm5rundir_iniconc( outpath : str | Path, obsid : str, host : str = 'cosmos', trange : date_range = None ) -> SimpleNamespace:
+def tm5rundir_iniconc_1obs( outpath : str | Path, obs_info : Series, host : str = 'cosmos' ) -> SimpleNamespace:
+    """
+    """
+    yamlfile = Path(outpath) / 'tm5.yaml'
+    if not yamlfile.exists():
+        msg = f"yaml configuration file ***{str(yamlfile)}*** not found on system."
+        raise FileNotFoundError(msg)
+    dconf = OmegaConf.load(yamlfile)
+    dconf.host = dconf[host]
+    reglist = dconf.run.regions
+    #
+    #--
+    #
+    sta_tracer = obs_info.tracer
+    sta_id     = obs_info.station_id
+    sta_lon    = obs_info.lon
+    sta_lat    = obs_info.lat
+    #-- determine innermost zoom region of station
+    sta_region = None
+    for reg in reglist[::-1]:
+        lonw,lone = dconf.regions[reg].lons[:2]
+        lats,latn = dconf.regions[reg].lats[:2]
+        if lonw<=sta_lon<=lone and lats<=sta_lat<=latn:
+            sta_region = reg
+            break
+    # msg = f"sta_id={sta_id} detected in region -->{sta_region}<--"
+    # print(msg)
+    #
+    #-- read from point output file
+    #   - group structure in file is <region>/<tracer>
+    #
+    outp_file = Path(outpath) / 'point' / 'point_output.nc4'
+    if not outp_file.exists():
+        msg = f"expected point output file ***{str(outp_file)}*** not found."
+        raise FileNotFoundError(msg)
+    #
+    #-- select region/tracer for current observation
+    #
+    outp = xr.open_dataset(outp_file, group=f'{sta_region}/{sta_tracer}').to_dataframe()
+    #
+    #-- extract only selected station
+    #
+    sta_outp = outp.set_index('station_id').loc[sta_id,:]
+    # msg = f"@{outpath.name}, sta_id={sta_id} conc={sta_outp.mixing_ratio}"
+    # print(msg)
+    return SimpleNamespace(conc=sta_outp.mixing_ratio, nsamples=sta_outp.nsamples, averaging_time=sta_outp.averaging_time)
+
+
+def tm5rundir_iniconc_wrong( outpath : str | Path, obsid : str, host : str = 'cosmos', trange : date_range = None ) -> SimpleNamespace:
     """
     """
     yamlfile = Path(outpath) / 'tm5.yaml'
@@ -151,18 +199,6 @@ def tm5rundir_iniconc( outpath : str | Path, obsid : str, host : str = 'cosmos',
     msg = f"...{obsid}@{tini}, conc={iniconc}"
     print(msg)
     ds.close()
-    # iniconcdir = dconf.host.paths.initial_condition.CH4
-    # # print(f"===>{iniconcdir}<===")
-    # #-- hard-coded to monthly data files with naming pattern like
-    # #   -->cams73_v23r1_ch4_conc_surface_inst_202101.nc<--
-    # fname = Path(iniconcdir) / tstart.strftime("cams73_v23r1_ch4_conc_surface_inst_%Y%m.nc")
-    # if not fname.exists():
-    #     msg = f"datafile with initial concentrations not found ==>{str(fname)}<=="
-    #     raise FileNotFoundError(msg)
-    # ds = xr.open_dataset(fname)
-    
-    # ds = ds.sel(longitude=4.93, latitude=51.97, method='nearest')
-    # print(ds)
     return SimpleNamespace(iniconc=iniconc, initime=tini)
 
     

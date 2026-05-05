@@ -25,7 +25,7 @@ from tm5.observations import read_obspack_file
 from tm5.post.footprint_io import tm5_fitic_adjoint_corrected_halos
 from tm5.post.footprint_io import tm5_fitic_footprint4jacobian_v1
 from tm5.post.footprint_io import tm5rundir_obsids_extra, tm5rundir_obstable
-from tm5.post.footprint_io import tm5rundir_iniconc
+from tm5.post.footprint_io import tm5rundir_iniconc_1obs
 from tm5.post.footprint_io import tm5rundir_emissions1D
 from tm5.post.footprint_io import tm5rundir_jacobian2D
 from tm5.post.footprint_io import load_adjoint_fwd
@@ -176,7 +176,7 @@ def subcmd_testbuild_jacobian_period(args):
     #
     obs_table = tm5rundir_obstable(fdir, host=host)
     obs_info = obs_table.loc[obsid,:]
-    print(obs_info)
+    # print(obs_info, type(obs_info))
     #->
     obs_hr = obs_info.time.hour
     obs_tw = obs_info.time_window_length #-- time-window length [s]
@@ -200,10 +200,15 @@ def subcmd_testbuild_jacobian_period(args):
     #
     #-- iniconc
     #
-    inic_info = tm5rundir_iniconc(fdir, obsid, trange=day_range)
-    iniconc = inic_info.iniconc
-    iniconc_time = inic_info.initime
-    iniconc_a = np.full(1, iniconc)
+    iniconc_list = []
+    for idir,dirday in enumerate(dir_trange):
+        rundir = topdir / dirday.strftime(f"footprints_gns100x100_%Y%m%d")
+        if not rundir.is_dir():
+            msg = f"...expected directory -->{str(rundir)}<-- not found!"
+            raise RuntimeError(msg)
+        inic_info = tm5rundir_iniconc_1obs(rundir, obs_info)
+        iniconc_list.append(inic_info.conc)
+    iniconc_a = np.array(iniconc_list)
     #
     #-- load observations
     #
@@ -254,7 +259,7 @@ def subcmd_testbuild_jacobian_period(args):
     #
     #--
     #
-    trange_tag = f"{dayf.strftime('%Y%m%d')}--{dayf.strftime('%Y%m%d')}"
+    trange_tag = f"{dayf.strftime('%Y%m%d')}--{dayl.strftime('%Y%m%d')}"
     outname_tokens = ["fitic-inversion-input", obsid, trange_tag,]
     outname = '_'.join(outname_tokens) + '.nc'
     outname = set_outname(args, outname)
@@ -301,11 +306,11 @@ def subcmd_testbuild_jacobian_period(args):
     ncvar.units = 'ppb'
     ncvar[:] = np.array(obs_list)
     #
-    ncvar = fp.createVariable('iniconc', 'f8', ('nsta',),
+    ncvar = fp.createVariable('iniconc', 'f8', ('nsta','nday',),
                               compression='zlib', complevel=complevel)
     ncvar.long_name = f"initial_concentration"
     ncvar.units = 'ppb'
-    ncvar[:] = iniconc_a
+    ncvar[0,:] = iniconc_a
     #
     ncvar = fp.createVariable('day', str, ('nday',))
     for iday,day in enumerate(day_range):
