@@ -54,13 +54,12 @@ def regiondomain_halo( region : str ) -> list:
     return [lonmin,lonmax,latmin,latmax,]
 
 
-def tm5rundir_obstable( outpath : str | Path, host : str = 'cosmos') -> DataFrame:
+def tm5rundir_obstable( outpath : str | Path ) -> DataFrame:
     yamlfile = Path(outpath) / 'tm5.yaml'
     if not yamlfile.exists():
         msg = f"yaml configuration file ***{str(yamlfile)}*** not found on system."
         raise FileNotFoundError(msg)
     conf = OmegaConf.load(yamlfile)
-    conf.host = conf[host]
 
     # Load the observations tabled
     obs_table = read_obs_table(conf.observations.file).set_index('obsid')
@@ -105,7 +104,7 @@ def tm5rundir_obsids_extra(outpath : str | Path) -> OrderedDict:
     return obs_table
 
 
-def tm5rundir_iniconc_1obs( outpath : str | Path, obs_info : Series, host : str = 'cosmos' ) -> SimpleNamespace:
+def tm5rundir_iniconc_1obs( outpath : str | Path, obs_info : Series ) -> SimpleNamespace:
     """
     """
     yamlfile = Path(outpath) / 'tm5.yaml'
@@ -113,7 +112,6 @@ def tm5rundir_iniconc_1obs( outpath : str | Path, obs_info : Series, host : str 
         msg = f"yaml configuration file ***{str(yamlfile)}*** not found on system."
         raise FileNotFoundError(msg)
     dconf = OmegaConf.load(yamlfile)
-    dconf.host = dconf[host]
     reglist = dconf.run.regions
     #
     #--
@@ -202,7 +200,7 @@ def tm5rundir_iniconc_wrong( outpath : str | Path, obsid : str, host : str = 'co
     return SimpleNamespace(iniconc=iniconc, initime=tini)
 
     
-def tm5rundir_emissions1D( outpath : str | Path, trange : date_range = None ) -> SimpleNamespace:
+def tm5rundir_emissions1D( outpath : str | Path, trange : date_range = None, host : str = 'cosmos') -> SimpleNamespace:
     """
     """
     yamlfile = Path(outpath) / 'tm5.yaml'
@@ -210,7 +208,11 @@ def tm5rundir_emissions1D( outpath : str | Path, trange : date_range = None ) ->
         msg = f"yaml configuration file ***{str(yamlfile)}*** not found on system."
         raise FileNotFoundError(msg)
     dconf = OmegaConf.load(yamlfile)
+    if not 'host' in dconf:
+        dconf.host = dconf[host]
     emisdir = dconf.run.paths.emissions
+    # print(f"@{outpath}, *****{emisdir}*****")
+    # sys.exit(0)
     regions = dconf.run.regions
     if trange is None:
         tstart = Timestamp(dconf.run.start)
@@ -310,14 +312,14 @@ def tm5rundir_jacobian2D( outpath : str | Path, trange : date_range = None, obsi
         cur_obsid = obsids[itrac]
         cnd_obs = footp_df.loc[:,'itrac']==itrac
         df = footp_df.loc[cnd_obs,:]
-        msg = f"...restricted to {cur_obsid} yields {len(df)} entries"
-        logger.debug(msg)
+        # msg = f"...restricted to {cur_obsid} yields {len(df)} entries"
+        # logger.debug(msg)
         jac_list = []
         for iday in range(nday):
             cnd_day = df.loc[:,'itime']==iday
             df_day = df.loc[cnd_day,:]
-            msg = f"...restricted to {days[iday].strftime('%Y%m%d')} yields {len(df_day)} entries"
-            logger.debug(msg)
+            # msg = f"...restricted to {days[iday].strftime('%Y%m%d')} yields {len(df_day)} entries"
+            # logger.debug(msg)
             for reg in regions:
                 # print(f"@{reg}\n", df.head())
                 cnd_reg = df_day.loc[:,'region']==reg
@@ -574,8 +576,8 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, trange : date_range =
             footprints['itrac'].extend(itrac)
             footprints['region'].extend([region] * nfootp)
     footprints = DataFrame.from_dict(footprints)
-    msg = f"...overall #footprints={len(footprints)}"
-    logger.info(msg)
+    # msg = f"...overall #footprints={len(footprints)}"
+    # logger.info(msg)
     return SimpleNamespace(data=footprints, days=trange, regions=region_list, obsids=tracer)
 
 
