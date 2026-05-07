@@ -200,8 +200,9 @@ def subcmd_testbuild_jacobian_period(args):
     
     #-- turn dates into timestamp
     dayl = Timestamp(dayl)
-    dayf = dayl - Timedelta(days=args.days) #Timestamp(dayf)
-
+    dayf = dayl - Timedelta(days=args.days-1) #-- #args.days overall, selected day is last
+    day_range = date_range(dayf, dayl, freq='1d')
+    nday = len(day_range)
     #
     #-- naming pattern used by Guillaume: footprints_gns100x100_%Y%m%d,
     #   where '%Y%m%d' refers to last day of simulation at 0:00 !
@@ -210,8 +211,6 @@ def subcmd_testbuild_jacobian_period(args):
     ddayf = dayf + Timedelta(days=1)
     ddayl = dayl + Timedelta(days=1)
     dir_trange = date_range(ddayf, ddayl, freq='1d')
-    day_range = date_range(dayf, dayl, freq='1d')
-    nday = len(day_range)
     fdir = topdir / f"footprints_gns100x100_{dir_trange[0].strftime('%Y%m%d')}"
     #
     #-- load observation table
@@ -252,7 +251,6 @@ def subcmd_testbuild_jacobian_period(args):
             raise RuntimeError(msg)
         inic_info = tm5rundir_iniconc_1obs(rundir, obs_info)
         iniconc_list.append(inic_info.conc)
-    # iniconc_a = np.array(iniconc_list)
     #
     #-- load observations
     #
@@ -265,7 +263,7 @@ def subcmd_testbuild_jacobian_period(args):
         _oend   = day + Timedelta(hours=obs_hr) + Timedelta(seconds=obs_tw)
         cnd_day = (obs_df['time']>=_ostart)&(obs_df['time']<=_oend)
         mix_day = obs_df.loc[cnd_day,'value'].mean()
-        print(f"@{day}, _ostart/_oend = {_ostart}/{_oend}, mix={mix_day}")
+        # print(f"@{day}, _ostart/_oend = {_ostart}/{_oend}, mix={mix_day}")
         obs_list.append(mix_day*1.e9) #-- convert [mol/mol] to [ppb]
 
     #
@@ -300,6 +298,18 @@ def subcmd_testbuild_jacobian_period(args):
     # print(f"csim -->{csim}<--")
 
     #
+    #-- target jacobian
+    #
+    target_list = ['global', 'gns1x1',]
+    ntgt = len(target_list)
+    tjac2D = zeros((ntgt,nemis), dtype='f8')
+    for itgt,tgt in enumerate(target_list):
+        if tgt=='global':
+            tjac2D[itgt,:] = 1.
+        elif tgt=='gns1x1':
+            cnd_gns = region1D=='gns100x100'
+            tjac2D[itgt,cnd_gns] = 1.
+    #
     #-- verification
     #
     if args.refdir!=None:
@@ -312,6 +322,10 @@ def subcmd_testbuild_jacobian_period(args):
         tm5rundir_emissions1D(refdir, trange=day_range)#, host='cosmos_apptainer')
         refemis_info = tm5rundir_emissions1D(ldir, trange=day_range)
         refemis1D = emis_info.emis1D
+        ng = len(refemis1D)/nday
+        assert ng==int(ng)
+        ng = int(ng)
+        refemis2D = refemis1D.reshape(nday,ng)
         #
         #--
         #
@@ -327,6 +341,8 @@ def subcmd_testbuild_jacobian_period(args):
             refconc_day = refconc.loc[cnd_day,'conc'].mean()
             refconc_list.append(refconc_day)
             linconc_day = np.dot(jac2D[iday,:], refemis1D) + iniconc_list[iday]
+            msg = f"@{day.strftime('%Y%m%d')}, emistot={refemis2D[iday,:].sum()}"
+            print(msg)
             msg = f"@{day.strftime('%Y%m%d')}, " \
                 f"refconc/linconc/iniconc / obsconc = " \
                 f"{refconc_day}/{linconc_day}/{iniconc_list[iday]} / {obs_list[iday]}"
@@ -338,7 +354,6 @@ def subcmd_testbuild_jacobian_period(args):
             pass
         msg = f"verification modus, terminating without generating output!"
         logger.info(msg)
-        sys.exit(0)
     #
     #--
     #
@@ -356,6 +371,7 @@ def subcmd_testbuild_jacobian_period(args):
     fp.createDimension('nemis', nemis)
     fp.createDimension('nday', nday)
     fp.createDimension('nsta', len(station_list))
+    fp.createDimension('ntgt', ntgt)
 
     #-- 
     ncvar = fp.createVariable('emission', 'f8', ('nemis',),
@@ -406,11 +422,31 @@ def subcmd_testbuild_jacobian_period(args):
     ncvar.units = ''
     for ista,staid in enumerate(station_list):
         ncvar[ista] = staid
+    #
+    ncvar = fp.createVariable('targets', str, ('ntgt',))
+    ncvar.long_name = f"target_identifier"
+    ncvar.units = ''
+    for itgt,tgt in enumerate(target_list):
+        ncvar[itgt] = tgt
+    #
+    ncvar = fp.createVariable('tgt_jacobian', 'f8', ('ntgt','nemis',),
+                              compression='zlib', complevel=complevel)
+    ncvar.units = ''
+    ncvar[:] = tjac2D[:]
+
+    #
     #-- global attributes
+    #
     fp.description = f"Jacobian quantifies sensitivity of concentration at each individual day " \
         f"w.r.t. to emissions from first to last day."
+    fp.footprint_directory = str(topdir.absolute())
+    fp.emission_directory = str(emis_info.emisdir)
+    fp.obsfile = args.obsfile
     fp.history = f"{' '.join(sys.argv)}"
     fp.date_created = Timestamp.utcnow().isoformat()
+    #
+    #-- close
+    #
     fp.close()
     msg = f"generated file ***{outname}***"
     logger.info(msg)
