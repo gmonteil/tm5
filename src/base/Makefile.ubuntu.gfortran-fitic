@@ -4,10 +4,9 @@ LINKER = gfortran
 
 OPT = 1
 ifeq ($(OPT),1)
-  FFLAGS_OPT = -O2 -fopenmp
-endif
-
-ifeq ($(DBG),1)
+  FFLAGS_OPT = -O2 -fopenmp -funroll-loops -floop-block -ftree-loop-distribution
+  FFLAGS_DBG = 
+else ifeq ($(OPT),0)
   FFLAGS_DBG = -g -fbounds-check -fcheck=all,no-array-temps -fbacktrace -ffpe-trap=invalid,zero,overflow
   FFLAGS_OPT = -Og
 endif
@@ -15,11 +14,16 @@ endif
 # compile flags:
 FFLAGS = -cpp -fPIC -ffree-line-length-none -m64 -frecord-marker=4 -fdefault-real-8 $(FFLAGS_DBG) $(FFLAGS_OPT) -I/usr/include -I/opt/udunits-1.12.11/include -I/usr/include/hdf5/serial
 
+
 # compile flags without optim:
 FFLAGS_BASIC = -cpp -fPIC -ffree-line-length-none -m64 -frecord-marker=4 -fdefault-real-8 $(FFLAGS_DBG) -I/usr/include
 
 # linker flags:
-LDFLAGS = # -fopenmp
+ifeq ($(OPT),1)
+  LDFLAGS = $(FFLAGS_OPT)
+else
+  LDFLAGS =
+endif
 
 # library flags:
 LIBS = -L/usr/lib/x86_64-linux-gnu -lnetcdff -lnetcdf -L/usr/lib/x86_64-linux-gnu/hdf5/serial/ -lhdf5 -lhdf5_hl -lsz -lcurl -lz -ljpeg -lpthread -lm -ldl -llapack -lblas -L/opt/udunits-1.12.11/lib -ludunits
