@@ -256,7 +256,7 @@ def tm5rundir_emissions1D( outpath : str | Path, trange : date_range = None, hos
     emissions1D = np.hstack(emissions_list)
     iday1D = np.hstack(iday_list)
     region1D = np.hstack(region_list)
-    return SimpleNamespace(emis1D=emissions1D, iday1D=iday1D, region1D=region1D)
+    return SimpleNamespace(emis1D=emissions1D, iday1D=iday1D, region1D=region1D, emisdir=emisdir)
 
 
 def tm5rundir_jacobian2D( outpath : str | Path, trange : date_range = None, obsid : str|None = None ) -> NDArray:
@@ -324,8 +324,8 @@ def tm5rundir_jacobian2D( outpath : str | Path, trange : date_range = None, obsi
                 # print(f"@{reg}\n", df.head())
                 cnd_reg = df_day.loc[:,'region']==reg
                 df_reg = df_day.loc[cnd_reg,:]
-                msg = f"...restricted to {reg} yields {len(df_reg)} entries"
-                logger.debug(msg)
+                # msg = f"...restricted to {reg} yields {len(df_reg)} entries"
+                # logger.debug(msg)
                 grid = region_table[reg].grid
                 # print(f"@{reg}, nlat/nlon = {grid.nlat}/{grid.nlon}")
                 sens = zeros((grid.nlat, grid.nlon))
@@ -508,8 +508,8 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, trange : date_range =
                 cnd_lon = (lonc>=lonmin)&(lonc<=lonmax)
                 cnd_lat = (latc>=latmin)&(latc<=latmax)
                 cnd_halo = cnd_lon&cnd_lat
-                print(f"@{region},{day.strftime('%Y-%m-%d')}, nfootp prior/post filtering = " \
-                      f"{nfootp}/{np.count_nonzero(cnd_halo)}")
+                # print(f"@{region},{day.strftime('%Y-%m-%d')}, nfootp prior/post filtering = " \
+                #       f"{nfootp}/{np.count_nonzero(cnd_halo)}")
             elif region=='eur300x200':
                 #-- initial approach:
                 #   (1) restrict to halo corrected domain of region
