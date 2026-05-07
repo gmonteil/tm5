@@ -581,9 +581,9 @@ def tm5rundir_jacobian3D( outpath : str | Path, trange : date_range = None, obsi
                 sens[df_reg.ilat, df_reg.ilon] = df_reg.value
                 #
                 sens = sens.ravel()
-                msg = f"@itrac={itrac}/iday={iday}/{reg}, sens min/mean/max = " \
-                    f"{sens.min()}/{sens.mean()}/{sens.max()}"
-                print(msg)
+                # msg = f"@itrac={itrac}/iday={iday}/{reg}, sens min/mean/max = " \
+                #     f"{sens.min()}/{sens.mean()}/{sens.max()}"
+                # print(msg)
                 if thinning:
                     if reg=='gns100x100':
                         #-- *all* sensitivities from innermost domain
@@ -593,9 +593,9 @@ def tm5rundir_jacobian3D( outpath : str | Path, trange : date_range = None, obsi
                         #   (those should be zero anyhow)
                         msk = region_table[reg].mask1D==1
                         sens = sens[msk]
-                    msg = f"@itrac={itrac}/iday={iday}/{reg}, *AFTER MASKING* sens min/mean/max = " \
-                        f"{sens.min()}/{sens.mean()}/{sens.max()}"
-                    print(msg)
+                    # msg = f"@itrac={itrac}/iday={iday}/{reg}, *AFTER MASKING* sens min/mean/max = " \
+                    #     f"{sens.min()}/{sens.mean()}/{sens.max()}"
+                    # print(msg)
                     #-- consistency check
                     assert len(sens)==region_table[reg].ng1D
                 jac_list.append(sens)
