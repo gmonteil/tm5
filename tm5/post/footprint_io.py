@@ -30,16 +30,56 @@ region_table = OrderedDict()
 
 def _init_region_table():
     global region_table
+    grdglb = TM5Grids.from_corners(west=-180, east=180, south=-90, north=90, dlon=6, dlat=4)
+    grdeur = TM5Grids.from_corners(west=-36, east=54, south=22, north=74, dlon=3, dlat=2)
+    grdgns = TM5Grids.from_corners(west=0, east=18, south=42, north=58, dlon=1, dlat=1)
+    #
+    #-- build masks
+    #   - global grid with zero entries within eur3x2 domain
+    #   - european grid with zero entries within gns1x1 domain
+    #
+    #-- glb6x4
+    dfglb = xr.DataArray(
+        np.ones((grdglb.nlat, grdglb.nlon), dtype='i4'),
+        dims = ('lat','lon'),
+        coords = { 'lon' : grdglb.lonc,
+                   'lat' : grdglb.latc },
+        name = 'mask').to_dataframe()
+    cnd_inner = (dfglb.index.get_level_values('lon')>=grdeur.west) & \
+        (dfglb.index.get_level_values('lon')<=grdeur.east) & \
+        (dfglb.index.get_level_values('lat')>=grdeur.south) & \
+        (dfglb.index.get_level_values('lat')<=grdeur.north)
+    dfglb.loc[cnd_inner,:] = 0
+    dsglb = dfglb.to_xarray()
+    ngglb = np.count_nonzero(dsglb.mask.values)
+    print(f"@glb6x4, ngtot={dsglb.mask.values.size}, ngglb={ngglb}")
+    #-- eur3x2
+    dfeur = xr.DataArray(
+        np.ones((grdeur.nlat, grdeur.nlon), dtype='i4'),
+        dims = ('lat','lon'),
+        coords = { 'lon' : grdeur.lonc,
+                   'lat' : grdeur.latc },
+        name = 'mask').to_dataframe()
+    cnd_inner = (dfeur.index.get_level_values('lon')>=grdgns.west) & \
+        (dfeur.index.get_level_values('lon')<=grdgns.east) & \
+        (dfeur.index.get_level_values('lat')>=grdgns.south) & \
+        (dfeur.index.get_level_values('lat')<=grdgns.north)
+    dfeur.loc[cnd_inner,:] = 0
+    dseur = dfeur.to_xarray()
+    ngeur = np.count_nonzero(dseur.mask.values)
+    print(f"@glb3x2, ngtot={dseur.mask.values.size}, ngeur={ngeur}")
     region_table['glb600x400'] = SimpleNamespace(
-        grid=TM5Grids.from_corners(west=-180, east=180, south=-90, north=90, dlon=6, dlat=4),
-        child='eur300x200', parent=None)
+        grid=grdglb,
+        child='eur300x200', parent=None, dsmask=dsglb,
+        mask1D=dsglb.mask.values.ravel(), ng1D=ngglb)
     region_table['eur300x200'] = SimpleNamespace(
-        grid=TM5Grids.from_corners(west=-36, east=54, south=22, north=74, dlon=3, dlat=2),
-        child='gns100x100', parent='glb600x400')
+        grid=grdeur,
+        child='gns100x100', parent='glb600x400', dsmask=dseur,
+        mask1D=dseur.mask.values.ravel(), ng1D=ngeur)
     region_table['gns100x100'] = SimpleNamespace(
-        grid=TM5Grids.from_corners(west=0, east=18, south=42, north=58, dlon=1, dlat=1),
-        child=None, parent='eur300x200')
-    
+        grid=grdgns,
+        child=None, parent='eur300x200',
+        mask1D=None, ng1D=grdgns.nlat*grdgns.nlon)
 
 
 def regiondomain_halo( region : str ) -> list:
@@ -223,8 +263,112 @@ def tm5rundir_emissions1D( outpath : str | Path, trange : date_range = None, hos
     return SimpleNamespace(emis1D=emissions1D, iday1D=iday1D, region1D=region1D, emisdir=emisdir)
 
 
+def tm5rundir_emissions2D( outpath : str | Path, trange : date_range = None, host : str = 'cosmos', thinning : bool = False ) -> SimpleNamespace:
+    """
+    """
+    yamlfile = Path(outpath) / 'tm5.yaml'
+    if not yamlfile.exists():
+        msg = f"yaml configuration file ***{str(yamlfile)}*** not found on system."
+        raise FileNotFoundError(msg)
+    dconf = OmegaConf.load(yamlfile)
+    if not 'host' in dconf:
+        dconf.host = dconf[host]
+    emisdir = dconf.run.paths.emissions
+    # print(f"@{outpath}, *****{emisdir}*****")
+    # sys.exit(0)
+    regions = dconf.run.regions
+    if trange is None:
+        tstart = Timestamp(dconf.run.start)
+        tend   = Timestamp(dconf.run.end)
+        trange = date_range(tstart, tend, freq='1d')
+    nday = len(trange)
+    #
+    #-- determine number of thinned grid-cells
+    #   NOTE:
+    #   - from the outer two zoom domains we are not
+    #     using those grid-cells that fall into the
+    #     child domain.
+    #
+    if len(region_table)==0:
+        msg = f"...initialise region table"
+        logger.info(msg)
+        _init_region_table()
+    #
+    #--
+    #
+    assert regions==list(region_table.keys())
+    region_list = []
+    lonc_list = []
+    latc_list = []
+    ng = 0
+    for reg in regions:
+        reg_info = region_table[reg]
+        grid = reg_info.grid
+        lonmesh,latmesh = np.meshgrid(grid.lonc,grid.latc)
+        lonc1D = lonmesh.ravel()
+        latc1D = latmesh.ravel()
+        if thinning:
+            region_list = region_list + [reg,]*reg_info.ng1D
+            msk = reg_info.mask1D==1
+            ng += reg_info.ng1D
+            if reg=='gns100x100':
+                pass
+            else:
+                lonc1D = lonc1D[msk]
+                latc1D = latc1D[msk]
+        else:
+            _ng = grid.nlon*grid.nlat
+            region_list = region_list + [reg,]*_ng
+            ng += _ng
+        lonc_list.append(lonc1D)
+        latc_list.append(latc1D)
+    #
+    lonc1D = np.hstack(lonc_list)
+    latc1D = np.hstack(latc_list)
+    reg1D  = np.array(region_list)
+    msg = f"...preparing emissions for nday={nday} and ng={ng}"
+    logger.info(msg)
+    missval = -99999.
+    emissions2D = np.full((nday,ng), missval)
+    for iday,day in enumerate(trange):
+        emis_list = []
+        for reg in regions:
+            #-- TODO:: 'CH4' is hard-coded here!
+            fpath = Path(day.strftime(f'{dconf.emissions.CH4.prefix}.CH4.{reg}.%Y%m%d.nc'))
+            if not fpath.exists():
+                msg = f"expected emissions file ***{str(fpath)}*** not found on system."
+                raise FileNotFoundError(msg)
+            em = xr.open_dataset(fpath)
+            #-- sum-up total emissions
+            emtot = em.to_array().sum('variable').values
+            #-- turn 2D spatial part into 1D
+            emtot = emtot.ravel()
+            if thinning:
+                #--
+                if reg=='gns100x100':
+                    #-- *all* emissions from innermost domain
+                    pass
+                else:
+                    #-- contributions from child domain excluded
+                    msk = region_table[reg].mask1D==1
+                    emtot = emtot[msk]
+                #-- consistency check
+                assert len(emtot)==region_table[reg].ng1D
+            emis_list.append(emtot)
+        #-- add concatenated emissions
+        emissions2D[iday,:] = np.hstack(emis_list)
+    #-- consistency: emissions should be filled completely!
+    assert np.count_nonzero(emissions2D==missval)==0
+    
+    return SimpleNamespace(emis2D=emissions2D,
+                           reg1D=reg1D, lonc1D=lonc1D, latc1D=latc1D,
+                           emisdir=emisdir)
+
+
 def tm5rundir_jacobian2D( outpath : str | Path, trange : date_range = None, obsid : str|None = None ) -> NDArray:
     """
+    Reads in the sensitivity (or Jacobian) for one observational day.
+    
     will yield an array of shape jac(nobs,nemis)
     nemis comprises emissionday and emission location into a single 1D array of order
     - day1
@@ -301,6 +445,9 @@ def tm5rundir_jacobian2D( outpath : str | Path, trange : date_range = None, obsi
                 sens[df_reg.ilat, df_reg.ilon] = df_reg.value
                 #
                 sens = sens.ravel()
+                msg = f"@itrac={itrac}/iday={iday}/{reg}, sens min/mean/max = " \
+                    f"{sens.min()}/{sens.mean()}/{sens.max()}"
+                print(msg)
                 jac_list.append(sens)
         jac_obs = np.hstack(jac_list)
         if jacobian2D is None:
@@ -309,6 +456,154 @@ def tm5rundir_jacobian2D( outpath : str | Path, trange : date_range = None, obsi
             jacobian2D = np.vstack(jacobian2D, jac_obs)
     #
     return SimpleNamespace(jac2D=jacobian2D, days=days, obsids=obsids, regions=regions)
+
+
+def tm5rundir_jacobian3D( outpath : str | Path, trange : date_range = None, obsid : str|None = None, thinning : bool = False ) -> NDArray:
+    """
+    Reads in the sensitivity (or Jacobian) from one single TM5 adjoint run,
+    meaning it should be for one observational day.
+    
+    will yield an array of shape jac(nobs,nemis)
+    nemis comprises emissionday and emission location into a single 1D array of order
+    - day1
+      - reg1 (flattened)
+      - reg2 (flattened)
+      - reg3 (flattened)
+    - day2
+      - reg1 (flattened)
+      .
+      .
+      .
+    """
+    #
+    #-- load footprints into dataframe, plus ancillary information
+    #
+    fpinfo = tm5_fitic_adjoint_corrected_halos(outpath, trange)
+    footp_df = fpinfo.data
+    obsids   = fpinfo.obsids
+    days     = fpinfo.days
+    regions  = fpinfo.regions
+    nobs = len(obsids)
+    nday = len(days)
+    msg = f"...origin footprint data read, nfootp={len(footp_df)} for nobs/nday = {nobs}/{nday}"
+    logger.debug(msg)
+    if obsid!=None:
+        msg = f"...extract only for observation -->{obsid}<--"
+        logger.info(msg)
+        itrac = obsids.index(obsid) #-- position of obs. in list of tracers/obs
+        cnd_obs = footp_df.loc[:,'itrac']==itrac
+        footp_df = footp_df.loc[cnd_obs,:]
+        msg = f"......{len(footp_df)} remaining footprints."
+        logger.info(msg)
+        itrac_list = [ obsids.index(obsid), ]
+        nobsout = len(itrac_list)
+        # for iday in range(nday):
+        #     for reg in region_table.keys():
+        #         cnd = (footp_df.loc[:,'itime']==iday)&(footp_df.loc[:,'region']==reg)
+        #         dd = footp_df.loc[cnd,:]
+        #         sens = dd.loc[:,'value'].values
+        #         msg = f"@{obsid}, {days[iday].strftime('%Y%m%d')}, {reg}: " \
+        #             f"sens_values min/mean/max = {sens.min()}/{sens.mean()}/{sens.max()}"
+        #         print(msg)
+    else:
+        itrac_list = np.arange(nobs)
+        nobsout = nobs
+    #
+    #-- determine number of thinned grid-cells
+    #   NOTE:
+    #   - from the outer two zoom domains we are not
+    #     using those grid-cells that fall into the
+    #     child domain.
+    #
+    if len(region_table)==0:
+        msg = f"...initialise region table"
+        logger.info(msg)
+        _init_region_table()
+    #
+    #--
+    #
+    assert regions==list(region_table.keys())
+    region_list = []
+    lonc_list = []
+    latc_list = []
+    ng = 0
+    for reg in regions:
+        reg_info = region_table[reg]
+        grid = reg_info.grid
+        lonmesh,latmesh = np.meshgrid(grid.lonc,grid.latc)
+        lonc1D = lonmesh.ravel()
+        latc1D = latmesh.ravel()
+        if thinning:
+            ng += reg_info.ng1D
+            region_list = region_list + [reg,]*reg_info.ng1D
+            msk = reg_info.mask1D==1
+            if reg=='gns100x100':
+                pass
+            else:
+                lonc1D = lonc1D[msk]
+                latc1D = latc1D[msk]
+        else:
+            _ng = grid.nlon*grid.nlat
+            region_list = region_list + [reg,]*_ng
+            ng += _ng
+        #
+        lonc_list.append(lonc1D)
+        latc_list.append(latc1D)
+    #
+    lonc1D = np.hstack(lonc_list)
+    latc1D = np.hstack(latc_list)
+    reg1D  = np.array(region_list)
+    msg = f"...preparing Jacobian for emissions for {nobs} observation locations, " \
+        f" {nday} emission days and ng={ng} emission grid-cells (per day)."
+    logger.info(msg)
+    jacobian3D = zeros((nobsout,nday,ng))
+    for iobs,itrac in enumerate(itrac_list):
+        cur_obsid = obsids[itrac]
+        cnd_obs = footp_df.loc[:,'itrac']==itrac
+        df = footp_df.loc[cnd_obs,:]
+        # msg = f"...restricted to {cur_obsid} yields {len(df)} entries"
+        # logger.debug(msg)
+        for iday in range(nday):
+            jac_list = []
+            cnd_day = df.loc[:,'itime']==iday
+            df_day = df.loc[cnd_day,:]
+            # msg = f"...restricted to {days[iday].strftime('%Y%m%d')} yields {len(df_day)} entries"
+            # logger.debug(msg)
+            for reg in regions:
+                # print(f"@{reg}\n", df.head())
+                cnd_reg = df_day.loc[:,'region']==reg
+                df_reg = df_day.loc[cnd_reg,:]
+                # msg = f"...restricted to {reg} yields {len(df_reg)} entries"
+                # logger.debug(msg)
+                grid = region_table[reg].grid
+                # print(f"@{reg}, nlat/nlon = {grid.nlat}/{grid.nlon}")
+                sens = zeros((grid.nlat, grid.nlon))
+                sens[df_reg.ilat, df_reg.ilon] = df_reg.value
+                #
+                sens = sens.ravel()
+                msg = f"@itrac={itrac}/iday={iday}/{reg}, sens min/mean/max = " \
+                    f"{sens.min()}/{sens.mean()}/{sens.max()}"
+                print(msg)
+                if thinning:
+                    if reg=='gns100x100':
+                        #-- *all* sensitivities from innermost domain
+                        pass
+                    else:
+                        #-- contributions from child domain excluded
+                        #   (those should be zero anyhow)
+                        msk = region_table[reg].mask1D==1
+                        sens = sens[msk]
+                    msg = f"@itrac={itrac}/iday={iday}/{reg}, *AFTER MASKING* sens min/mean/max = " \
+                        f"{sens.min()}/{sens.mean()}/{sens.max()}"
+                    print(msg)
+                    #-- consistency check
+                    assert len(sens)==region_table[reg].ng1D
+                jac_list.append(sens)
+            #
+            jacobian3D[iobs,iday,:] = np.hstack(jac_list)
+    #
+    return SimpleNamespace(jac3D=jacobian3D, days=days, obsids=obsids,
+                           reg1D=reg1D, lonc1D=lonc1D, latc1D=latc1D)
 
 
 def tm5_fitic_footprint4jacobian_v1( outpath : str|Path, trange : date_range = None, obsid : str|None = None ) -> SimpleNamespace:
