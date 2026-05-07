@@ -27,18 +27,27 @@ from tm5.fitic import read_obs_table
 #   TODO: should not be hard-coded here!
 #
 region_table = OrderedDict()
-region_table['glb600x400'] = SimpleNamespace(
-    grid=TM5Grids.from_corners(west=-180, east=180, south=-90, north=90, dlon=6, dlat=4),
-    child='eur300x200', parent=None)
-region_table['eur300x200'] = SimpleNamespace(
-    grid=TM5Grids.from_corners(west=-36, east=54, south=22, north=74, dlon=3, dlat=2),
-    child='gns100x100', parent='glb600x400')
-region_table['gns100x100'] = SimpleNamespace(
-    grid=TM5Grids.from_corners(west=0, east=18, south=42, north=58, dlon=1, dlat=1),
-    child=None, parent='eur300x200')
+
+def _init_region_table():
+    global region_table
+    region_table['glb600x400'] = SimpleNamespace(
+        grid=TM5Grids.from_corners(west=-180, east=180, south=-90, north=90, dlon=6, dlat=4),
+        child='eur300x200', parent=None)
+    region_table['eur300x200'] = SimpleNamespace(
+        grid=TM5Grids.from_corners(west=-36, east=54, south=22, north=74, dlon=3, dlat=2),
+        child='gns100x100', parent='glb600x400')
+    region_table['gns100x100'] = SimpleNamespace(
+        grid=TM5Grids.from_corners(west=0, east=18, south=42, north=58, dlon=1, dlat=1),
+        child=None, parent='eur300x200')
+    
 
 
 def regiondomain_halo( region : str ) -> list:
+    if len(region_table)==0:
+        msg = f"...initialise region table"
+        logger.info(msg)
+        _init_region_table()
+    #
     reginfo = region_table[region]
     lonmin,lonmax,latmin,latmax = reginfo.grid.domain
     #
@@ -76,6 +85,10 @@ def tm5rundir_obsids_extra(outpath : str | Path) -> OrderedDict:
         raise FileNotFoundError(msg)
     fp = Dataset(str(pdepfile))
     #-- for now restrict to FIT-IC domain setup
+    if len(region_table)==0:
+        msg = f"...initialise region table"
+        logger.info(msg)
+        _init_region_table()
     obs_table = OrderedDict()
     for reg in region_table.keys():
         if reg in fp.groups:
@@ -151,55 +164,6 @@ def tm5rundir_iniconc_1obs( outpath : str | Path, obs_info : Series ) -> SimpleN
     return SimpleNamespace(conc=sta_outp.mixing_ratio, nsamples=sta_outp.nsamples, averaging_time=sta_outp.averaging_time)
 
 
-def tm5rundir_iniconc_wrong( outpath : str | Path, obsid : str, host : str = 'cosmos', trange : date_range = None ) -> SimpleNamespace:
-    """
-    """
-    yamlfile = Path(outpath) / 'tm5.yaml'
-    if not yamlfile.exists():
-        msg = f"yaml configuration file ***{str(yamlfile)}*** not found on system."
-        raise FileNotFoundError(msg)
-    dconf = OmegaConf.load(yamlfile)
-    dconf.host = dconf[host]
-    if trange is None:
-        tstart = Timestamp(dconf.run.start)
-        tend   = Timestamp(dconf.run.end)
-        trange = date_range(tstart, tend, freq='1d')
-    else:
-        tstart = trange[0]
-        tend   = trange[-1]
-    station_file = Path(outpath) / 'stations' / 'stations.nc4'
-    ds = Dataset(station_file)
-    assert ds.dimensions['tracers'].size==1, \
-        f"multiple tracers in station file not yet supported " \
-        f"({str(station_file)})"
-    grp_fnd = None
-    for g,gg in ds.groups.items():
-        if gg.abbr.endswith(obsid):
-            grp_fnd = gg
-    #
-    if grp_fnd is None:
-        raise RuntimeError(f"-->{obsid}<-- not found in station file ***{str(station_file)}***")
-    else:
-        print(grp_fnd)
-    #
-    #-- closes time-point to detected tstart
-    #
-    times = np.array([Timestamp(*_) for _ in ds['date_midpoints'][:]]).astype('datetime64[s]')
-    istart = np.argmin(np.abs(times-tstart.to_datetime64()))
-    tini = times[istart]
-    msg = f"closest time-point to {tstart} detected at istart={istart} -->{tini}"
-    print(msg)
-    ncvar = grp_fnd['/mixing_ratio']
-    if not ncvar.dimensions!=('tracer','samples'):
-        msg = f"mixing_ratio with unexpected dimensions -->{ncvar.dimensions}<--"
-        raise RuntimeError(msg)
-    iniconc = ncvar[0,istart]
-    msg = f"...{obsid}@{tini}, conc={iniconc}"
-    print(msg)
-    ds.close()
-    return SimpleNamespace(iniconc=iniconc, initime=tini)
-
-    
 def tm5rundir_emissions1D( outpath : str | Path, trange : date_range = None, host : str = 'cosmos') -> SimpleNamespace:
     """
     """
@@ -306,6 +270,11 @@ def tm5rundir_jacobian2D( outpath : str | Path, trange : date_range = None, obsi
         itrac_list = np.arange(nobs)
     #
     #--
+    #
+    if len(region_table)==0:
+        msg = f"...initialise region table"
+        logger.info(msg)
+        _init_region_table()
     #
     jacobian2D = None
     for itrac in itrac_list:
@@ -451,6 +420,11 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, trange : date_range =
     emisfile_list = sorted(list(adjemis_dir.glob(f"adjemis.*.nc")))
     #
     #-- determine regions
+    #
+    if len(region_table)==0:
+        msg = f"...initialise region table"
+        logger.info(msg)
+        _init_region_table()
     #
     region_list = dconf.run.regions
     assert region_list==list(region_table.keys())
