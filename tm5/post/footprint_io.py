@@ -17,6 +17,7 @@ from numpy import zeros, tile
 from numpy.typing import NDArray
 from netCDF4 import Dataset, chartostring
 from types import SimpleNamespace
+from typing import List
 #-- library packages
 from tm5.gridtools import TM5Grids
 from tm5.fitic import read_obs_table
@@ -33,17 +34,34 @@ def _init_region_table():
     grdglb = TM5Grids.from_corners(west=-180, east=180, south=-90, north=90, dlon=6, dlat=4)
     grdeur = TM5Grids.from_corners(west=-36, east=54, south=22, north=74, dlon=3, dlat=2)
     grdgns = TM5Grids.from_corners(west=0, east=18, south=42, north=58, dlon=1, dlat=1)
+
+    
+    region_table['glb600x400'] = SimpleNamespace(
+        grid=grdglb,
+        child='eur300x200', parent=None)
+    region_table['eur300x200'] = SimpleNamespace(
+        grid=grdeur,
+        child='gns100x100', parent='glb600x400')
+    region_table['gns100x100'] = SimpleNamespace(
+        grid=grdgns,
+        child=None, parent='eur300x200')
     #
     #-- build masks
     #   - global grid with zero entries within eur3x2 domain
     #   - european grid with zero entries within gns1x1 domain
     #
     #-- glb6x4
+    #
+    grid = grdglb
+    lonmesh,latmesh = np.meshgrid(grid.lonc,grid.latc)
+    region_table['glb600x400'].ng1D = grid.nlat*grid.nlon
+    region_table['glb600x400'].lonc1D = lonmesh.ravel()
+    region_table['glb600x400'].latc1D = latmesh.ravel()
     dfglb = xr.DataArray(
-        np.ones((grdglb.nlat, grdglb.nlon), dtype='i4'),
+        np.ones((grid.nlat, grid.nlon), dtype='i4'),
         dims = ('lat','lon'),
-        coords = { 'lon' : grdglb.lonc,
-                   'lat' : grdglb.latc },
+        coords = { 'lon' : grid.lonc,
+                   'lat' : grid.latc },
         name = 'mask').to_dataframe()
     cnd_inner = (dfglb.index.get_level_values('lon')>=grdeur.west) & \
         (dfglb.index.get_level_values('lon')<=grdeur.east) & \
@@ -51,9 +69,22 @@ def _init_region_table():
         (dfglb.index.get_level_values('lat')<=grdeur.north)
     dfglb.loc[cnd_inner,:] = 0
     dsglb = dfglb.to_xarray()
-    ngglb = np.count_nonzero(dsglb.mask.values)
-    print(f"@glb6x4, ngtot={dsglb.mask.values.size}, ngglb={ngglb}")
+    usemask = (dsglb.mask.values==1).ravel()
+    nguse = np.count_nonzero(usemask)
+    print(f"@glb6x4, ngtot={usemask.size}, nguse={nguse}")
+    region_table['glb600x400'].usemask = usemask
+    region_table['glb600x400'].ng1D_clipped = nguse
+    print(usemask.shape, region_table['glb600x400'].lonc1D.shape)
+    region_table['glb600x400'].lonc1D_clipped = lonmesh.ravel()[usemask]
+    region_table['glb600x400'].latc1D_clipped = latmesh.ravel()[usemask]
+    #
     #-- eur3x2
+    #
+    grid = grdeur
+    lonmesh,latmesh = np.meshgrid(grid.lonc,grid.latc)
+    region_table['eur300x200'].ng1D = grid.nlat*grid.nlon
+    region_table['eur300x200'].lonc1D = lonmesh.ravel()
+    region_table['eur300x200'].latc1D = latmesh.ravel()   
     dfeur = xr.DataArray(
         np.ones((grdeur.nlat, grdeur.nlon), dtype='i4'),
         dims = ('lat','lon'),
@@ -66,20 +97,59 @@ def _init_region_table():
         (dfeur.index.get_level_values('lat')<=grdgns.north)
     dfeur.loc[cnd_inner,:] = 0
     dseur = dfeur.to_xarray()
-    ngeur = np.count_nonzero(dseur.mask.values)
-    print(f"@glb3x2, ngtot={dseur.mask.values.size}, ngeur={ngeur}")
-    region_table['glb600x400'] = SimpleNamespace(
-        grid=grdglb,
-        child='eur300x200', parent=None, dsmask=dsglb,
-        mask1D=dsglb.mask.values.ravel(), ng1D=ngglb)
-    region_table['eur300x200'] = SimpleNamespace(
-        grid=grdeur,
-        child='gns100x100', parent='glb600x400', dsmask=dseur,
-        mask1D=dseur.mask.values.ravel(), ng1D=ngeur)
-    region_table['gns100x100'] = SimpleNamespace(
-        grid=grdgns,
-        child=None, parent='eur300x200',
-        mask1D=None, ng1D=grdgns.nlat*grdgns.nlon)
+    usemask = (dseur.mask.values==1).ravel()
+    nguse = np.count_nonzero(usemask)
+    print(f"@glb3x2, ngtot={usemask.size}, nguse={nguse}")
+    region_table['eur300x200'].usemask = usemask
+    region_table['eur300x200'].ng1D_clipped = nguse
+    region_table['eur300x200'].lonc1D_clipped = lonmesh.ravel()[usemask]
+    region_table['eur300x200'].latc1D_clipped = latmesh.ravel()[usemask]
+    #
+    #-- gns1x1
+    #
+    grid = grdgns
+    lonmesh,latmesh = np.meshgrid(grid.lonc,grid.latc)
+    region_table['gns100x100'].ng1D = grid.nlat*grid.nlon
+    region_table['gns100x100'].lonc1D = lonmesh.ravel()
+    region_table['gns100x100'].latc1D = latmesh.ravel()   
+    
+
+
+def regions1D_info( regions : List, clip_child : bool = False ) -> SimpleNamespace:
+    if len(region_table)==0:
+        msg = f"...initialise region table"
+        logger.info(msg)
+        _init_region_table()
+
+    assert regions==list(region_table.keys())
+    region_list = []
+    lonc_list = []
+    latc_list = []
+    ng = 0
+    for reg in regions:
+        reg_info = region_table[reg]
+        grid = reg_info.grid
+        if clip_child:
+            if reg=='gns100x100':
+                ng += reg_info.ng1D
+                region_list = region_list + [reg,]*reg_info.ng1D
+                lonc_list.append(reg_info.lonc1D)
+                latc_list.append(reg_info.latc1D)
+            else:
+                ng += reg_info.ng1D_clipped
+                region_list = region_list + [reg,]*reg_info.ng1D_clipped
+                lonc_list.append(reg_info.lonc1D_clipped)
+                latc_list.append(reg_info.latc1D_clipped)
+        else:
+            ng += reg_info.ng1D
+            region_list = region_list + [reg,]*reg_info.ng1D
+            lonc_list.append(reg_info.lonc1D)
+            latc_list.append(reg_info.latc1D)
+    #
+    lonc1D = np.hstack(lonc_list)
+    latc1D = np.hstack(latc_list)
+    reg1D  = np.array(region_list)
+    return SimpleNamespace(ng=ng, lonc1D=lonc1D, latc1D=latc1D, reg1D=reg1D)
 
 
 def regiondomain_halo( region : str ) -> list:
@@ -263,7 +333,7 @@ def tm5rundir_emissions1D( outpath : str | Path, trange : date_range = None, hos
     return SimpleNamespace(emis1D=emissions1D, iday1D=iday1D, region1D=region1D, emisdir=emisdir)
 
 
-def tm5rundir_emissions2D( outpath : str | Path, trange : date_range = None, host : str = 'cosmos', thinning : bool = False ) -> SimpleNamespace:
+def tm5rundir_emissions2D( outpath : str | Path, trange : date_range = None, host : str = 'cosmos', clip_child : bool = False ) -> SimpleNamespace:
     """
     """
     yamlfile = Path(outpath) / 'tm5.yaml'
@@ -283,51 +353,25 @@ def tm5rundir_emissions2D( outpath : str | Path, trange : date_range = None, hos
         trange = date_range(tstart, tend, freq='1d')
     nday = len(trange)
     #
-    #-- determine number of thinned grid-cells
-    #   NOTE:
-    #   - from the outer two zoom domains we are not
-    #     using those grid-cells that fall into the
-    #     child domain.
+    #-- make sure region table is set-up
     #
     if len(region_table)==0:
         msg = f"...initialise region table"
         logger.info(msg)
         _init_region_table()
     #
-    #--
+    #-- get spatial information as 1D vector
     #
-    assert regions==list(region_table.keys())
-    region_list = []
-    lonc_list = []
-    latc_list = []
-    ng = 0
-    for reg in regions:
-        reg_info = region_table[reg]
-        grid = reg_info.grid
-        lonmesh,latmesh = np.meshgrid(grid.lonc,grid.latc)
-        lonc1D = lonmesh.ravel()
-        latc1D = latmesh.ravel()
-        if thinning:
-            region_list = region_list + [reg,]*reg_info.ng1D
-            msk = reg_info.mask1D==1
-            ng += reg_info.ng1D
-            if reg=='gns100x100':
-                pass
-            else:
-                lonc1D = lonc1D[msk]
-                latc1D = latc1D[msk]
-        else:
-            _ng = grid.nlon*grid.nlat
-            region_list = region_list + [reg,]*_ng
-            ng += _ng
-        lonc_list.append(lonc1D)
-        latc_list.append(latc1D)
-    #
-    lonc1D = np.hstack(lonc_list)
-    latc1D = np.hstack(latc_list)
-    reg1D  = np.array(region_list)
+    domain1D_info = regions1D_info(regions, clip_child=clip_child)
+    ng = domain1D_info.ng
+    lonc1D = domain1D_info.lonc1D
+    latc1D = domain1D_info.latc1D
+    reg1D  = domain1D_info.reg1D
     msg = f"...preparing emissions for nday={nday} and ng={ng}"
     logger.info(msg)
+    #
+    #-- prepare emissions field
+    #
     missval = -99999.
     emissions2D = np.full((nday,ng), missval)
     for iday,day in enumerate(trange):
@@ -343,17 +387,16 @@ def tm5rundir_emissions2D( outpath : str | Path, trange : date_range = None, hos
             emtot = em.to_array().sum('variable').values
             #-- turn 2D spatial part into 1D
             emtot = emtot.ravel()
-            if thinning:
+            if clip_child:
                 #--
                 if reg=='gns100x100':
                     #-- *all* emissions from innermost domain
-                    pass
+                    assert len(emtot)==region_table[reg].ng1D
                 else:
                     #-- contributions from child domain excluded
-                    msk = region_table[reg].mask1D==1
+                    msk = region_table[reg].usemask
                     emtot = emtot[msk]
-                #-- consistency check
-                assert len(emtot)==region_table[reg].ng1D
+                    assert len(emtot)==region_table[reg].ng1D_clipped
             emis_list.append(emtot)
         #-- add concatenated emissions
         emissions2D[iday,:] = np.hstack(emis_list)
@@ -458,7 +501,7 @@ def tm5rundir_jacobian2D( outpath : str | Path, trange : date_range = None, obsi
     return SimpleNamespace(jac2D=jacobian2D, days=days, obsids=obsids, regions=regions)
 
 
-def tm5rundir_jacobian3D( outpath : str | Path, trange : date_range = None, obsid : str|None = None, thinning : bool = False ) -> NDArray:
+def tm5rundir_jacobian3D( outpath : str | Path, trange : date_range = None, obsid : str|None = None, clip_child : bool = False ) -> NDArray:
     """
     Reads in the sensitivity (or Jacobian) from one single TM5 adjoint run,
     meaning it should be for one observational day.
@@ -509,53 +552,19 @@ def tm5rundir_jacobian3D( outpath : str | Path, trange : date_range = None, obsi
         itrac_list = np.arange(nobs)
         nobsout = nobs
     #
-    #-- determine number of thinned grid-cells
-    #   NOTE:
-    #   - from the outer two zoom domains we are not
-    #     using those grid-cells that fall into the
-    #     child domain.
+    #-- get spatial information as 1D vector
     #
-    if len(region_table)==0:
-        msg = f"...initialise region table"
-        logger.info(msg)
-        _init_region_table()
-    #
-    #--
-    #
-    assert regions==list(region_table.keys())
-    region_list = []
-    lonc_list = []
-    latc_list = []
-    ng = 0
-    for reg in regions:
-        reg_info = region_table[reg]
-        grid = reg_info.grid
-        lonmesh,latmesh = np.meshgrid(grid.lonc,grid.latc)
-        lonc1D = lonmesh.ravel()
-        latc1D = latmesh.ravel()
-        if thinning:
-            ng += reg_info.ng1D
-            region_list = region_list + [reg,]*reg_info.ng1D
-            msk = reg_info.mask1D==1
-            if reg=='gns100x100':
-                pass
-            else:
-                lonc1D = lonc1D[msk]
-                latc1D = latc1D[msk]
-        else:
-            _ng = grid.nlon*grid.nlat
-            region_list = region_list + [reg,]*_ng
-            ng += _ng
-        #
-        lonc_list.append(lonc1D)
-        latc_list.append(latc1D)
-    #
-    lonc1D = np.hstack(lonc_list)
-    latc1D = np.hstack(latc_list)
-    reg1D  = np.array(region_list)
+    domain1D_info = regions1D_info(regions, clip_child=clip_child)
+    ng = domain1D_info.ng
+    lonc1D = domain1D_info.lonc1D
+    latc1D = domain1D_info.latc1D
+    reg1D  = domain1D_info.reg1D
     msg = f"...preparing Jacobian for emissions for {nobs} observation locations, " \
         f" {nday} emission days and ng={ng} emission grid-cells (per day)."
     logger.info(msg)
+    #
+    #-- assemble Jacobian
+    #
     jacobian3D = zeros((nobsout,nday,ng))
     for iobs,itrac in enumerate(itrac_list):
         cur_obsid = obsids[itrac]
@@ -584,20 +593,20 @@ def tm5rundir_jacobian3D( outpath : str | Path, trange : date_range = None, obsi
                 # msg = f"@itrac={itrac}/iday={iday}/{reg}, sens min/mean/max = " \
                 #     f"{sens.min()}/{sens.mean()}/{sens.max()}"
                 # print(msg)
-                if thinning:
+                if clip_child:
                     if reg=='gns100x100':
                         #-- *all* sensitivities from innermost domain
-                        pass
+                        assert len(sens)==region_table[reg].ng1D
                     else:
                         #-- contributions from child domain excluded
                         #   (those should be zero anyhow)
-                        msk = region_table[reg].mask1D==1
+                        msk = region_table[reg].usemask
                         sens = sens[msk]
+                        #-- consistency check
+                        assert len(sens)==region_table[reg].ng1D_clipped
                     # msg = f"@itrac={itrac}/iday={iday}/{reg}, *AFTER MASKING* sens min/mean/max = " \
                     #     f"{sens.min()}/{sens.mean()}/{sens.max()}"
                     # print(msg)
-                    #-- consistency check
-                    assert len(sens)==region_table[reg].ng1D
                 jac_list.append(sens)
             #
             jacobian3D[iobs,iday,:] = np.hstack(jac_list)
