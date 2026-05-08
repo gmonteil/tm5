@@ -140,6 +140,69 @@ def regiondomain_halo( region : str ) -> list:
     return [lonmin,lonmax,latmin,latmax,]
 
 
+def tm5emisdir_load_emissions2D( emisdir : str | Path, emis_prefix : str, day_range : date_range, regions : list, clip_child : bool = False ) -> SimpleNamespace:
+    """Read in daily emissions as prepared for TM5 for the selected temporal range
+    and regions.
+    The emissions array will be 2D with only one single dimension in the spatial domain,
+    and concatenating the contributions from each region in the spatial domain as well.
+    """
+    #
+    #-- make sure region table is set-up
+    #
+    if len(region_table)==0:
+        msg = f"...initialise region table"
+        logger.info(msg)
+        _init_region_table()
+    nday = len(day_range)
+    #
+    #-- get spatial information as 1D vector
+    #
+    domain1D_info = regions1D_info(regions, clip_child=clip_child)
+    ng = domain1D_info.ng
+    lonc1D = domain1D_info.lonc1D
+    latc1D = domain1D_info.latc1D
+    reg1D  = domain1D_info.reg1D
+    msg = f"...preparing emissions for nday={nday} and ng={ng}"
+    logger.info(msg)
+    #
+    #-- prepare emissions field
+    #
+    missval = -99999.
+    emissions2D = np.full((nday,ng), missval)
+    for iday,day in enumerate(day_range):
+        emis_list = []
+        for reg in regions:
+            #-- TODO:: 'CH4' is still hard-coded here!
+            fpath = Path(day.strftime(f'{emis_prefix}.CH4.{reg}.%Y%m%d.nc'))
+            if not fpath.exists():
+                msg = f"expected emissions file ***{str(fpath)}*** not found on system."
+                raise FileNotFoundError(msg)
+            em = xr.open_dataset(fpath)
+            #-- sum-up total emissions
+            emtot = em.to_array().sum('variable').values
+            #-- turn 2D spatial part into 1D
+            emtot = emtot.ravel()
+            if clip_child:
+                #--
+                if reg=='gns100x100':
+                    #-- *all* emissions from innermost domain
+                    assert len(emtot)==region_table[reg].ng1D
+                else:
+                    #-- contributions from child domain excluded
+                    msk = region_table[reg].usemask
+                    emtot = emtot[msk]
+                    assert len(emtot)==region_table[reg].ng1D_clipped
+            emis_list.append(emtot)
+        #-- add concatenated emissions
+        emissions2D[iday,:] = np.hstack(emis_list)
+    #-- consistency: emissions should be filled completely!
+    assert np.count_nonzero(emissions2D==missval)==0
+    
+    return SimpleNamespace(emis2D=emissions2D,
+                           reg1D=reg1D, lonc1D=lonc1D, latc1D=latc1D,
+                           emisdir=emisdir)
+
+
 def tm5rundir_obstable( outpath : str | Path ) -> DataFrame:
     yamlfile = Path(outpath) / 'tm5.yaml'
     if not yamlfile.exists():
@@ -152,7 +215,7 @@ def tm5rundir_obstable( outpath : str | Path ) -> DataFrame:
     return obs_table
 
 
-def tm5rundir_obsids_extra(outpath : str | Path) -> OrderedDict:
+def tm5rundir_obsids_extra( outpath : str | Path) -> OrderedDict:
     """
     """
     #-- extract information from point departure file
@@ -318,61 +381,9 @@ def tm5rundir_emissions2D( outpath : str | Path, trange : date_range = None, hos
         tstart = Timestamp(dconf.run.start)
         tend   = Timestamp(dconf.run.end)
         trange = date_range(tstart, tend, freq='1d')
-    nday = len(trange)
-    #
-    #-- make sure region table is set-up
-    #
-    if len(region_table)==0:
-        msg = f"...initialise region table"
-        logger.info(msg)
-        _init_region_table()
-    #
-    #-- get spatial information as 1D vector
-    #
-    domain1D_info = regions1D_info(regions, clip_child=clip_child)
-    ng = domain1D_info.ng
-    lonc1D = domain1D_info.lonc1D
-    latc1D = domain1D_info.latc1D
-    reg1D  = domain1D_info.reg1D
-    msg = f"...preparing emissions for nday={nday} and ng={ng}"
-    logger.info(msg)
-    #
-    #-- prepare emissions field
-    #
-    missval = -99999.
-    emissions2D = np.full((nday,ng), missval)
-    for iday,day in enumerate(trange):
-        emis_list = []
-        for reg in regions:
-            #-- TODO:: 'CH4' is hard-coded here!
-            fpath = Path(day.strftime(f'{dconf.emissions.CH4.prefix}.CH4.{reg}.%Y%m%d.nc'))
-            if not fpath.exists():
-                msg = f"expected emissions file ***{str(fpath)}*** not found on system."
-                raise FileNotFoundError(msg)
-            em = xr.open_dataset(fpath)
-            #-- sum-up total emissions
-            emtot = em.to_array().sum('variable').values
-            #-- turn 2D spatial part into 1D
-            emtot = emtot.ravel()
-            if clip_child:
-                #--
-                if reg=='gns100x100':
-                    #-- *all* emissions from innermost domain
-                    assert len(emtot)==region_table[reg].ng1D
-                else:
-                    #-- contributions from child domain excluded
-                    msk = region_table[reg].usemask
-                    emtot = emtot[msk]
-                    assert len(emtot)==region_table[reg].ng1D_clipped
-            emis_list.append(emtot)
-        #-- add concatenated emissions
-        emissions2D[iday,:] = np.hstack(emis_list)
-    #-- consistency: emissions should be filled completely!
-    assert np.count_nonzero(emissions2D==missval)==0
-    
-    return SimpleNamespace(emis2D=emissions2D,
-                           reg1D=reg1D, lonc1D=lonc1D, latc1D=latc1D,
-                           emisdir=emisdir)
+    emis_prefix = dconf.emissions.CH4.prefix
+
+    return tm5emisdir_load_emissions2D(emisdir, emis_prefix, trange, regions, clip_child=clip_child)
 
 
 def tm5rundir_jacobian2D( outpath : str | Path, trange : date_range = None, obsid : str|None = None ) -> NDArray:
