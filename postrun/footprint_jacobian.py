@@ -6,6 +6,7 @@ import os
 import datetime as dtm
 from omegaconf import OmegaConf, DictConfig
 from pathlib import Path
+from collections import OrderedDict
 import datetime as dtm
 from loguru import logger
 from pandas import date_range, DataFrame
@@ -25,8 +26,10 @@ from tm5.gridtools import TM5Grids
 from tm5.observations import read_obspack_file
 from tm5.post.footprint_io import load_adjoint_fwd #-- this was for earlier diagnostics
 from tm5.post.footprint_io import tm5rundir_obstable, tm5rundir_iniconc_1obs
+from tm5.post.footprint_io import regions1D_info
 from tm5.post.footprint_io import tm5rundir_jacobian2D, tm5rundir_emissions1D
 from tm5.post.footprint_io import tm5rundir_jacobian3D, tm5rundir_emissions2D
+from tm5.post.footprint_io import tm5emisdir_load_emissions2D
 from tm5.post.plot_util import cnorm_set
 from tm5.post.utilities import lonstr,latstr,set_outname
 
@@ -866,7 +869,6 @@ def subcmd_testbuild_jacobian_period_noemisdays(args):
     ncvar.comment = 'references center of grid-cell in related zoom domain'
     ncvar[:] = outemis_info.latc1D
     #
-    #
     ncvar = fp.createVariable('region', outemis_info.reg1D.dtype, ('ng',))
     ncvar.long_name = f"emission_region_identifier"
     ncvar.units = ''
@@ -928,8 +930,126 @@ def subcmd_testbuild_jacobian_period_noemisdays(args):
     fp.close()
     msg = f"generated file ***{outname}***"
     logger.info(msg)
-    
 
+
+def subcmd_monthly_emissions_for_inversion(args):
+    """
+    Preparation of monthly averaged emissions suitable as input for (Fortran based)
+    inversion system.
+    """
+    tm5emisdir = args.tm5emisdir
+    year = args.year
+    regions = args.regions
+    complevel = args.__dict__.get('complevel',4)
+
+    reginfo = regions1D_info(regions)
+    ng = reginfo.ng
+    msg = f"-->{regions}<-- yield overall {ng} grid-cells"
+    logger.info(msg)
+    #
+    #-- determine list of months
+    #
+    nday = None
+    region_file_table = OrderedDict()
+    for reg in regions:
+        file_list = sorted(Path(tm5emisdir).glob(f"ch4emis.CH4.{reg}.{year}????.nc"))
+        region_file_table[reg] = file_list
+        if nday is None:
+            nday = len(file_list)
+        else:
+            assert nday==len(file_list)
+    day_list = [ Timestamp(str(_).split('.')[3]) for _ in region_file_table[regions[0]] ]
+    mon_first = day_list[0].month
+    mon_last  = day_list[-1].month
+    mon_list = list(range(mon_first,mon_last+1))
+    nmon = len(mon_list)
+    ntc = 3 #-- record year/month/day
+    time_data = np.full((nmon,ntc), -1)
+    for imon,mon in enumerate(mon_list):
+        time_data[imon,:] = [year, mon, 1] #-- deliberately take first day
+    #
+    #-- initialise array for emissions
+    #
+    nsecday = 86400
+    emis_miss = -99999.
+    emis_data = np.full((nmon,ng), emis_miss)
+    #-- fill array
+    for imon,mon in enumerate(mon_list):
+        dayf = Timestamp(f"{year:04d}{mon:02d}01")
+        dayl = (dayf + Timedelta(days=32)).replace(day=1) - Timedelta(days=1)
+        day_range = date_range(dayf,dayl)
+        msg = f"...loading emissions for {dayf.strftime('%Y%m%d')} to {dayl.strftime('%Y%m%d')}"
+        logger.info(msg)
+        #-- load emissions for days in month
+        emis_info = tm5emisdir_load_emissions2D(tm5emisdir, tm5emisdir+'/ch4emis', day_range, regions)
+        #-- convert daily emission rates [kgCH4/cell/s] to [kgCH4/cell/month]
+        emis_mm =  np.sum(emis_info.emis2D*nsecday, axis=0)
+        emis_data[imon,:] = emis_mm[:]
+    msg = f"...monthly emission data ready."
+    logger.info(msg)
+    #
+    #-- output preparation
+    #
+    month_tag = f"{year:04d}{mon_first:02d}--{year:04d}{mon_last:02d}"
+    region_tag = "-".join(regions)
+    outname_tokens = [f"fitic-monthly-emissions", month_tag, region_tag,]
+    outname = '_'.join(outname_tokens) + '.nc'
+    outname = set_outname(args, outname)
+    msg = f"writing emission inputs for inversion inputs to file ***{outname}***..."
+    logger.info(msg)
+    #
+    #-- spatial dimensions
+    #
+    fp = Dataset(outname, 'w')
+    fp.createDimension('ntc', ntc)
+    fp.createDimension('ng', ng)
+    fp.createDimension('nmon', nmon)
+    #-- time variable
+    ncvar = fp.createVariable('time', 'i4', ('nmon','ntc',))
+    ncvar.long_name = "date_of_first_day_in_month"
+    ncvar.units = ''
+    ncvar[:] = time_data[:]
+    #-- longitude
+    ncvar = fp.createVariable('lon', 'f8', ('ng',),
+                              compression='zlib', complevel=complevel)
+    ncvar.long_name = 'longitude'
+    ncvar.units = 'degrees_east'
+    ncvar.comment = 'references center of grid-cell in related zoom domain'
+    ncvar[:] = reginfo.lonc1D
+    #-- latitude
+    ncvar = fp.createVariable('lat', 'f8', ('ng',),
+                              compression='zlib', complevel=complevel)
+    ncvar.long_name = 'latitude'
+    ncvar.units = 'degrees_north'
+    ncvar.comment = 'references center of grid-cell in related zoom domain'
+    ncvar[:] = reginfo.latc1D
+    #-- region identifier
+    ncvar = fp.createVariable('region', reginfo.reg1D.dtype, ('ng',))
+    ncvar.long_name = f"emission_region_identifier"
+    ncvar.units = ''
+    ncvar[:] = reginfo.reg1D[:]
+    #-- emission variable
+    ncvar = fp.createVariable('emission', 'f8', ('nmon','ng'),
+                              compression='zlib', complevel=complevel)
+    ncvar.long_name = "CH4 emissions"
+    ncvar.units = 'kgCH4/cell/month'
+    ncvar.comment = 'quantifies the total emission within the selected temporal period (per grid-cell)'
+    ncvar[:] = emis_data[:]
+
+    #
+    #-- global attributes
+    #
+    fp.emission_directory = str(tm5emisdir)
+    fp.history = f"{' '.join(sys.argv)}"
+    fp.date_created = Timestamp.utcnow().isoformat()
+    #
+    #-- close
+    #
+    fp.close()
+    msg = f"generated file ***{outname}***"
+    logger.info(msg)
+
+    
 ################################################################################
 #
 #                   p a r s e r
@@ -1064,6 +1184,27 @@ sparser.add_argument('--outdir',
 sparser.add_argument('--outname',
                     help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
 
+#
+#--       monthly_emissions_for_inversion
+#
+sparser = subparsers.add_parser('monthly_emissions_for_inversion',
+                                help="""test preparation of inputs for Fortran inversion system.""")
+sparser.add_argument('tm5emisdir',
+                     help="""name of directory containing daily emissions files as prepared for TM5 simulations plus the initial part of the file name pattern.""")
+sparser.add_argument('--year',
+                     type=int,
+                     default=2021,
+                     help="""selected year (default: %(default)s).""")
+sparser.add_argument('--regions',
+                     nargs='+',
+                     choices=['glb600x400','eur300x200','gns100x100',],
+                     default=['glb600x400','eur300x200','gns100x100',],
+                     help="""selected regions (default: %(default)s), better only change for test purposes.""")
+sparser.add_argument('--outdir',
+                    help="""top-level directory for any generated outputs..""")
+sparser.add_argument('--outname',
+                    help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
+
 
 
 ################################################################################
@@ -1087,6 +1228,9 @@ def main(args):
     if args.subcmds=='testbuild_jacobian_period_noemisdays':
         subcmd_testbuild_jacobian_period_noemisdays(args)
 
+    if args.subcmds=='monthly_emissions_for_inversion':
+        subcmd_monthly_emissions_for_inversion(args)
+
 if __name__ == '__main__':
     import datetime as dtm
 
@@ -1095,9 +1239,8 @@ if __name__ == '__main__':
     #-----------------------------
     #          P R O G R A M   S T A R T
     #
-    fmt = "%Y-%m-%dT%H:%M:%S.%f"
-    ttstart = dtm.datetime.now()
-    logger.info(f"{progname}::PROGRAM START::{ttstart.strftime(fmt)}")
+    ttstart = Timestamp.utcnow().isoformat()
+    logger.info(f"{progname}::PROGRAM START::{ttstart}")
     argv = ' '.join(sys.argv)
     logger.info(f"  command-line -->{argv}<--")
 
