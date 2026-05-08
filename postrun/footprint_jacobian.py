@@ -75,28 +75,7 @@ def tm5refdir_load_stationconc( refdir : str | Path, obsid : str ) -> xr.DataArr
     return df_conc
 
 
-def subcmd_test_jacobianfwd_1day(args):
-    tm5rundir = args.tm5rundir
-    obsid     = args.obsid
-    if args.trange!=None:
-        trange = date_range(args.trange[0], args.trange[1], freq='1d')
-        print(trange)
-    else:
-        trange = args.trange
-
-    df_fwd = load_adjoint_fwd(tm5rundir, trange=trange)
-
-    cndobs = df_fwd.loc[:,'obs']==obsid
-    df_obs = df_fwd.loc[cndobs,:]
-    print(df_obs)
-    #-- sum over regions
-    df_out = df_obs.groupby(['obs', 'region']).sum(numeric_only=True).reset_index()
-    print(df_out)
-    csim = df_obs.loc[:,'mix'].sum()
-    print(f"csim={csim}")
-
-
-def footprint5inversion_collect( args) -> SimpleNamespace:
+def collect_input4inversion( args ) -> SimpleNamespace:
     """
     """
     #-- arguments
@@ -105,7 +84,6 @@ def footprint5inversion_collect( args) -> SimpleNamespace:
     host = args.__dict__.get('host', 'cosmos')
     obsid = args.obsid
     clip_child = args.__dict__.get('clip_child', False)
-
     #-- turn dates into timestamp
     dayl = Timestamp(dayl)
     dayf = dayl - Timedelta(days=args.days-1) #-- #args.days overall, selected day is last
@@ -125,7 +103,11 @@ def footprint5inversion_collect( args) -> SimpleNamespace:
     #
     #-- "station list" ==> equals observation locations
     #
-    station_list = [obsid,]
+    #-> make sure the identifiers are unique
+    if not len(set(obsid))==len(obsid):
+        msg = f"observation location identifiers must be unique (==>{obsid}<==)"
+        raise RuntimeError(msg)
+    station_list = obsid
     nsta = len(station_list)
     #
     #-- load observation table
@@ -136,6 +118,7 @@ def footprint5inversion_collect( args) -> SimpleNamespace:
     cnd_sta = obs_table.index.isin(station_list)
     obs_info = obs_table.loc[cnd_sta,:]
     # print(obs_info, type(obs_info))
+    # sys.exit(0)
     #->
     #
     #-- instantiate namespace to be returned
@@ -170,18 +153,18 @@ def footprint5inversion_collect( args) -> SimpleNamespace:
             iniconc_data[idir,ista] = inic_info.conc
             # iniconc_list.append(inic_info.conc)
     assert np.count_nonzero(iniconc_data==iniconc_miss)==0
-    input4inv.iniconc_data = iniconc_data #iniconc_list
+    input4inv.iniconc_data = iniconc_data
     #
     #-- load observations
     #
     obs_miss = -99999.
     obs_data = np.full((nday,nsta), obs_miss)
     obsfile_list = []
-    for ista,obsid in enumerate(station_list):
-        staid,sta_alt = obsid.split('_') #-- extract station identifier, e.g. from 'cbw_207'
+    for ista,_obsid in enumerate(station_list):
+        staid,sta_alt = _obsid.split('_') #-- extract station identifier, e.g. from 'cbw_207'
         obspack_list = list(Path(args.obsdir).glob(f"ch4_{staid}_*.nc"))
         if len(obspack_list)!=1:
-            msg = f"no matching observation file found for obsid -->{obsid}<--"
+            msg = f"no matching observation file found for staid -->{staid}<--"
             raise RuntimeError(msg)
         else:
             obsfile = obspack_list[0]
@@ -191,7 +174,7 @@ def footprint5inversion_collect( args) -> SimpleNamespace:
         obspack_info = read_obspack_file(obsfile, start=dayf, end=dayl+Timedelta(seconds=86399))
         obs_df = obspack_info.data
         # print(obs_df.columns)
-        cur_obs_info = obs_info.loc[obsid,:]
+        cur_obs_info = obs_info.loc[_obsid,:]
         obs_hr = cur_obs_info.time.hour
         obs_tw = cur_obs_info.time_window_length #-- time-window length [s]
         obs_list = []
@@ -227,6 +210,7 @@ def footprint5inversion_collect( args) -> SimpleNamespace:
             raise RuntimeError(msg)
         #--
         #
+        
         jac_info = tm5rundir_jacobian3D(rundir, trange=day_range, obsid=obsid, clip_child=clip_child)
         jac3D = jac_info.jac3D
         #-- dimensional consistency with emissions
@@ -304,6 +288,27 @@ def footprint5inversion_collect( args) -> SimpleNamespace:
         # logger.info(msg)
     return input4inv
     
+
+def subcmd_test_jacobianfwd_1day(args):
+    tm5rundir = args.tm5rundir
+    obsid     = args.obsid
+    if args.trange!=None:
+        trange = date_range(args.trange[0], args.trange[1], freq='1d')
+        print(trange)
+    else:
+        trange = args.trange
+
+    df_fwd = load_adjoint_fwd(tm5rundir, trange=trange)
+
+    cndobs = df_fwd.loc[:,'obs']==obsid
+    df_obs = df_fwd.loc[cndobs,:]
+    print(df_obs)
+    #-- sum over regions
+    df_out = df_obs.groupby(['obs', 'region']).sum(numeric_only=True).reset_index()
+    print(df_out)
+    csim = df_obs.loc[:,'mix'].sum()
+    print(f"csim={csim}")
+
 
 def subcmd_testbuild_jacobian_1day( args ):
     tm5rundir = args.tm5rundir
@@ -666,7 +671,7 @@ def subcmd_testbuild_jacobian_period_new(args):
     obsid = args.obsid
     complevel = args.__dict__.get('complevel',4)
 
-    input4inv = footprint5inversion_collect(args)
+    input4inv = collect_input4inversion(args)
     day_range = input4inv.day_range
     station_list = input4inv.station_list
     ojac4D = input4inv.ojac4D
@@ -686,13 +691,20 @@ def subcmd_testbuild_jacobian_period_new(args):
         if tgt=='global':
             tjac3D[itgt,:,:] = 1.
         elif tgt=='gns1x1':
-            cnd_gns = outemis_info.reg1D=='gns100x100'
+            cnd_gns = (outemis_info.reg1D=='gns100x100')
             tjac3D[itgt,:,cnd_gns] = 1.
     #
     #--
     #
+    nsta = len(station_list)
+    if nsta==1:
+        obsid_tag = station_list[0]
+    elif nsta<=5:
+        obsid_tag = '--' + '--'.join([_ for _ in station_list]) + '--'
+    else:
+        obsid_tag = f"{nsta}-obslocations"
     trange_tag = f"{dayf.strftime('%Y%m%d')}--{dayl.strftime('%Y%m%d')}"
-    outname_tokens = ["fitic-inversion-input", obsid, trange_tag,]
+    outname_tokens = ["fitic-inversion-input", obsid_tag, trange_tag,]
     outname = '_'.join(outname_tokens) + '.nc'
     outname = set_outname(args, outname)
     msg = f"writing inversion inputs to file ***{outname}***..."
@@ -809,7 +821,7 @@ def subcmd_testbuild_jacobian_period_noemisdays(args):
     obsid = args.obsid
     complevel = args.__dict__.get('complevel',4)
 
-    input4inv = footprint5inversion_collect(args)
+    input4inv = collect_input4inversion(args)
     day_range = input4inv.day_range
     station_list = input4inv.station_list
     ojac4D = input4inv.ojac4D
@@ -818,6 +830,8 @@ def subcmd_testbuild_jacobian_period_noemisdays(args):
     nobsday = len(day_range)
     dayf = day_range[0]
     dayl = day_range[-1]
+    print(f"ojac4D.shape={ojac4D.shape}")
+    
     #
     #-- so far
     #   - Jacobian quantifies deltac [ppb] w.r.t. daily emission rates [kgCH4/cell/s]
@@ -855,8 +869,15 @@ def subcmd_testbuild_jacobian_period_noemisdays(args):
     #
     #-- prepare output
     #
+    nsta = len(station_list)
     trange_tag = f"{dayf.strftime('%Y%m%d')}--{dayl.strftime('%Y%m%d')}"
-    outname_tokens = ["fitic-inversion-input-noemisdays", obsid, trange_tag,]
+    if nsta==1:
+        obsid_tag = station_list[0]
+    elif nsta<=5:
+        obsid_tag = '--' + '--'.join([_ for _ in station_list]) + '--'
+    else:
+        obsid_tag = f"{nsta}-obslocations"
+    outname_tokens = ["fitic-inversion-input-noemisdays", obsid_tag, trange_tag,]
     outname = '_'.join(outname_tokens) + '.nc'
     outname = set_outname(args, outname)
     msg = f"writing inversion inputs to file ***{outname}***..."
@@ -1045,7 +1066,8 @@ sparser.add_argument('--obsdir',
                      default="/lunarc/nobackup/projects/ghg_inv/michael/FIT-IC/observations_fitic-gui",
                      help="""directory providing obspack NetCDF data files with CH4 observations for selected station/site (default: %(default)s).""")
 sparser.add_argument('--obsid',
-                     default='cbw_207',
+                     nargs='+',
+                     default=['cbw_207',],
                      help="""select one single observational location (default: %(default)s).""")
 sparser.add_argument('--selday',
                      default="20210208",
@@ -1072,7 +1094,8 @@ sparser.add_argument('--obsdir',
                      default="/lunarc/nobackup/projects/ghg_inv/michael/FIT-IC/observations_fitic-gui",
                      help="""directory providing obspack NetCDF data files with CH4 observations for selected station/site (default: %(default)s).""")
 sparser.add_argument('--obsid',
-                     default='cbw_207',
+                     nargs='+',
+                     default=['cbw_207',],
                      help="""select one single observational location (default: %(default)s).""")
 sparser.add_argument('--selday',
                      default="20210208",
@@ -1134,12 +1157,3 @@ if __name__ == '__main__':
     #--        s t a r t   e x e c u t i o n
     #
     main(args)
-
-
-
-# ################################################################################
-# #
-# #                   p r o g r a m   s t a r t
-# #
-# args = parser.parse_args(sys.argv[1:])
-
