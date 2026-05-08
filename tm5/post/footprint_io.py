@@ -17,7 +17,6 @@ from numpy import zeros, tile
 from numpy.typing import NDArray
 from netCDF4 import Dataset, chartostring
 from types import SimpleNamespace
-from typing import List
 #-- library packages
 from tm5.gridtools import TM5Grids
 from tm5.fitic import read_obs_table
@@ -25,97 +24,65 @@ from tm5.fitic import read_obs_table
 
 #
 #-- table of FIT-IC regions
+#   - their will be one (global) instance for all queries
 #   TODO: should not be hard-coded here!
 #
 region_table = OrderedDict()
 
 def _init_region_table():
     global region_table
-    grdglb = TM5Grids.from_corners(west=-180, east=180, south=-90, north=90, dlon=6, dlat=4)
-    grdeur = TM5Grids.from_corners(west=-36, east=54, south=22, north=74, dlon=3, dlat=2)
-    grdgns = TM5Grids.from_corners(west=0, east=18, south=42, north=58, dlon=1, dlat=1)
-
-    
+    #
+    #-- create grid instances
+    #
+    glb_grid = TM5Grids.from_corners(west=-180, east=180, south=-90, north=90, dlon=6, dlat=4)
+    eur_grid = TM5Grids.from_corners(west=-36, east=54, south=22, north=74, dlon=3, dlat=2)
+    gns_grid = TM5Grids.from_corners(west=0, east=18, south=42, north=58, dlon=1, dlat=1)
+    #
+    #-- initial attributes (per region)
+    #
     region_table['glb600x400'] = SimpleNamespace(
-        grid=grdglb,
+        grid=glb_grid,
         child='eur300x200', parent=None)
     region_table['eur300x200'] = SimpleNamespace(
-        grid=grdeur,
+        grid=eur_grid,
         child='gns100x100', parent='glb600x400')
     region_table['gns100x100'] = SimpleNamespace(
-        grid=grdgns,
+        grid=gns_grid,
         child=None, parent='eur300x200')
     #
-    #-- build masks
-    #   - global grid with zero entries within eur3x2 domain
-    #   - european grid with zero entries within gns1x1 domain
+    #-- extending attributes
+    #   - 1D flattened arrays of coordinates
+    #   - prepare for filtering out child domain within in parent
     #
-    #-- glb6x4
-    #
-    grid = grdglb
-    lonmesh,latmesh = np.meshgrid(grid.lonc,grid.latc)
-    region_table['glb600x400'].ng1D = grid.nlat*grid.nlon
-    region_table['glb600x400'].lonc1D = lonmesh.ravel()
-    region_table['glb600x400'].latc1D = latmesh.ravel()
-    dfglb = xr.DataArray(
-        np.ones((grid.nlat, grid.nlon), dtype='i4'),
-        dims = ('lat','lon'),
-        coords = { 'lon' : grid.lonc,
-                   'lat' : grid.latc },
-        name = 'mask').to_dataframe()
-    cnd_inner = (dfglb.index.get_level_values('lon')>=grdeur.west) & \
-        (dfglb.index.get_level_values('lon')<=grdeur.east) & \
-        (dfglb.index.get_level_values('lat')>=grdeur.south) & \
-        (dfglb.index.get_level_values('lat')<=grdeur.north)
-    dfglb.loc[cnd_inner,:] = 0
-    dsglb = dfglb.to_xarray()
-    usemask = (dsglb.mask.values==1).ravel()
-    nguse = np.count_nonzero(usemask)
-    print(f"@glb6x4, ngtot={usemask.size}, nguse={nguse}")
-    region_table['glb600x400'].usemask = usemask
-    region_table['glb600x400'].ng1D_clipped = nguse
-    print(usemask.shape, region_table['glb600x400'].lonc1D.shape)
-    region_table['glb600x400'].lonc1D_clipped = lonmesh.ravel()[usemask]
-    region_table['glb600x400'].latc1D_clipped = latmesh.ravel()[usemask]
-    #
-    #-- eur3x2
-    #
-    grid = grdeur
-    lonmesh,latmesh = np.meshgrid(grid.lonc,grid.latc)
-    region_table['eur300x200'].ng1D = grid.nlat*grid.nlon
-    region_table['eur300x200'].lonc1D = lonmesh.ravel()
-    region_table['eur300x200'].latc1D = latmesh.ravel()   
-    dfeur = xr.DataArray(
-        np.ones((grdeur.nlat, grdeur.nlon), dtype='i4'),
-        dims = ('lat','lon'),
-        coords = { 'lon' : grdeur.lonc,
-                   'lat' : grdeur.latc },
-        name = 'mask').to_dataframe()
-    cnd_inner = (dfeur.index.get_level_values('lon')>=grdgns.west) & \
-        (dfeur.index.get_level_values('lon')<=grdgns.east) & \
-        (dfeur.index.get_level_values('lat')>=grdgns.south) & \
-        (dfeur.index.get_level_values('lat')<=grdgns.north)
-    dfeur.loc[cnd_inner,:] = 0
-    dseur = dfeur.to_xarray()
-    usemask = (dseur.mask.values==1).ravel()
-    nguse = np.count_nonzero(usemask)
-    print(f"@glb3x2, ngtot={usemask.size}, nguse={nguse}")
-    region_table['eur300x200'].usemask = usemask
-    region_table['eur300x200'].ng1D_clipped = nguse
-    region_table['eur300x200'].lonc1D_clipped = lonmesh.ravel()[usemask]
-    region_table['eur300x200'].latc1D_clipped = latmesh.ravel()[usemask]
-    #
-    #-- gns1x1
-    #
-    grid = grdgns
-    lonmesh,latmesh = np.meshgrid(grid.lonc,grid.latc)
-    region_table['gns100x100'].ng1D = grid.nlat*grid.nlon
-    region_table['gns100x100'].lonc1D = lonmesh.ravel()
-    region_table['gns100x100'].latc1D = latmesh.ravel()   
-    
+    for reg,reg_info in region_table.items():
+        grid = reg_info.grid
+        #
+        lonmesh,latmesh = np.meshgrid(grid.lonc,grid.latc)
+        region_table[reg].ng1D = grid.nlat*grid.nlon
+        region_table[reg].lonc1D = lonmesh.ravel()
+        region_table[reg].latc1D = latmesh.ravel()
+        if reg_info.child!=None:
+            grid_child = region_table[reg_info.child].grid
+            #-- create mask array, 0 within child region and 1 elsewhere 
+            damask = xr.DataArray(
+                np.ones((grid.nlat, grid.nlon), dtype='i4'),
+                dims = ('lat','lon'),
+                coords = { 'lon' : grid.lonc,
+                           'lat' : grid.latc },
+                name = 'mask')
+            lat_slice = slice(grid_child.south,grid_child.north)
+            lon_slice = slice(grid_child.west,grid_child.east)
+            damask.loc[dict(lat=lat_slice,lon=lon_slice)] = 0
+            usemask = (damask.values==1).ravel()
+            nguse = np.count_nonzero(usemask)
+            print(f"@{reg}, ngtot={usemask.size}, nguse={nguse}")
+            region_table[reg].usemask = usemask
+            region_table[reg].ng1D_clipped = nguse
+            region_table[reg].lonc1D_clipped = lonmesh.ravel()[usemask]
+            region_table[reg].latc1D_clipped = latmesh.ravel()[usemask]
 
 
-def regions1D_info( regions : List, clip_child : bool = False ) -> SimpleNamespace:
+def regions1D_info( regions : list, clip_child : bool = False ) -> SimpleNamespace:
     if len(region_table)==0:
         msg = f"...initialise region table"
         logger.info(msg)
@@ -501,7 +468,7 @@ def tm5rundir_jacobian2D( outpath : str | Path, trange : date_range = None, obsi
     return SimpleNamespace(jac2D=jacobian2D, days=days, obsids=obsids, regions=regions)
 
 
-def tm5rundir_jacobian3D( outpath : str | Path, trange : date_range = None, obsid : str|None = None, clip_child : bool = False ) -> NDArray:
+def tm5rundir_jacobian3D( outpath : str | Path, trange : date_range = None, obsid : str|list|None = None, clip_child : bool = False ) -> NDArray:
     """
     Reads in the sensitivity (or Jacobian) from one single TM5 adjoint run,
     meaning it should be for one observational day.
@@ -530,16 +497,18 @@ def tm5rundir_jacobian3D( outpath : str | Path, trange : date_range = None, obsi
     nday = len(days)
     msg = f"...origin footprint data read, nfootp={len(footp_df)} for nobs/nday = {nobs}/{nday}"
     logger.debug(msg)
+    if type(obsid)==str:
+        obsid = [obsid,]
     if obsid!=None:
         msg = f"...extract only for observation -->{obsid}<--"
         logger.info(msg)
-        itrac = obsids.index(obsid) #-- position of obs. in list of tracers/obs
-        cnd_obs = footp_df.loc[:,'itrac']==itrac
-        footp_df = footp_df.loc[cnd_obs,:]
-        msg = f"......{len(footp_df)} remaining footprints."
-        logger.info(msg)
-        itrac_list = [ obsids.index(obsid), ]
+        #-- position of obs. identifier (location) in list of tracers/obs
+        itrac_list = [ obsids.index(_) for _ in obsid ]
         nobsout = len(itrac_list)
+        cnd_obs = footp_df['itrac'].isin(itrac_list)
+        footp_df = footp_df.loc[cnd_obs,:]
+        msg = f"......{len(footp_df)} selected footprints."
+        logger.info(msg)
         # for iday in range(nday):
         #     for reg in region_table.keys():
         #         cnd = (footp_df.loc[:,'itime']==iday)&(footp_df.loc[:,'region']==reg)
@@ -573,6 +542,7 @@ def tm5rundir_jacobian3D( outpath : str | Path, trange : date_range = None, obsi
         # msg = f"...restricted to {cur_obsid} yields {len(df)} entries"
         # logger.debug(msg)
         for iday in range(nday):
+            #-- collect sensitivity contributions from all regions
             jac_list = []
             cnd_day = df.loc[:,'itime']==iday
             df_day = df.loc[cnd_day,:]
