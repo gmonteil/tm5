@@ -23,13 +23,10 @@ from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 from tm5.fitic import read_obs_table
 from tm5.gridtools import TM5Grids
 from tm5.observations import read_obspack_file
-from tm5.post.footprint_io import tm5_fitic_adjoint_corrected_halos
-from tm5.post.footprint_io import tm5_fitic_footprint4jacobian_v1
-from tm5.post.footprint_io import tm5rundir_obsids_extra, tm5rundir_obstable
-from tm5.post.footprint_io import tm5rundir_iniconc_1obs
+from tm5.post.footprint_io import load_adjoint_fwd #-- this was for earlier diagnostics
+from tm5.post.footprint_io import tm5rundir_obstable, tm5rundir_iniconc_1obs
 from tm5.post.footprint_io import tm5rundir_jacobian2D, tm5rundir_emissions1D
 from tm5.post.footprint_io import tm5rundir_jacobian3D, tm5rundir_emissions2D
-from tm5.post.footprint_io import load_adjoint_fwd
 from tm5.post.plot_util import cnorm_set
 from tm5.post.utilities import lonstr,latstr,set_outname
 
@@ -314,8 +311,6 @@ def subcmd_testbuild_jacobian_1day( args ):
     tm5rundir = args.tm5rundir
     obsid     = args.obsid
     
-    # footp_info = tm5_fitic_adjoint_corrected_halos(tm5rundir)
-    # print(footp.loc[:,'itime'].unique())
     if args.trange!=None:
         trange = date_range(args.trange[0], args.trange[1], freq='1d')
         print(trange)
@@ -324,12 +319,12 @@ def subcmd_testbuild_jacobian_1day( args ):
     #
     #-- load obs table used for this simulation
     #
-    obs_table = tm5rundir_obsids_extra(tm5rundir)
-    if not obsid in obs_table:
+    obs_table = tm5rundir_obstable(tm5rundir)
+    if not obsid in obs_table.index:
         msg = f"selected observation identifier -->{obsid}<-- not present in simulation " \
             f"(==>{list(obs_table.keys())}<==)"
         raise RuntimeError(msg)
-    obs_info = obs_table[obsid]
+    obs_info = obs_table.loc[obsid,:]
     print(obs_info)
     #
     #-- load emissions
@@ -337,53 +332,11 @@ def subcmd_testbuild_jacobian_1day( args ):
     msg = f"start preparing emissions..."
     logger.info(msg)
     emis_info = tm5rundir_emissions1D(tm5rundir, trange=trange)
-    emis1D = emis_info.emissions
+    emis1D = emis_info.emis1D
     msg = f"...emissions done."
     logger.info(msg)
     #
-    #-- load Jacobian
-    #
-    # jacobian_info = tm5_fitic_footprint4jacobian_v1(tm5rundir, trange=trange, obsid=obsid)
-    # jac_table = jacobian_info.jac_table
-    # days = jacobian_info.days #-- [emission days]
-    # nday = len(days)
-    # ngc = 0
-    # for region,region_jac in jac_table.items():
-    #     iday = len(region_jac.coords['iday'])
-    #     nlon = len(region_jac.coords['lon'])
-    #     nlat = len(region_jac.coords['lat'])
-    #     if iday!=nday:
-    #         msg = f"unexpected dimension size iday={iday} (expected {nday})"
-    #         raise RuntimeError(msg)
-    #     ngc += nlat*nlon #_ngc
-    #     for iday,day in enumerate(days):
-    #         _jac = region_jac.sel(iday=iday)
-    #         msg = f"@{region},{day.strftime('%Y-%m-%d')}: jac min/mean/max = " \
-    #             f"{_jac.min().values}/{_jac.mean().values}/{_jac.max().values}"
-    #         print(msg)
-    # msg = f"overall number of grid-cells ngc={ngc}"
-    # print(msg)
-    # #
-    # #-- reformat Jacobian values to 1D array
-    # #   ordering:
-    # #   - emisday
-    # #     - grid-cells glb600x400 (flattened)
-    # #     - grid-cells eur300x200 (flattened)
-    # #     - grid-cells gns100x100 (flattened)
-    # #
-    # jacobian2D = np.array([]) #empty()
-    # for iday in range(nday):
-    #     for reg,reg_jac in jac_table.items():
-    #         dayreg_jac = reg_jac.values[iday,:,:]
-    #         jacobian2D = np.concat( (jacobian2D, dayreg_jac.ravel()))
-    #     # print(f"@iday={iday}, jacobian2D.shape={jacobian1D.shape}")
-    #-- consistency check
-    # assert emis1D.shape==jacobian1D.shape, \
-    #     f"{emis1D.shape} vs {jacobian1D.shape}"
-    # #
-    # #--
-    # #
-    # jacobian2D = jacobian1D.reshape(1,len(jacobian1D))
+    #-- load jacobian
     #
     jac_info = tm5rundir_jacobian2D(tm5rundir, trange=trange, obsid=obsid)
     jacobian2D = jac_info.jac2D
