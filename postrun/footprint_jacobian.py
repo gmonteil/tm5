@@ -104,7 +104,7 @@ def footprint5inversion_collect( args) -> SimpleNamespace:
     dayl = args.selday
     host = args.__dict__.get('host', 'cosmos')
     obsid = args.obsid
-    thinning = args.__dict__.get('thinning', False)
+    clip_child = args.__dict__.get('clip_child', False)
 
     #-- turn dates into timestamp
     dayl = Timestamp(dayl)
@@ -149,7 +149,7 @@ def footprint5inversion_collect( args) -> SimpleNamespace:
     #-- load emissions
     #
     ldir = topdir / f"footprints_gns100x100_{dir_trange[-1].strftime('%Y%m%d')}"
-    emis_info = tm5rundir_emissions2D(ldir, trange=day_range, thinning=thinning)
+    emis_info = tm5rundir_emissions2D(ldir, trange=day_range, clip_child=clip_child)
     emis2D = emis_info.emis2D
     nemisday,ng = emis2D.shape
     input4inv.emis_info = emis_info
@@ -227,7 +227,7 @@ def footprint5inversion_collect( args) -> SimpleNamespace:
             raise RuntimeError(msg)
         #--
         #
-        jac_info = tm5rundir_jacobian3D(rundir, trange=day_range, obsid=obsid, thinning=thinning)
+        jac_info = tm5rundir_jacobian3D(rundir, trange=day_range, obsid=obsid, clip_child=clip_child)
         jac3D = jac_info.jac3D
         #-- dimensional consistency with emissions
         if not np.all(emis_info.reg1D==jac_info.reg1D):
@@ -1044,8 +1044,6 @@ sparser.add_argument('outpath_tm5',
 sparser.add_argument('--obsdir',
                      default="/lunarc/nobackup/projects/ghg_inv/michael/FIT-IC/observations_fitic-gui",
                      help="""directory providing obspack NetCDF data files with CH4 observations for selected station/site (default: %(default)s).""")
-sparser.add_argument('obsfile',
-                     help="""obspack NetCDF file providing CH4 observations at tthe selected station/site.""")
 sparser.add_argument('--obsid',
                      default='cbw_207',
                      help="""select one single observational location (default: %(default)s).""")
@@ -1073,8 +1071,6 @@ sparser.add_argument('outpath_tm5',
 sparser.add_argument('--obsdir',
                      default="/lunarc/nobackup/projects/ghg_inv/michael/FIT-IC/observations_fitic-gui",
                      help="""directory providing obspack NetCDF data files with CH4 observations for selected station/site (default: %(default)s).""")
-sparser.add_argument('obsfile',
-                     help="""obspack NetCDF file providing CH4 observations at tthe selected station/site.""")
 sparser.add_argument('--obsid',
                      default='cbw_207',
                      help="""select one single observational location (default: %(default)s).""")
