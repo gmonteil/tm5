@@ -166,6 +166,10 @@ def subcmd_emis_visu(args):
         emis_units = emis_select.attrs['units']
     except AttributeError:
         emis_units = "unknown"
+    if args.tosqm and emis_units=='kgCH4/cell':
+        grid_glb1x1 = emis_info.grid_glb1x1
+        emis_select = emis_select / grid_glb1x1.area
+        emis_select.attrs['units'] = 'kgCH4/m2'
     #
     #-- extent for plotting
     #
@@ -197,8 +201,12 @@ def subcmd_emis_visu(args):
     ax.set_extent(args.extent)
     ax.coastlines()
     #-- title
-    title = f"emissions ({str(filepath_emis)}), total: {emis_tot:.1f}"
-    title = f"emissions ({str(filepath_emis)}), total: {emis_tot:.1f}"
+    if args.title:
+        title = args.title
+    elif args.tosqm:
+        title = f"emissions ({str(filepath_emis)})"
+    else:
+        title = f"emissions ({str(filepath_emis)}), total: {emis_tot:.1f}"
     # title += f"min/mean/max = {pltmin}/{pltmean}/{pltmax}"
     ax.set_title(title)
     #-- add gridlines
@@ -258,6 +266,11 @@ sparser.add_argument('--dpi',
                      type=int,
                      default=150,
                      help="""dots-per-inch (default: %(default)s).""")
+sparser.add_argument('--tosqm',
+                     action='store_true',
+                     help="""whether to convert from kgCH4/cell to kgCH4/m2.""")
+sparser.add_argument('--title',
+                     help="""explicitly set title of plot.""")
 sparser.add_argument('--cbmin',
                      type=float,
                      help="""explicit minimum at colorbar.""")

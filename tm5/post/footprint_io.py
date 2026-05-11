@@ -323,7 +323,14 @@ def emisvector_to_global1x1( filepath_emis : str | Path ) -> xr.DataArray:
             emis_glb1x1.loc[dict(lat=lat_slice,lon=lon_slice)] = daemis_1x1[:]
     #--
     dsemis.close()
+    #
+    #-- unit conversion
+    #
+    # if emis_units=='kgCH4/cell':
+    #     emis_glb1x1 = emis_glb1x1 / grid_glb1x1.area
+    #     emis_glb1x1.attrs['units'] = 'kgCH4/m2'
     emis_results.emis_glb1x1 = emis_glb1x1
+    emis_results.grid_glb1x1 = grid_glb1x1
 
     return emis_results
 
