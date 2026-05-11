@@ -103,20 +103,24 @@ def collect_input4inversion( args ) -> SimpleNamespace:
     #
     #-- "station list" ==> equals observation locations
     #
-    #-> make sure the identifiers are unique
-    if not len(set(obsid))==len(obsid):
-        msg = f"observation location identifiers must be unique (==>{obsid}<==)"
-        raise RuntimeError(msg)
-    station_list = obsid
-    nsta = len(station_list)
     #
     #-- load observation table
     #   -> we expect ethedeliberately select from the rundir of the first day of the selected
     #      period
     #
     obs_table = tm5rundir_obstable(fdir)
-    cnd_sta = obs_table.index.isin(station_list)
-    obs_info = obs_table.loc[cnd_sta,:]
+    #-> make sure the identifiers are unique
+    if not len(set(obsid))==len(obsid):
+        msg = f"observation location identifiers must be unique (==>{obsid}<==)"
+        raise RuntimeError(msg)
+    if 'all' in obsid:
+        station_list = list(obs_table.index)
+        obs_info = obs_table.copy()
+    else:
+        station_list = obsid
+        cnd_sta = obs_table.index.isin(station_list)
+        obs_info = obs_table.loc[cnd_sta,:]
+    nsta = len(station_list)
     # print(obs_info, type(obs_info))
     # sys.exit(0)
     #->
@@ -211,7 +215,7 @@ def collect_input4inversion( args ) -> SimpleNamespace:
         #--
         #
         
-        jac_info = tm5rundir_jacobian3D(rundir, trange=day_range, obsid=obsid, clip_child=clip_child)
+        jac_info = tm5rundir_jacobian3D(rundir, trange=day_range, obsid=station_list, clip_child=clip_child)
         jac3D = jac_info.jac3D
         #-- dimensional consistency with emissions
         if not np.all(emis_info.reg1D==jac_info.reg1D):
@@ -786,7 +790,7 @@ def subcmd_testbuild_jacobian_period_noemisdays(args):
     nobsday = len(day_range)
     dayf = day_range[0]
     dayl = day_range[-1]
-    print(f"ojac4D.shape={ojac4D.shape}")
+    # print(f"ojac4D.shape={ojac4D.shape}")
     
     #
     #-- so far
