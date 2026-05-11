@@ -29,6 +29,7 @@ from tm5.fitic import read_obs_table
 #
 region_table = OrderedDict()
 
+
 def _init_region_table():
     global region_table
     #
@@ -42,12 +43,15 @@ def _init_region_table():
     #
     region_table['glb600x400'] = SimpleNamespace(
         grid=glb_grid,
+        rlat=4, rlon=6,
         child='eur300x200', parent=None)
     region_table['eur300x200'] = SimpleNamespace(
         grid=eur_grid,
+        rlat=2, rlon=3,
         child='gns100x100', parent='glb600x400')
     region_table['gns100x100'] = SimpleNamespace(
         grid=gns_grid,
+        rlat=1, rlon=1,
         child=None, parent='eur300x200')
     #
     #-- extending attributes
@@ -201,6 +205,127 @@ def tm5emisdir_load_emissions2D( emisdir : str | Path, emis_prefix : str, day_ra
     return SimpleNamespace(emis2D=emissions2D,
                            reg1D=reg1D, lonc1D=lonc1D, latc1D=latc1D,
                            emisdir=emisdir)
+
+
+def emisvector_to_global1x1( filepath_emis : str | Path ) -> xr.DataArray:
+    """Function that remaps a 1D emission vector used within the FIT-IC
+    inversion system back to global gridded emissions.
+    """
+
+    #
+    #-- load meta information from prior emissions file
+    #
+    if not Path(filepath_emis).exists():
+        msg = f"prior emissions file ***{filepath_emis}*** not found!"
+        raise FileNotFoundError(msg)
+    if len(region_table)==0:
+        msg = f"...initialise region table"
+        logger.info(msg)
+        _init_region_table()
+    regions_expect = list(region_table.keys())
+    dsemis = Dataset(filepath_emis)
+    ng = dsemis.dimensions['ng'].size
+    reg1D = dsemis['/region'][:]
+    reg1D_uniq = np.unique(reg1D)
+    if len(reg1D_uniq)!=len(regions_expect):
+        msg = f"...detected unexpected regions ***{reg1D_uniq}***"
+        raise RuntimeError(msg)
+    elif not set(reg1D_uniq)==set(regions_expect):
+        msg = f"...detected unexpected regions ***{reg1D_uniq}***"
+        raise RuntimeError(msg)
+    msg = f"...emissions vector is for regions -->{regions_expect}<--"
+    logger.info(msg)
+    #
+    #-- load emissions
+    #
+    ncemis = dsemis['/emission']
+    try:
+        emis_units = ncemis.units
+    except AttributeError:
+        msg = f"expected attribute -->{units}<-- missing for variable 'emissions'"
+        raise AttributeError(msg)
+    #
+    #-- output on 1x1 global grid
+    #
+    grid_glb1x1 = TM5Grids.from_corners(west=-180, east=180, south=-90, north=90, dlon=1, dlat=1)
+    emis_glb1x1 = xr.DataArray(
+        zeros((grid_glb1x1.nlat, grid_glb1x1.nlon)),
+        dims=('lat','lon'),
+        coords = {'lon': grid_glb1x1.lonc, 'lat': grid_glb1x1.latc },
+        attrs = {'units' : emis_units}
+    )
+    #
+    #-- loop over regions from outer to inner (order matters!)
+    #
+    emis_results = SimpleNamespace(table_native={}, table_1x1={})
+    for reg in regions_expect:
+        # print(f"*****{reg}*****")
+        rlat, rlon = region_table[reg].rlat, region_table[reg].rlon
+        grid = region_table[reg].grid
+        nlat, nlon = grid.nlat, grid.nlon
+        cnd_reg = reg1D==reg
+        assert np.count_nonzero(cnd_reg)==region_table[reg].ng1D
+        
+        if ncemis.dimensions==('nmon','ng'):
+            #-- handling temporal dimension not ready yet!!
+            msg = f"temporal dimension in emissions not yet supported!"
+            raise NotImplementedError(msg)
+            emis_data = ncemis[:][:,cnd_reg]
+            nmon,_ng = emis_data.shape
+            daemis = xr.DataArray(
+                emis_data = emis_data.reshape(nt,grid.nlat,grid.nlon),
+                dims=('time','lat','lon'),
+                coords = {'lon': grid.lonc, 'lat': grid.latc, 'time': np.arange(1,nmon+1)  }
+            )
+        elif ncemis.dimensions==('ng',):
+            emis_data = ncemis[:][cnd_reg]
+            daemis = xr.DataArray(
+                emis_data.reshape(grid.nlat,grid.nlon),
+                dims=('lat','lon'),
+                coords = {'lon': grid.lonc, 'lat': grid.latc },
+                attrs = { 'units': emis_units}
+            )
+            emis_results.table_native[reg] = daemis
+        else:
+            raise RuntimeError(f"unexpected dimensions {ncemis.dimensions}")
+        #--
+        lat_slice = slice(grid.south,grid.north)
+        lon_slice = slice(grid.west,grid.east)
+        #
+        #-- no need to clip child part of current region
+        #   since this is overwritten by the child emissions anyhow
+        #
+        if reg=='gns100x100':
+            emis_glb1x1.loc[dict(lat=lat_slice,lon=lon_slice)] = daemis[:]
+        else:
+            #-- upscale to 1x1, equally distributing emissions onto 1x1 grid-cells within
+            #   the parent grid-cells
+            grid_1x1 = TM5Grids.from_corners(west=grid.west, east=grid.east, south=grid.south, north=grid.north, dlon=1, dlat=1)
+            nscale = rlat*rlon
+            # emis_data_1x1 = np.repeat(emis_data, rlat*rlon).reshape((nlat*rlat,nlon*rlon)) / (rlat*rlon)
+            #-- MVO-TODO::poor man's solution with explict looping for upscaling,
+            #             in the hurray because lack of time for smarter solution...
+            emis_in = emis_data.reshape(nlat,nlon)
+            emis_data_1x1 = zeros((nlat*rlat,nlon*rlon))
+            for iilat in range(nlat*rlat):
+                ilat = iilat//rlat
+                for iilon in range(nlon*rlon):
+                    ilon = iilon//rlon
+                    emis_data_1x1[iilat,iilon] = emis_in[ilat,ilon]
+            daemis_1x1 = xr.DataArray(
+                emis_data_1x1,
+                dims=('lat','lon'),
+                coords = {'lon': grid_1x1.lonc, 'lat': grid_1x1.latc},
+                attrs = { 'units': emis_units}
+                )
+            emis_results.table_1x1[reg] = daemis_1x1
+            # print(f"@{reg}, totemis daemis/daemis_1x1 {daemis.sum().values}/{daemis_1x1.sum().values}")
+            emis_glb1x1.loc[dict(lat=lat_slice,lon=lon_slice)] = daemis_1x1[:]
+    #--
+    dsemis.close()
+    emis_results.emis_glb1x1 = emis_glb1x1
+
+    return emis_results
 
 
 def tm5rundir_obstable( outpath : str | Path ) -> DataFrame:
