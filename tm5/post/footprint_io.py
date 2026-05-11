@@ -75,7 +75,7 @@ def _init_region_table():
             damask.loc[dict(lat=lat_slice,lon=lon_slice)] = 0
             usemask = (damask.values==1).ravel()
             nguse = np.count_nonzero(usemask)
-            print(f"@{reg}, ngtot={usemask.size}, nguse={nguse}")
+            # print(f"@{reg}, ngtot={usemask.size}, nguse={nguse}")
             region_table[reg].usemask = usemask
             region_table[reg].ng1D_clipped = nguse
             region_table[reg].lonc1D_clipped = lonmesh.ravel()[usemask]
@@ -116,7 +116,7 @@ def regions1D_info( regions : list, clip_child : bool = False ) -> SimpleNamespa
     lonc1D = np.hstack(lonc_list)
     latc1D = np.hstack(latc_list)
     reg1D  = np.array(region_list)
-    return SimpleNamespace(ng=ng, lonc1D=lonc1D, latc1D=latc1D, reg1D=reg1D)
+    return SimpleNamespace(table=region_table, ng=ng, lonc1D=lonc1D, latc1D=latc1D, reg1D=reg1D)
 
 
 def regiondomain_halo( region : str ) -> list:
@@ -857,7 +857,7 @@ def load_adjoint_fitic_footprint(conf : DictConfig) -> SimpleNamespace:
     #
     #-- be carefull regarding potential limitations we still have...
     #
-    if regions!=['glb600x400', 'eur300x200', 'gns100x100']:
+    if regions!=['glb600x400', 'eurnf300x200', 'gns100x100']:
         msg = f"currently only the FIT-IC spatial setup is supported, but found " \
             f"-->{regions}<-- as regions in the configuration file."
         raise NotImplementedError(msg)
