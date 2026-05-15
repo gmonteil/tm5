@@ -11,6 +11,8 @@ from tm5.gui.widgets.precomputed import PrecomputedInfo
 from tm5.gui.css import *
 # from tm5.gui.widgets.emis import EmissionExplorer
 from tm5 import debug
+import xarray as xr
+import hvplot.xarray
 
 
 pn.extension()
@@ -23,6 +25,7 @@ pn.extension('floatpanel')
 pn.extension(loading_spinner='dots', loading_color='#00aa41', template='bootstrap')
 pn.extension(loading_spinner='petal', loading_color='black', template='bootstrap')
 pn.param.ParamMethod.loading_indicator = True
+
 
 def fix_env() -> None:
     import sys, os
@@ -222,6 +225,49 @@ class ExperimentSetupGUI(pn.viewable.Viewer):
             fid.writelines(OmegaConf.to_yaml(conf))
 
 
+class PreconfExperimentGUI(pn.viewable.Viewer):
+    experiment = param.FileSelector(path='*.nc', doc='Prior emission dataset')
+    run_forward = param.Event(doc='Do a forward run', label='Submit a new forward run')
+    run_inv = param.Event(doc='Do an inversion', label='Perform an inversion')
+
+    # Data containers:
+    conc = param.ClassSelector(class_=xr.Dataset, precedence=-1)
+
+    def __init__(self, gui_settings: DictConfig):
+        super().__init__()
+        self.button_fwd = pn.widgets.Button.from_param(self.param.run_forward)
+        self.button_inv = pn.widgets.Button.from_param(self.param.run_inv)
+        self.gui_settings = gui_settings
+
+    def __panel__(self):
+        return pn.Column(
+            pn.pane.Markdown("# Preconfigured experiments"),
+            pn.widgets.Select.from_param(self.param.experiment), 
+            pn.pane.Markdown("== some description of the selected experiment =="),
+            pn.Row(self.button_fwd, self.button_inv),
+            self._conc_plot
+        )
+
+    @param.depends('run_forward', watch=True)
+    def _run_forward(self):
+        # Here "emis" should point to the file from the "Experiment" selector
+        r = requests.get(f"{self.gui_settings.backend_url}/forward", params={'emis':'fe.nc', 'task':'forward'})
+
+        # Retrieve results (here just the concentrations):
+        output_path = Path(r.json()['output'])
+        fc = xr.open_dataset(output_path / 'fc.nc')
+        obs = xr.open_dataset(output_path / 'ftj.nc')
+        obs['forward'] = fc['conc']
+        print(obs)
+        self.conc = obs[['obs', 'forward', 'iniconc']]
+
+    @param.depends('conc')
+    def _conc_plot(self):
+        if self.conc is None:
+            return ''
+        return self.conc.hvplot(x='nobsday')
+
+
 class FitIC_UI(pn.viewable.Viewer):
     def __init__(self, config_file: Path | str = 'gui.yml'):
         super().__init__()
@@ -231,36 +277,47 @@ class FitIC_UI(pn.viewable.Viewer):
                 f"on GUI startup!"
             raise RuntimeError(msg)
         self.conf = OmegaConf.load(config_file)
-        #
+
         #-- loguru compatible log level
-        #
-        loglev = self.conf.loglevel if 'loglevel' in self.conf else "CRITICAL"
-        if loglev!=None:
-            logger.remove()
-            if loglev.upper() in ['DEBUG','TRACE',]:
-                logger.add('fitic.log', level=loglev.upper())
-                logger.add(sys.stdout, level=loglev.upper(),
-                           diagnose=True, backtrace=True)
-            else:
-                #-- loguru levels are in upper-case
-                logger.add(sys.stdout, level=loglev.upper())
+        loglev = self.conf.get('loglevel', "CRITICAL")
+        logger.remove()
+        if loglev.upper() in ['DEBUG','TRACE',]:
+            logger.add('fitic.log', level=loglev.upper())
+            logger.add(sys.stdout, level=loglev.upper(),
+                        diagnose=True, backtrace=True)
+        else:
+            #-- loguru levels are in upper-case
+            logger.add(sys.stdout, level=loglev.upper())
 
     @debug.timer
     def __panel__(self):
-        setup_tab = ("Setup simulation",
-                     ExperimentSetupGUI(gui_settings=self.conf))
-        precomp_tabs = (
+        return pn.Tabs(
+            self.setup_tab,
+            self.preconfigured_tabs,
+            self.precomp_tabs,
+            dynamic=True
+        )
+
+    @property
+    def setup_tab(self):
+        return ("Setup simulation", ExperimentSetupGUI(gui_settings=self.conf))
+
+    @property
+    def precomp_tabs(self):
+        return (
             "Precomputed simulations", pn.Tabs(
                 ("Description", PrecomputedInfo(self.conf)),
                 ("Fit statistics", StatisticsViewer(self.conf)),
                 ('Modelled timeseries', StationExplorer(self.conf)),
                 # ('Emissions', EmissionExplorer(self.conf)),
                 tabs_location='left',
-                dynamic=True,
-                stylesheets=[precomp_stylesheet,], css_classes=['precomp-left'])
+                dynamic=False,
+                # stylesheets=[precomp_stylesheet,], css_classes=['precomp-left'])
+            )
         )
-        return pn.Tabs(
-            setup_tab,
-            precomp_tabs,
-            dynamic=True
+
+    @property
+    def preconfigured_tabs(self):
+        return (
+            "Preconfigured simulations", PreconfExperimentGUI(gui_settings=self.conf)
         )
