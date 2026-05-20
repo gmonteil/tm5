@@ -226,7 +226,7 @@ class ExperimentSetupGUI(pn.viewable.Viewer):
 
 
 class PreconfExperimentGUI(pn.viewable.Viewer):
-    experiment = param.FileSelector(path='*.nc', doc='Prior emission dataset')
+    experiment = param.FileSelector(doc='Prior emission dataset')
     run_forward = param.Event(doc='Do a forward run', label='Submit a new forward run')
     run_inv = param.Event(doc='Do an inversion', label='Perform an inversion')
 
@@ -238,6 +238,10 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.button_fwd = pn.widgets.Button.from_param(self.param.run_forward)
         self.button_inv = pn.widgets.Button.from_param(self.param.run_inv)
         self.gui_settings = gui_settings
+
+        # Load the file list
+        self.param.experiment.path = self.gui_settings.emissions.glob_pattern
+        self.experiment = self.param.experiment.objects[0]
 
     def __panel__(self):
         return pn.Column(
@@ -251,7 +255,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     @param.depends('run_forward', watch=True)
     def _run_forward(self):
         # Here "emis" should point to the file from the "Experiment" selector
-        r = requests.get(f"{self.gui_settings.backend_url}/forward", params={'emis':'fe.nc', 'task':'forward'})
+        r = requests.get(f"{self.gui_settings.backend_url}/forward", params={'emis':self.experiment, 'task':'forward'})
 
         # Retrieve results (here just the concentrations):
         output_path = Path(r.json()['output'])
