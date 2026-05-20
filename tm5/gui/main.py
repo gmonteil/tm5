@@ -13,6 +13,7 @@ from tm5.gui.css import *
 from tm5 import debug
 import xarray as xr
 import hvplot.xarray
+from pandas import read_csv
 
 
 pn.extension()
@@ -265,11 +266,33 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         print(obs)
         self.conc = obs[['obs', 'forward', 'iniconc']]
 
+    @param.depends('run_inv', watch=True)
+    def _run_inv(self):
+        r = requests.get(f"{self.gui_settings.backend_url}/forward", params={'emis':self.experiment, 'task':'inversion'})
+
+        # Retrieve results (here just the concentrations):
+        # This file seems to not have the info on which station the files come from ...
+        # The is the only thing needed to make the plots site-specific.
+        output_path = Path(r.json()['output'])
+        apri = read_csv(output_path / 'output/cpr.dat', header=None, index_col=False, names=['nobsday', 'conc'], sep=r'\s+', comment='#')
+        apos = read_csv(output_path / 'output/cpost.dat', header=None, index_col=False, names=['nobsday', 'conc'], sep=r'\s+', comment='#')
+        obs = read_csv(output_path / 'output/cobs.dat', header=None, index_col=False, names=['nobsday', 'obs'], sep=r'\s+', comment='#')
+
+        obs.loc[:, 'apri'] = apri.conc
+        obs.loc[:, 'apos'] = apos.conc
+        self.conc = obs.set_index('day').to_xarray()
+
     @param.depends('conc')
     def _conc_plot(self):
         if self.conc is None:
             return ''
-        return self.conc.hvplot(x='nobsday')
+        p = self.conc.obs.hvplot.scatter(c='k', label='obs')
+        if 'forward' in self.conc:
+            p *= self.conc.forward.hvplot.line(c='r', label='forward')
+        elif 'apos' in self.conc:
+            p *= self.conc.apri.hvplot.line(c='r', label='prior')
+            p *= self.conc.apos.hvplot.line(c='c', label='posterior')
+        return p
 
 
 class FitIC_UI(pn.viewable.Viewer):
