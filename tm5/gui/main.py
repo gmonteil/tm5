@@ -263,7 +263,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         fc = xr.open_dataset(output_path / 'fc.nc')
         obs = xr.open_dataset(output_path / 'ftj.nc')
         obs['forward'] = fc['conc']
-        print(obs)
+        # print(obs)
         self.conc = obs[['obs', 'forward', 'iniconc']]
 
     @param.depends('run_inv', watch=True)
@@ -280,7 +280,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
         obs.loc[:, 'apri'] = apri.conc
         obs.loc[:, 'apos'] = apos.conc
-        self.conc = obs.set_index('day').to_xarray()
+        # obs.to_csv('run_inv.csv')
+        self.conc = obs.set_index('nobsday').to_xarray()
 
     @param.depends('conc')
     def _conc_plot(self):
