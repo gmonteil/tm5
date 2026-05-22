@@ -230,7 +230,6 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     experiment = param.FileSelector(doc='Prior emission dataset')
     run_forward = param.Event(doc='Do a forward run', label='Submit a new forward run')
     run_inv = param.Event(doc='Do an inversion', label='Perform an inversion')
-    station = param.ListSelector()
 
     # Data containers:
     conc = param.ClassSelector(class_=xr.Dataset, precedence=-1)
@@ -244,6 +243,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         # Load the file list
         self.param.experiment.path = self.gui_settings.emissions.glob_pattern
         self.experiment = self.param.experiment.objects[0]
+        self.stations = None
+        # self.stations_widgets = pn.Column()
 
     def __panel__(self):
         return pn.Column(
@@ -251,6 +252,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             pn.widgets.Select.from_param(self.param.experiment), 
             pn.pane.Markdown("== some description of the selected experiment =="),
             pn.Row(self.button_fwd, self.button_inv),
+            # self.stations_widgets,
             self._conc_plot
         )
 
@@ -261,14 +263,18 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
         # Retrieve results (here just the concentrations):
         output_path = Path(r.json()['output'])
-        # #-- for now extracting configuration from foj.nc
-        # foj = xr.open_dataset(output_path / 'foj.nc')
-        # stations = foj.station.values
-        # self.param.station = stations
+        logger.debug(f"reading from ouput directory {str(output_path)}")
+        #-- fc.nc: simulated concentrations using the ingoing emissions
+        #          c = iniconc + ojac*emis
         fc = xr.open_dataset(output_path / 'fc.nc')
-        obs = xr.open_dataset(output_path / 'ftj.nc')
+        #-- for now extracting the observations from file foj.nc
+        #   NOTE: this will certainly change, but currently all
+        #         input for the inversion (including obs.) are present in this file
+        obs = xr.open_dataset(output_path / 'foj.nc')
+        #-- store list of stations
+        self.stations = obs.station.values #-- get station identifiers
+        # logger.debug(f"stations -->{self.stations}<--")
         obs['forward'] = fc['conc']
-        # print(obs)
         self.conc = obs[['obs', 'forward', 'iniconc']]
 
     @param.depends('run_inv', watch=True)
@@ -292,14 +298,19 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     def _conc_plot(self):
         if self.conc is None:
             return ''
-        p = self.conc.obs.hvplot.scatter(c='k', label='obs')
-        if 'forward' in self.conc:
-            p *= self.conc.forward.hvplot.line(c='r', label='forward')
+        # dfc = self.conc.to_dataframe()
+        # p = dfc.hvplot.points(x='nobsday', y='obs', grid=True, c='k', label='obs', groupby='nsta')
+        if 'forward' in self.conc: #-- only forward simulation
+            dfc = self.conc.to_dataframe().reset_index()
+            #-- prefer station identifier (rather than station index) for output
+            dfc.loc[:,'station'] = self.stations[dfc.loc[:,'nsta'].values]
+            p = dfc.hvplot.points(x='nobsday', y='obs', grid=True, c='k', label='obs', groupby='station')
+            p *= dfc.hvplot.line(x='nobsday', y='forward', c='r', label='forward', groupby='station')
         elif 'apos' in self.conc:
+            p = self.conc.obs.hvplot.scatter(c='k', label='obs')
             p *= self.conc.apri.hvplot.line(c='r', label='prior')
             p *= self.conc.apos.hvplot.line(c='c', label='posterior')
         return p
-
 
 class FitIC_UI(pn.viewable.Viewer):
     def __init__(self, config_file: Path | str = 'gui.yml'):
