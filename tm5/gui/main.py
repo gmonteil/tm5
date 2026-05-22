@@ -230,6 +230,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     experiment = param.FileSelector(doc='Prior emission dataset')
     run_forward = param.Event(doc='Do a forward run', label='Submit a new forward run')
     run_inv = param.Event(doc='Do an inversion', label='Perform an inversion')
+    station = param.ListSelector()
 
     # Data containers:
     conc = param.ClassSelector(class_=xr.Dataset, precedence=-1)
@@ -260,6 +261,10 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
         # Retrieve results (here just the concentrations):
         output_path = Path(r.json()['output'])
+        # #-- for now extracting configuration from foj.nc
+        # foj = xr.open_dataset(output_path / 'foj.nc')
+        # stations = foj.station.values
+        # self.param.station = stations
         fc = xr.open_dataset(output_path / 'fc.nc')
         obs = xr.open_dataset(output_path / 'ftj.nc')
         obs['forward'] = fc['conc']
@@ -319,13 +324,24 @@ class FitIC_UI(pn.viewable.Viewer):
 
     @debug.timer
     def __panel__(self):
-        return pn.Tabs(
-            self.setup_tab,
-            self.preconfigured_tabs,
-            self.precomp_tabs,
-            dynamic=True
-        )
+        if self.drop_precomputed:
+            return pn.Tabs(
+                self.setup_tab,
+                self.preconfigured_tabs,
+                dynamic=True
+            )
+        else:
+            return pn.Tabs(
+                self.setup_tab,
+                self.preconfigured_tabs,
+                self.precomp_tabs,
+                dynamic=True
+            )
 
+    @property
+    def drop_precomputed(self):
+        return self.conf.get('drop_precomputed', False)
+    
     @property
     def setup_tab(self):
         return ("Setup simulation", ExperimentSetupGUI(gui_settings=self.conf))
