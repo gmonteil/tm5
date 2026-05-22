@@ -5,6 +5,7 @@ import requests
 from pathlib import Path
 import sys
 from loguru import logger
+import numpy as np
 from tm5.gui.widgets import RunSettings
 from tm5.gui.widgets.stations import StationExplorer, StatisticsViewer
 from tm5.gui.widgets.precomputed import PrecomputedInfo
@@ -291,6 +292,20 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
         obs.loc[:, 'apri'] = apri.conc
         obs.loc[:, 'apos'] = apos.conc
+        #-- MV-ATTENTION: at current state the initial concentration is still missing!
+        foj = xr.open_dataset(output_path / 'foj.nc')
+        #-- store list of stations TODO:: should not be done every time!
+        self.stations = foj.station.values #-- get station identifiers
+        iniconc = foj.iniconc.values
+        nobsday, nsta = iniconc.shape
+        #-- TODO **VERY** ad-hoc approach to fill in nobsday/nsta as 1D vectors
+        #   (similar as in forward simulation)
+        obs.loc[:,'nobsday'] = np.repeat(np.arange(nobsday), nsta)
+        obs.loc[:,'nsta']    = np.tile(np.arange(nsta), nobsday)
+        iniconc1D = iniconc.ravel() #-- make dimensions nobsday/station 1D (as in output)
+        obs.loc[:,'obs'] += iniconc1D
+        obs.loc[:,'apri'] += iniconc1D
+        obs.loc[:,'apos'] += iniconc1D
         # obs.to_csv('run_inv.csv')
         self.conc = obs.set_index('nobsday').to_xarray()
 
@@ -298,18 +313,18 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     def _conc_plot(self):
         if self.conc is None:
             return ''
-        # dfc = self.conc.to_dataframe()
-        # p = dfc.hvplot.points(x='nobsday', y='obs', grid=True, c='k', label='obs', groupby='nsta')
+        dfc = self.conc.to_dataframe().reset_index()
+        #-- prefer station identifier (rather than station index) for output
+        dfc.loc[:,'station'] = self.stations[dfc.loc[:,'nsta'].values]
+        p = dfc.hvplot.points(x='nobsday', y='obs', grid=True, c='k', label='obs', groupby='station')
         if 'forward' in self.conc: #-- only forward simulation
-            dfc = self.conc.to_dataframe().reset_index()
-            #-- prefer station identifier (rather than station index) for output
-            dfc.loc[:,'station'] = self.stations[dfc.loc[:,'nsta'].values]
-            p = dfc.hvplot.points(x='nobsday', y='obs', grid=True, c='k', label='obs', groupby='station')
             p *= dfc.hvplot.line(x='nobsday', y='forward', c='r', label='forward', groupby='station')
-        elif 'apos' in self.conc:
-            p = self.conc.obs.hvplot.scatter(c='k', label='obs')
-            p *= self.conc.apri.hvplot.line(c='r', label='prior')
-            p *= self.conc.apos.hvplot.line(c='c', label='posterior')
+        elif 'apos' in self.conc:   #-- result from inversion
+            p *= dfc.hvplot.line(x='nobsday', y='apri', c='r', label='prior', groupby='station')
+            p *= dfc.hvplot.line(x='nobsday', y='apos', c='c', label='posterior', groupby='station')
+            # p = self.conc.obs.hvplot.scatter(c='k', label='obs')
+            # p *= self.conc.apri.hvplot.line(c='r', label='prior')
+            # p *= self.conc.apos.hvplot.line(c='c', label='posterior')
         return p
 
 class FitIC_UI(pn.viewable.Viewer):
