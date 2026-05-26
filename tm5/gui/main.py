@@ -286,38 +286,30 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         # This file seems to not have the info on which station the files come from ...
         # The is the only thing needed to make the plots site-specific.
         output_path = Path(r.json()['output'])
-        apri = read_csv(output_path / 'output/cpr.dat', header=None, index_col=False, names=['nobsday', 'conc'], sep=r'\s+', comment='#')
-        apos = read_csv(output_path / 'output/cpost.dat', header=None, index_col=False, names=['nobsday', 'conc'], sep=r'\s+', comment='#')
-        obs = read_csv(output_path / 'output/cobs.dat', header=None, index_col=False, names=['nobsday', 'obs'], sep=r'\s+', comment='#')
-
-        obs.loc[:, 'apri'] = apri.conc
-        obs.loc[:, 'apos'] = apos.conc
-        #-- MV-ATTENTION: at current state the initial concentration is still missing!
-        foj = xr.open_dataset(output_path / 'foj.nc')
-        #-- store list of stations TODO:: should not be done every time!
-        self.stations = foj.station.values #-- get station identifiers
-        iniconc = foj.iniconc.values
-        nobsday, nsta = iniconc.shape
-        #-- TODO **VERY** ad-hoc approach to fill in nobsday/nsta as 1D vectors
-        #   (similar as in forward simulation)
-        obs.loc[:,'nobsday'] = np.repeat(np.arange(nobsday), nsta)
-        obs.loc[:,'nsta']    = np.tile(np.arange(nsta), nobsday)
-        iniconc1D = iniconc.ravel() #-- make dimensions nobsday/station 1D (as in output)
-        obs.loc[:,'obs'] += iniconc1D
-        obs.loc[:,'apri'] += iniconc1D
-        obs.loc[:,'apos'] += iniconc1D
-        # obs.to_csv('run_inv.csv')
-        self.conc = obs.set_index('nobsday').to_xarray()
+        #-- 20260526: txk had changed code such that prior/posterior
+        #             simulated concentrations (including the signal from
+        #             the initial concentration) both are in file
+        #             fcpost.nc
+        fc = xr.open_dataset(output_path / 'fcpost.nc')
+        
+        obs = xr.open_dataset(output_path / 'foj.nc')
+        self.stations = obs.station.values #-- get station identifiers
+        obs['apri'] = fc['cprior']
+        obs['apos'] = fc['cpost']
+        self.conc = obs[['obs', 'apri', 'apos']]
+        
 
     @param.depends('conc')
     def _conc_plot(self):
         if self.conc is None:
             return ''
         dfc = self.conc.to_dataframe().reset_index()
+        print(f"dfc.columns -->{dfc.columns}<--")
+        logger.debug(f"dfc.columns -->{dfc.columns}<--")
         #-- prefer station identifier (rather than station index) for output
         dfc.loc[:,'station'] = self.stations[dfc.loc[:,'nsta'].values]
         p = dfc.hvplot.points(x='nobsday', y='obs', grid=True, c='k', label='obs', groupby='station')
-        if 'forward' in self.conc: #-- only forward simulation
+        if 'forward' in self.conc:  #-- only forward simulation
             p *= dfc.hvplot.line(x='nobsday', y='forward', c='r', label='forward', groupby='station')
         elif 'apos' in self.conc:   #-- result from inversion
             p *= dfc.hvplot.line(x='nobsday', y='apri', c='r', label='prior', groupby='station')
