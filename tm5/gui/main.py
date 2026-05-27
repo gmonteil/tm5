@@ -14,8 +14,8 @@ from tm5.gui.css import *
 from tm5 import debug
 import xarray as xr
 import hvplot.xarray
-from pandas import read_csv
-
+from pandas import read_csv, DataFrame
+from numpy import corrcoef
 
 pn.extension()
 pn.extension('terminal')
@@ -37,6 +37,78 @@ def fix_env() -> None:
     # os.environ["SSL_CERT_DIR"] = str(env_base_path / 'ssl' / 'certs')
     # os.environ["REQUESTS_CA_BUNDLE"] = str(env_base_path / 'ssl' / 'cert.pem')
     os.environ["PROJ_LIB"] = str(env_base_path / 'share' / 'proj')
+
+
+@debug.timer
+def conc_statistics( conc : xr.Dataset, stations : list[str] ) -> DataFrame:
+    """
+    """
+    # msg = f"stations -->{stations}<--"
+    # logger.debug(stations)
+    stats = {
+        'station': [],
+        'Mean bias (prior)': [],
+        'Mean bias (post)' : [],
+        'RMSE (prior)': [],
+        'RMSE (post)': [],
+        'Correlation coefficient (prior)': [],
+        'Correlation coefficient (post)': [],
+        }
+    # msg = f"stats initial -->{stats}<-- (==>{stations}<==)"
+    # logger.debug(msg)
+    dfc = conc.to_dataframe().reset_index()
+    #-- prefer station identifier (rather than station index) for output
+    dfc.loc[:,'station'] = stations[dfc.loc[:,'nsta'].values]
+    for sta in stations:
+        # msg = f"now @station={sta}"
+        # logger.debug(msg)
+        #
+        #-- select current station (for all days)
+        #
+        cnd = dfc['station']==sta
+        _df = dfc.loc[cnd,:]
+        stats['station'].append(sta)
+        _capri = _df.loc[:,'apri']
+        _capos = _df.loc[:,'apos']
+        _cobs  = _df.loc[:,'obs']
+        # msg = f"...@{sta} RMSE ...({_df.shape})"
+        # logger.debug(msg)
+        #
+        #-- prior statistics
+        #
+        _bias_prior  = _capri - _cobs
+        meanbias_prior = _bias_prior.mean()
+        rmse_prior = (_bias_prior ** 2).mean() ** .5
+        corrcoef_prior = corrcoef(_capri.values,_cobs.values)[0,1]
+        # msg = f"@{sta}, rmse prior ==>{rmse_prior}<=="
+        # logger.debug(msg)
+        #
+        #-- posterior statistics
+        #
+        _bias_post  = _capos - _cobs
+        meanbias_post = _bias_post.mean()       
+        rmse_post  = (_bias_post **2).mean() ** .5
+        corrcoef_post = corrcoef(_capos.values,_cobs.values)[0,1]
+        # msg = f"@{sta}, rmse post ==>{rmse_post}<=="
+        # logger.debug(msg)
+        #
+        #-- fill into dictionary
+        #
+        stats['Mean bias (prior)'].append(meanbias_prior)
+        stats['RMSE (prior)'].append(rmse_prior)
+        stats['Correlation coefficient (prior)'].append(corrcoef_prior)
+        stats['Mean bias (post)'].append(meanbias_post)
+        stats['RMSE (post)'].append(rmse_post)
+        stats['Correlation coefficient (post)'].append(corrcoef_post)
+    # msg = f"...loop terminated, stats -->{stats}<--"
+    # logger.info(msg)
+    #
+    #-- turn into dataframe
+    #
+    stats = DataFrame.from_dict(stats).set_index('station')
+    # stats.to_csv('stats.csv', index=True)
+
+    return stats
 
 
 class ExperimentSetupGUI(pn.viewable.Viewer):
@@ -233,7 +305,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     run_inv = param.Event(doc='Do an inversion', label='Perform an inversion')
 
     # Data containers:
-    conc = param.ClassSelector(class_=xr.Dataset, precedence=-1)
+    conc       = param.ClassSelector(class_=xr.Dataset, precedence=-1)
+    stats4conc = param.ClassSelector(class_=DataFrame, precedence=-1)
 
     def __init__(self, gui_settings: DictConfig):
         super().__init__()
@@ -254,7 +327,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             pn.pane.Markdown("== some description of the selected experiment =="),
             pn.Row(self.button_fwd, self.button_inv),
             # self.stations_widgets,
-            self._conc_plot
+            self._conc_plot,
+            self._conc_stats_table
         )
 
     @param.depends('run_forward', watch=True)
@@ -296,16 +370,21 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.stations = obs.station.values #-- get station identifiers
         obs['apri'] = fc['cprior']
         obs['apos'] = fc['cpost']
+        msg = f"setting self.conc/self.stats4conc"
+        logger.debug(msg)
         self.conc = obs[['obs', 'apri', 'apos']]
-        
+        self.stats4conc = conc_statistics(self.conc, self.stations)
+        msg = f"...setting done."
+        logger.debug(msg)
 
     @param.depends('conc')
     def _conc_plot(self):
+        # msg = f"self.conc -->{self.conc}<--"
+        # logger.debug(msg)
         if self.conc is None:
             return ''
         dfc = self.conc.to_dataframe().reset_index()
-        print(f"dfc.columns -->{dfc.columns}<--")
-        logger.debug(f"dfc.columns -->{dfc.columns}<--")
+        # logger.debug(f"dfc.columns -->{dfc.columns}<--")
         #-- prefer station identifier (rather than station index) for output
         dfc.loc[:,'station'] = self.stations[dfc.loc[:,'nsta'].values]
         p = dfc.hvplot.points(x='nobsday', y='obs', grid=True, c='k', label='obs', groupby='station')
@@ -314,10 +393,17 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         elif 'apos' in self.conc:   #-- result from inversion
             p *= dfc.hvplot.line(x='nobsday', y='apri', c='r', label='prior', groupby='station')
             p *= dfc.hvplot.line(x='nobsday', y='apos', c='c', label='posterior', groupby='station')
-            # p = self.conc.obs.hvplot.scatter(c='k', label='obs')
-            # p *= self.conc.apri.hvplot.line(c='r', label='prior')
-            # p *= self.conc.apos.hvplot.line(c='c', label='posterior')
         return p
+
+    @param.depends('stats4conc')
+    def _conc_stats_table(self):
+        logger.debug(f"self.stats4conc -->{self.stats4conc}<--")
+        if self.stats4conc is None:
+            return ''
+        else:
+            df = self.stats4conc
+            return pn.pane.DataFrame(df, text_align='center')
+            # return pn.pane.DataFrame(df, formatters=[lambda x: f'{x:.2f}'] * 3, text_align='center')
 
 class FitIC_UI(pn.viewable.Viewer):
     def __init__(self, config_file: Path | str = 'gui.yml'):
