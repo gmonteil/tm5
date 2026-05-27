@@ -10,6 +10,7 @@ from loguru import logger
 import numpy as np
 import xarray as xr
 import hvplot.xarray
+from holoviews import opts
 from pandas import read_csv, DataFrame
 from numpy import corrcoef
 
@@ -240,6 +241,11 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
     @param.depends('run_forward', watch=True)
     def _run_forward(self):
+        #
+        #-- clear previous results
+        #
+        self.conc = None
+        self.stats4conc = None
         # # Here "emis" should point to the file from the "Experiment" selector
         # r = requests.get(f"{self.gui_settings.backend_url}/forward", params={'emis':self.experiment, 'task':'forward'})
 
@@ -288,6 +294,11 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
     @param.depends('run_inv', watch=True)
     def _run_inv(self):
+        #
+        #-- clear previous results
+        #
+        self.conc = None
+        self.stats4conc = None
         # r = requests.get(f"{self.gui_settings.backend_url}/forward", params={'emis':self.experiment, 'task':'inversion'})
 
         # # Retrieve results (here just the concentrations):
@@ -299,6 +310,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         #
         #>>MVO:: it must be the full path (otherwise symlink will fail on the backend)
         # emis = Path(self.experiment).name
+
         emis = str(self.experiment)
         url = f"{self.gui_settings.backend_url}/forward"
         r = requests.get(url, params={'emis': emis, 'task': 'inversion'})
@@ -356,7 +368,16 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         elif 'apos' in self.conc:   #-- result from inversion
             p *= dfc.hvplot.line(x='nobsday', y='apri', c='r', label='prior', groupby='station')
             p *= dfc.hvplot.line(x='nobsday', y='apos', c='c', label='posterior', groupby='station')
+        title = "Time-series of observed and simulated concentration at selected station"
+        #-- MVO-TODO::units ['ppb'] should not be hard-coded!!
+        plotcfg = opts.Overlay(title=title, ylabel="[ppb]")
+        p.opts(plotcfg)
         return p
+        # return pn.Column(
+        #     pn.pane.Markdown('# Concentration time-series at selected station'),
+        #     p
+        #     )
+        # return p
 
     @param.depends('stats4conc')
     def _conc_stats_table(self):
@@ -368,8 +389,10 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             df = self.stats4conc
             nc = len(df.columns)
             formatters = [lambda x: f'{x:.2f}'] * nc
-            return pn.Column(
-                pn.pane.Markdown('# Fit statistics for all stations'),
-                pn.pane.DataFrame(df, text_align='center', formatters=formatters)
-                )
+            p = pn.pane.DataFrame(df, text_align='center', formatters=formatters)
+            # title = "Fit statistics for all stations"
+            # plotcfg = opts.Overlay(title=title)
+            # p.opts(plotcfg)
+            # return p
+            return pn.Column(pn.pane.Markdown('# Fit statistics for all stations'), p)
             # return pn.pane.DataFrame(df, text_align='center', formatters=formatters)
