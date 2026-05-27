@@ -1,21 +1,22 @@
 #!/usr/bin/env python
 
-import panel as pn
-import param
 from omegaconf import OmegaConf, DictConfig
 import requests
 from pathlib import Path
 import sys
 from loguru import logger
-import numpy as np
 import xarray as xr
+from pandas import read_csv, DataFrame
+import numpy as np
+from numpy import corrcoef
+import panel as pn
+import param
 import hvplot.xarray
 from holoviews import opts
-from pandas import read_csv, DataFrame
-from numpy import corrcoef
 
 from tm5 import debug
 from tm5.gui.css import *
+
 
 def experiment_desc( exp : str ) -> str:
     desc = "!!! description missing !!!"
@@ -85,6 +86,79 @@ def experiment_desc( exp : str ) -> str:
                 f"but without emissions over Northern America " \
                 f"(165W-55W,25N-80N)."
     return desc
+
+@debug.timer
+def simulation_read_targets( simu : pn.viewable.Viewer, output_path : str|Path ) -> None:
+    """
+    """
+    #
+    #-- read target identifier
+    #
+    tgt = xr.open_dataset(output_path / 'ftj.nc')
+    simu.targets = tgt.targets.values
+    tgt_dict = { 'target': tgt.targets.values,
+                 'prior': [],
+                 'posterior': [],
+                 'posterior_uncertainty': []
+                }
+    #
+    #-- output/t0.dat --> prior target
+    #   output/t.dat  --> posterior target
+    #   output/ct.dat --> posterior correlation of targets
+    #                     (uncertainties are square-root of diagonal elements)
+    #
+    #-- prior
+    #
+    tfile = Path(output_path) / 'output' / 't0.dat'
+    msg = f"reading from ***{tfile.name}***"
+    logger.debug(msg)
+    if not tfile.exists():
+        msg = f"expected prior target file ***{tfile.name}*** not present"
+        raise RuntimeError(msg)
+    else:
+        dft = read_csv(tfile, sep=r"\s+|\t+", engine='python')
+        dft.to_csv('tgt-apri.csv')
+        # msg = f"prior targets -->{dft}<--"
+        # logger.debug(msg)
+        tgt_dict['prior'] = dft.loc[:,'col_1'].values
+    #
+    #-- posterior
+    #
+    tfile = Path(output_path) / 'output' / 't.dat'
+    msg = f"reading from ***{tfile.name}***"
+    logger.debug(msg)
+    if not tfile.exists():
+        msg = f"expected prior target file ***{tfile.name}*** not present"
+        raise RuntimeError(msg)
+    else:
+        dft = read_csv(tfile, sep=r"\s+|\t+", engine='python')
+        dft.to_csv('tgt-apos.csv')
+        # msg = f"prior targets -->{dft}<--"
+        # logger.debug(msg)
+        tgt_dict['posterior'] = dft.loc[:,'col_1'].values
+    #
+    #-- posterior uncertainty
+    #
+    tfile = Path(output_path) / 'output' / 'ct.dat'
+    msg = f"reading from ***{tfile.name}***"
+    logger.debug(msg)
+    if not tfile.exists():
+        msg = f"expected prior target file ***{tfile.name}*** not present"
+        raise RuntimeError(msg)
+    else:
+        dft = read_csv(tfile, sep=r"\s+|\t+", engine='python')
+        dft.to_csv('tgtunc-apos.csv')
+        for itgt,tgt in enumerate(simu.targets):
+            #-- correlation matrix (!), need to take square root of diagonal
+            #-- MVO-ATTENTION:column indexing is Fortran based (col_1,col_2,col_3,...)
+            _tgtunc = np.sqrt(dft.loc[itgt, f'col_{itgt+1}'])
+            tgt_dict['posterior_uncertainty'].append(_tgtunc)
+        # msg = f"prior targets -->{dft}<--"
+        # logger.debug(msg)
+    #
+    #-- store target table
+    #
+    simu.tgt_table = DataFrame.from_dict(tgt_dict).set_index('target')
 
 
 @debug.timer
@@ -167,6 +241,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     # Data containers:
     conc       = param.ClassSelector(class_=xr.Dataset, precedence=-1)
     stats4conc = param.ClassSelector(class_=DataFrame, precedence=-1)
+    tgt_table   = param.ClassSelector(class_=DataFrame, precedence=-1)
 
     def __init__(self, gui_settings: DictConfig):
         super().__init__()
@@ -200,7 +275,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             pn.Row(self.button_fwd, self.button_inv),
             # self.stations_widgets,
             self._conc_plot,
-            self._conc_stats_table
+            self._conc_stats_table,
+            self._target_table
             # pn.Column(
             #     stats_pane,
             #     self._conc_stats_table)
@@ -246,6 +322,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         #
         self.conc = None
         self.stats4conc = None
+        self.tgt_table = None
         # # Here "emis" should point to the file from the "Experiment" selector
         # r = requests.get(f"{self.gui_settings.backend_url}/forward", params={'emis':self.experiment, 'task':'forward'})
 
@@ -299,6 +376,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         #
         self.conc = None
         self.stats4conc = None
+        self.tgt_table = None
         # r = requests.get(f"{self.gui_settings.backend_url}/forward", params={'emis':self.experiment, 'task':'inversion'})
 
         # # Retrieve results (here just the concentrations):
@@ -331,18 +409,21 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             return
         
         output_path = Path(payload['output'])
+        logger.debug(f"reading from ouput directory {str(output_path)}")
 
         #
         #-- processing result/output folder
         #
+        #-- MVO-TODO::currently observations are *still* in file foj.nc
+        #             (which also holds the observational Jacobian),
+        #             this may change in future...
+        obs = xr.open_dataset(output_path / 'foj.nc')
+        self.stations = obs.station.values #-- get station identifiers
         #-- 20260526: txk had changed code such that prior/posterior
         #             simulated concentrations (including the signal from
         #             the initial concentration) both are in file
         #             fcpost.nc
         fc = xr.open_dataset(output_path / 'fcpost.nc')
-        
-        obs = xr.open_dataset(output_path / 'foj.nc')
-        self.stations = obs.station.values #-- get station identifiers
         obs['apri'] = fc['cprior']
         obs['apos'] = fc['cpost']
         # msg = f"setting self.conc/self.stats4conc"
@@ -351,6 +432,17 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.stats4conc = conc_statistics(self.conc, self.stations)
         # msg = f"...setting done."
         # logger.debug(msg)
+        #
+        #-- read target identifier
+        #
+        # msg = f"...start reading targets..."
+        # logger.info(msg)
+        simulation_read_targets(self, output_path)
+        # msg = f"...detected targets -->{self.targets}<--"
+        # logger.debug(msg)
+        # self.tgt_table.to_csv('yy.csv', index=True)
+        # msg = f"...generated target table -->\n{self.tgt_table}\n<--"
+        # logger.info(msg)
 
     @param.depends('conc')
     def _conc_plot(self):
@@ -395,4 +487,19 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             # p.opts(plotcfg)
             # return p
             return pn.Column(pn.pane.Markdown('# Fit statistics for all stations'), p)
+            # return pn.pane.DataFrame(df, text_align='center', formatters=formatters)
+
+    @param.depends('tgt_table')
+    def _target_table(self):
+        # msg = f"self.tgt_table -->{self.tgt_table}<--"
+        # logger.debug(msg)
+        if self.tgt_table is None:
+            return ''
+        else:
+            df = self.tgt_table
+            nc = len(df.columns)
+            formatters = [lambda x: f'{x:.2f}'] * nc
+            p = pn.pane.DataFrame(df, text_align='center', formatters=formatters)
+            #-- MVO-TODO::units [MtCH4] should not be hard-coded here
+            return pn.Column(pn.pane.Markdown('# Target emission quantities [MtCH4]'), p)
             # return pn.pane.DataFrame(df, text_align='center', formatters=formatters)
