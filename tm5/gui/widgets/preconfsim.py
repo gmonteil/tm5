@@ -16,6 +16,76 @@ from numpy import corrcoef
 from tm5 import debug
 from tm5.gui.css import *
 
+def experiment_desc( exp : str ) -> str:
+    desc = "!!! description missing !!!"
+    match exp:
+        case 'default':
+            desc = f"standard/default emission scenario"
+        case 'edgarflat':
+            desc = f"Similar to the default case, but using a flat " \
+                f"temporal profile for EDGAR anthropogenic emissions."
+        case 'regional':
+            desc = f"Similar to the default case, but emissions from " \
+                f"wetlands, mineral-soils, and anthropogenic sources " \
+                f"over the European domain are taken from dedicated datasets " \
+                f"generated in AVENGERS WP2."
+        case 'regional_no-agri':
+            desc = f"Emissions similar to the regional case, " \
+                f"buth without emissions from the agriculture sector " \
+                f"over the European domain."
+        case 'regional_anthro-no-agri':
+            desc = f"Emissions similar to the regional case, " \
+                f"buth without emissions from the agriculture sector " \
+                f"over the European domain."
+        case 'regional_no-fossil':
+            desc = f"Emissions similar to the regional case, " \
+                f"buth without emissions from the fossil sector " \
+                f"over the European domain."
+        case 'regional_anthro-no-fossil':
+            desc = f"Emissions similar to the regional case, " \
+                f"buth without emissions from the fossil sector " \
+                f"over the European domain."
+        case 'regional_no-waste':
+            desc = f"Emissions similar to the regional case, " \
+                f"buth without emissions from the waste sector " \
+                f"over the European domain."
+        case 'regional_anthro-no-waste':
+            desc = f"Emissions similar to the regional case, " \
+                f"buth without emissions from the waste sector " \
+                f"over the European domain."
+        case 'regional_no-anthro-france':
+            desc = f"Emissions similar to the regional case, " \
+                f"buth without anthropogenic emissions over France."
+        case 'regional_anthro-no-france':
+            desc = f"Emissions similar to the regional case, " \
+                f"buth without anthropogenic emissions over France."
+        case 'regional_no-anthro-netherlands':
+            desc = f"Emissions similar to the regional case, " \
+                f"buth without anthropogenic emissions over " \
+                f"the Netherlands."
+        case 'regional_anthro-no-netherlands':
+            desc = f"Emissions similar to the regional case, " \
+                f"buth without anthropogenic emissions over " \
+                f"the Netherlands."
+        case 'half-oh':
+            desc = f"Emissions similar to the default case, " \
+                f"but using halved CAMS OH concentrations " \
+                f"(which are entering the TM5 chemistry)."
+        case 'no-germany':
+            desc = "Emissions similar to the default case, " \
+                f"but without emissions over domain around Germany " \
+                f"(6E-15E,47N-55N)."
+        case 'no-gns':
+            desc = "Emissions similar to the default case, " \
+                f"but without emissions over the innermost zoom domain " \
+                f"(0E-18E,42N-58N) covering Germany, Netherlands, and Switzerland."
+        case 'no-northamerica':
+            desc = "Emissions similar to the default case, " \
+                f"but without emissions over Northern America " \
+                f"(165W-55W,25N-80N)."
+    return desc
+
+
 @debug.timer
 def conc_statistics( conc : xr.Dataset, stations : list[str] ) -> DataFrame:
     """
@@ -90,7 +160,7 @@ def conc_statistics( conc : xr.Dataset, stations : list[str] ) -> DataFrame:
 
 class PreconfExperimentGUI(pn.viewable.Viewer):
     experiment = param.FileSelector(doc='Prior emission dataset')
-    run_forward = param.Event(doc='Do a forward run', label='Submit a new forward run')
+    run_forward = param.Event(doc='Do a forward run', label='Perfrom a forward simulation')
     run_inv = param.Event(doc='Do an inversion', label='Perform an inversion')
 
     # Data containers:
@@ -110,15 +180,63 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         # self.stations_widgets = pn.Column()
 
     def __panel__(self):
+        header_pane = pn.pane.Markdown('# Preconfigured experiments',
+                                        stylesheets=[preconfsim_stylesheet],
+                                        css_classes=['precomp-right'])
+        stats_pane = pn.pane.Markdown('Fit statistics for all stations',
+                                      stylesheets=[preconfsim_stylesheet],
+                                      css_classes=['precomp-right'])
+        header_pane = pn.pane.Markdown('# Preconfigured experiments')
+        stats_pane = pn.pane.Markdown('Fit statistics for all stations')
+        expdesc_pane = pn.pane.Markdown(
+            f"{self._emistable_html()}",
+            stylesheets=[preconfsim_stylesheet],
+            css_classes=['precomp-right'])
         return pn.Column(
-            pn.pane.Markdown("# Preconfigured experiments"),
-            pn.widgets.Select.from_param(self.param.experiment), 
-            pn.pane.Markdown("== some description of the selected experiment =="),
+            header_pane,
+            pn.Row(pn.widgets.Select.from_param(self.param.experiment),expdesc_pane), 
+            # pn.pane.Markdown("== some description of the selected experiment =="),
             pn.Row(self.button_fwd, self.button_inv),
             # self.stations_widgets,
             self._conc_plot,
             self._conc_stats_table
+            # pn.Column(
+            #     stats_pane,
+            #     self._conc_stats_table)
         )
+
+    def _emistable_html(self):
+        def _get_desc(exp):
+            desc = experiment_desc(exp)
+            if desc is None:
+                return desc
+            desc_html = '<tr>'
+            desc_html += f'<td>{exp}</td>'
+            desc_html += f'<td>{desc}</td>'
+            desc_html += f'</tr>'
+            return desc_html
+        
+        exp_list = list(self.param.experiment.objects)
+        tbl = f'<table>'
+        #-- header
+        tbl += f'<thead><tr><th>Emissions setup</th><th>Description</th></tr></thead>'
+        for iexp,exp in enumerate(exp_list):
+            p = Path(exp).stem
+            ptokens = p.split('_')
+            _exp = ptokens[0].replace('fitic-','')
+            if ptokens[0]=='fitic-regional':
+                if ptokens[1]=='monthly-emissions':
+                    _exp = 'regional'
+                else:
+                    _exp = _exp + '_' + ptokens[1]
+            desc = _get_desc(_exp)
+            if not desc is None:
+                tbl += desc
+                # if iexp<len(exp_list)-1:
+                #     tbl += '<br>'
+        tbl += f'</table>'
+
+        return tbl
 
     @param.depends('run_forward', watch=True)
     def _run_forward(self):
@@ -248,5 +366,10 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             return ''
         else:
             df = self.stats4conc
-            return pn.pane.DataFrame(df, text_align='center')
-            # return pn.pane.DataFrame(df, formatters=[lambda x: f'{x:.2f}'] * 3, text_align='center')
+            nc = len(df.columns)
+            formatters = [lambda x: f'{x:.2f}'] * nc
+            return pn.Column(
+                pn.pane.Markdown('# Fit statistics for all stations'),
+                pn.pane.DataFrame(df, text_align='center', formatters=formatters)
+                )
+            # return pn.pane.DataFrame(df, text_align='center', formatters=formatters)
