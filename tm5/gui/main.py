@@ -333,12 +333,39 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
     @param.depends('run_forward', watch=True)
     def _run_forward(self):
-        # Here "emis" should point to the file from the "Experiment" selector
-        r = requests.get(f"{self.gui_settings.backend_url}/forward", params={'emis':self.experiment, 'task':'forward'})
+        # # Here "emis" should point to the file from the "Experiment" selector
+        # r = requests.get(f"{self.gui_settings.backend_url}/forward", params={'emis':self.experiment, 'task':'forward'})
 
-        # Retrieve results (here just the concentrations):
-        output_path = Path(r.json()['output'])
+        # # Retrieve results (here just the concentrations):
+        # output_path = Path(r.json()['output'])
+        #-- modification provided by Zois (2026-05-25)
+        #>>MVO:: it must be the full path (otherwise symlink will fail on the backend)
+        # emis = Path(self.experiment).name
+        emis = str(self.experiment)
+        url = f"{self.gui_settings.backend_url}/forward"
+        r = requests.get(url, params={'emis': emis, 'task': 'forward'})
+        
+        if not r.ok:
+            logger.error(
+                f"forward run failed: backend returned {r.status_code} for "
+                f"emis={emis!r} at {url}. Body: {r.text[:500]}"
+            )
+            return
+        try:
+            payload = r.json()
+        except requests.exceptions.JSONDecodeError:
+            logger.error(
+                f"forward run failed: backend returned non-JSON for "
+                f"emis={emis!r} at {url}. Body: {r.text[:500]}"
+            )
+            return
+        output_path = Path(payload['output'])
+      
         logger.debug(f"reading from ouput directory {str(output_path)}")
+
+        #
+        #-- processing result/output folder
+        #
         #-- fc.nc: simulated concentrations using the ingoing emissions
         #          c = iniconc + ojac*emis
         fc = xr.open_dataset(output_path / 'fc.nc')
@@ -354,12 +381,41 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
     @param.depends('run_inv', watch=True)
     def _run_inv(self):
-        r = requests.get(f"{self.gui_settings.backend_url}/forward", params={'emis':self.experiment, 'task':'inversion'})
+        # r = requests.get(f"{self.gui_settings.backend_url}/forward", params={'emis':self.experiment, 'task':'inversion'})
 
-        # Retrieve results (here just the concentrations):
-        # This file seems to not have the info on which station the files come from ...
-        # The is the only thing needed to make the plots site-specific.
-        output_path = Path(r.json()['output'])
+        # # Retrieve results (here just the concentrations):
+        # # This file seems to not have the info on which station the files come from ...
+        # # The is the only thing needed to make the plots site-specific.
+        # output_path = Path(r.json()['output'])
+        #
+        #-- as modified by Zois (2026-05-25)
+        #
+        #>>MVO:: it must be the full path (otherwise symlink will fail on the backend)
+        # emis = Path(self.experiment).name
+        emis = str(self.experiment)
+        url = f"{self.gui_settings.backend_url}/forward"
+        r = requests.get(url, params={'emis': emis, 'task': 'inversion'})
+        
+        if not r.ok:
+            logger.error(
+                f"inversion failed: backend returned {r.status_code} for "
+                f"emis={emis!r} at {url}. Body: {r.text[:500]}"
+            )
+            return
+        try:
+            payload = r.json()
+        except requests.exceptions.JSONDecodeError:
+            logger.error(
+                f"inversion failed: backend returned non-JSON for "
+                f"emis={emis!r} at {url}. Body: {r.text[:500]}"
+            )
+            return
+        
+        output_path = Path(payload['output'])
+
+        #
+        #-- processing result/output folder
+        #
         #-- 20260526: txk had changed code such that prior/posterior
         #             simulated concentrations (including the signal from
         #             the initial concentration) both are in file
@@ -370,12 +426,12 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.stations = obs.station.values #-- get station identifiers
         obs['apri'] = fc['cprior']
         obs['apos'] = fc['cpost']
-        msg = f"setting self.conc/self.stats4conc"
-        logger.debug(msg)
+        # msg = f"setting self.conc/self.stats4conc"
+        # logger.debug(msg)
         self.conc = obs[['obs', 'apri', 'apos']]
         self.stats4conc = conc_statistics(self.conc, self.stations)
-        msg = f"...setting done."
-        logger.debug(msg)
+        # msg = f"...setting done."
+        # logger.debug(msg)
 
     @param.depends('conc')
     def _conc_plot(self):
@@ -397,7 +453,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
     @param.depends('stats4conc')
     def _conc_stats_table(self):
-        logger.debug(f"self.stats4conc -->{self.stats4conc}<--")
+        # msg = f"self.stats4conc -->{self.stats4conc}<--"
+        # logger.debug(msg)
         if self.stats4conc is None:
             return ''
         else:
