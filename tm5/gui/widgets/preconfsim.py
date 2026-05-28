@@ -18,6 +18,9 @@ from holoviews import opts
 from tm5 import debug
 from tm5.gui.css import *
 
+from itertools import cycle
+from bokeh.palettes import Category10 as color_palette
+
 
 def experiment_desc( exp : str ) -> str:
     desc = "!!! description missing !!!"
@@ -283,6 +286,7 @@ def plot_site_info(sites: DataFrame, station: str | None):
         )
     )
 
+
 class PreconfExperimentGUI(pn.viewable.Viewer):
     experiment = param.FileSelector(doc='Prior emission dataset')
     run_forward = param.Event(doc='Do a forward run', label='Perfrom a forward simulation')
@@ -370,7 +374,6 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         #
         #-- clear previous results
         #
-        self.conc = None
         self.stats4conc = None
         self.tgt_table = None
         # # Here "emis" should point to the file from the "Experiment" selector
@@ -417,7 +420,13 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.stations = obs.station.values #-- get station identifiers
         # logger.debug(f"stations -->{self.stations}<--")
         obs['forward'] = fc['conc']
-        self.conc = obs[['obs', 'forward', 'iniconc']]
+        if 'obs' not in self.conc:
+            self.conc['obs'] = obs['obs']
+        tag = self.experiment
+        self.conc[f'forward_{tag}'] = obs['forward']
+        self.conc['forward'] = obs['forward']
+        # self.conc = obs[['obs', 'forward', 'iniconc']]
+        
         # ####
         # obsfile_list_all = glob(self.gui_settings.observations.files)
         # obsinfo_list = []
@@ -434,13 +443,12 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         # self.obstable = concat(obsinfo_list)
         # logger.debug(f"self.obstable -->{self.obstable.shape}<--")
         
-            
     @param.depends('run_inv', watch=True)
     def _run_inv(self):
         #
         #-- clear previous results
         #
-        self.conc = None
+        # self.conc = None
         self.stats4conc = None
         self.tgt_table = None
         # r = requests.get(f"{self.gui_settings.backend_url}/forward", params={'emis':self.experiment, 'task':'inversion'})
@@ -494,7 +502,14 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         obs['apos'] = fc['cpost']
         # msg = f"setting self.conc/self.stats4conc"
         # logger.debug(msg)
-        self.conc = obs[['obs', 'apri', 'apos']]
+        if 'obs' not in self.conc:
+            sef.conc[obs] = obs['obs']
+        tag = self.experiment
+        self.conc['apri'] = obs['apri']
+        self.conc['apos'] = obs['apos']
+        self.conc[f'apri_{tag}'] = obs['apri']
+        self.conc[f'apos_{tag}'] = obs['apos']
+        # self.conc = obs[['obs', 'apri', 'apos']]
         self.stats4conc = conc_statistics(self.conc, self.stations)
         # msg = f"...setting done."
         # logger.debug(msg)
@@ -521,11 +536,20 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         #-- prefer station identifier (rather than station index) for output
         dfc.loc[:,'station'] = self.stations[dfc.loc[:,'nsta'].values]
         p = dfc.hvplot.points(x='nobsday', y='obs', grid=True, c='k', label='obs', groupby='station')
-        if 'forward' in self.conc:  #-- only forward simulation
-            p *= dfc.hvplot.line(x='nobsday', y='forward', c='r', label='forward', groupby='station')
-        elif 'apos' in self.conc:   #-- result from inversion
-            p *= dfc.hvplot.line(x='nobsday', y='apri', c='r', label='prior', groupby='station')
-            p *= dfc.hvplot.line(x='nobsday', y='apos', c='c', label='posterior', groupby='station')
+        if 'forward' in self.conc.data_vars:  #-- only forward simulation
+            p *= dfc.hvplot.line(x='nobsday', y='forward', label='forward', groupby='station', line_width=5)
+            # Get all the other (older) forwards:
+            for fwd in [_ for _ in self.conc if _.startswith('forward') and not _.endswith(self.experiment)]:
+                col = next(color_palette)
+                p *= dfc.hvplot.line(x='nobsday', y=fwd, label=fwd, groupby='station', line_width=1, color=col)
+        elif 'apos' in self.conc.data_vars:   #-- result from inversion
+            p *= dfc.hvplot.line(x='nobsday', y='apri', label='prior', groupby='station', line_width=5, line_dash='dotted', color='b')
+            p *= dfc.hvplot.line(x='nobsday', y='apos', label='posterior', groupby='station', line_width=5, color='b')
+            for apri in [_ for _ in self.conc if _.startswith('apri') and not _.endswith(self.experiment)]:
+                apos = apri.replace('apri', 'apos')
+                col = next(color_palette)
+                p *= dfc.hvplot.line(x='nobsday', y='apri', label='prior', groupby='station', color=col, line_dash='dotted')
+                p *= dfc.hvplot.line(x='nobsday', y='apos', label='posterior', groupby='station', color=col)
         title = "Time-series of observed and simulated concentration at selected station"
         #-- MVO-TODO::units ['ppb'] should not be hard-coded!!
         plotcfg = opts.Overlay(title=title, ylabel="[ppb]")
