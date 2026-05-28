@@ -3,7 +3,6 @@
 from argparse import ArgumentParser
 import sys
 import os
-import datetime as dtm
 from omegaconf import OmegaConf, DictConfig
 from pathlib import Path
 from collections import OrderedDict
@@ -234,7 +233,7 @@ def collect_input4inversion( args ) -> SimpleNamespace:
     #
     #-- verification
     #
-    if args.refdir==None:
+    if not 'refdir' in args.__dict__ or args.refdir==None:
         outemis_info = emis_info
     else:
         if nsta!=1:
@@ -1054,6 +1053,182 @@ def subcmd_monthly_emissions_for_inversion(args):
     logger.info(msg)
 
     
+def subcmd_create_target_jacobian(args):
+    """
+    """
+    topdir = Path(args.outpath_tm5)
+    complevel = args.__dict__.get('complevel',4)
+
+    input4inv = collect_input4inversion(args)
+    day_range = input4inv.day_range
+    station_list = input4inv.station_list
+    ojac4D = input4inv.ojac4D
+    outemis_info = input4inv.emis_info
+    nemisday,ng = outemis_info.emis2D.shape
+    nobsday = len(day_range)
+    dayf = day_range[0]
+    dayl = day_range[-1]
+    reg1D = outemis_info.reg1D #-- 1D vector of region ids
+    region_list = np.unique(reg1D)
+    msg = f"detected region identifiers -->{region_list}<--"
+    logger.info(msg)
+    #
+    #-- create an area vector
+    #
+    area1D = np.full((ng,), -1.)
+    for reg in region_list:
+        ngc_reg = np.count_nonzero(reg1D==reg)
+        msg = f"reg={reg} ngc={ngc_reg}"
+        logger.info(msg)
+        if reg=='glb600x400':
+            reg_area = TM5Grids.global6x4().area
+        elif reg=='eur300x200':
+            reg_area = TM5Grids.eur3x2().area
+        elif reg=='gns100x100':
+            reg_area = TM5Grids.gns1x1().area
+        #
+        cnd_reg = reg1D==reg
+        area1D[cnd_reg] = reg_area.ravel()
+    #
+    #-- country shape
+    #
+    gns_grid = TM5Grids.gns1x1()
+    gns_w,gns_e,gns_s,gns_n = gns_grid.domain
+    tgt_country_table = OrderedDict()
+    if args.countryfrct_filepath!=None:
+        cfrctfile = args.countryfrct_filepath
+        # print(f"==>{cfrctfile}<== ({type(cfrctfile)}")
+        frctds = xr.open_dataset(cfrctfile)
+        reso = 1
+        w = int(frctds.lon.values.min()-reso/2)
+        e = int(frctds.lon.values.max()+reso/2)
+        s = int(frctds.lat.values.min()-reso/2)
+        n = int(frctds.lat.values.max()+reso/2)
+        cgrid = TM5Grids.from_corners(west=w,east=e,south=s,north=n,dlon=reso,dlat=reso)
+        country_id = frctds.country_ID.values
+        msg = f"country identifiers in file ==>{country_id}<=="
+        logger.info(msg)
+        country_frct = frctds.country_fraction.values
+        country_area = country_frct*cgrid.area[np.newaxis,:,:]
+        # for ic,cid in enumerate(country_id):
+        #     _area = country_area[ic,:].sum() # [m2]
+        #     print(f"{cid}: {_area/1e6:.2f}[km2]")
+        #
+        #-- restrict to innermost zoom domain
+        #
+        frctds_gns = frctds.sel(lon=(frctds.lon>=gns_w)&(frctds.lon<=gns_e),lat=(frctds.lat>=gns_s)&(frctds.lat<=gns_n))
+        country_frct_gns = frctds_gns.country_fraction.values
+        country_area_gns = country_frct_gns*gns_grid.area[np.newaxis,:,:]
+        for ic,cid in enumerate(country_id):
+            _area = country_area_gns[ic,:].sum()/1e6 #[km2]
+            _areatot = country_area[ic,:].sum()/1e6  #[km2]
+            if _area>0:
+                print(f"{cid}: area_gns={_area:.2f}[km2] (area={_areatot:.2f}[km2]")
+        #
+        #--
+        #
+        if args.countries!=None:
+            for _cid in args.countries:
+                #-- index
+                cid = _cid.upper()
+                ic = np.where(country_id==cid)[0]
+                if len(ic)==0:
+                    msg = f"country identifier -->{cid}<-- not found"
+                    raise RuntimeError(msg)
+                else:
+                    if country_frct_gns[ic,:].sum()!=country_frct[ic,:].sum():
+                        msg = f"country -->{cid}<-- not fully covered by innermost zoom domain, " \
+                            f"needs to be ignored!"
+                        logger.warning(msg)
+                        continue
+                    else:
+                        tgt_country_table[cid] = country_frct_gns[ic,:].ravel()
+    #
+    #
+    #-- target jacobian
+    #
+    target_list = ['global', 'gns1x1',] + list(tgt_country_table.keys())
+    ntgt = len(target_list)
+    tjac2D = zeros((ntgt,ng), dtype='f8')
+    for itgt,tgt in enumerate(target_list):
+        if tgt=='global':
+            tjac2D[itgt,:] = 1.
+        elif tgt=='gns1x1':
+            cnd_gns = outemis_info.reg1D=='gns100x100'
+            tjac2D[itgt,cnd_gns] = 1.
+        elif tgt in tgt_country_table:
+            cnd_tgt = outemis_info.reg1D=='gns100x100'
+            tgt_frct = tgt_country_table[tgt]
+            #-- just one more consistency check
+            tgt_area = np.sum(tgt_frct*area1D[cnd_gns])/1e6
+            msg = f"inserting grid cell fractions for target -->{tgt}<-- (area: {tgt_area:.2f}[km2])"
+            logger.info(msg)
+            tjac2D[itgt,cnd_gns] = tgt_frct
+    #
+    #-- prepare output
+    #
+    outname_tokens = [f"fitic-inversion_target-jacobian-ntgt{ntgt}",]
+    outname = '_'.join(outname_tokens) + '.nc'
+    outname = set_outname(args, outname)
+    msg = f"writing inversion inputs to file ***{outname}***..."
+    logger.info(msg)
+    #
+    #-- spatial dimensions
+    #
+    fp = Dataset(outname, 'w')
+    fp.createDimension('ng', ng)
+    fp.createDimension('ntgt', ntgt)
+    #
+    ncvar = fp.createVariable('lon', 'f8', ('ng',),
+                              compression='zlib', complevel=complevel)
+    ncvar.long_name = 'longitude'
+    ncvar.units = 'degrees_east'
+    ncvar.comment = 'references center of grid-cell in related zoom domain'
+    ncvar[:] = outemis_info.lonc1D
+    #
+    ncvar = fp.createVariable('lat', 'f8', ('ng',),
+                              compression='zlib', complevel=complevel)
+    ncvar.long_name = 'latitude'
+    ncvar.units = 'degrees_north'
+    ncvar.comment = 'references center of grid-cell in related zoom domain'
+    ncvar[:] = outemis_info.latc1D
+    #
+    ncvar = fp.createVariable('region', outemis_info.reg1D.dtype, ('ng',))
+    ncvar.long_name = f"emission_region_identifier"
+    ncvar.units = ''
+    ncvar[:] = outemis_info.reg1D[:]
+    #
+    ncvar = fp.createVariable('area', 'f8', ('ng',),
+                              compression='zlib', complevel=complevel)
+    ncvar.units = 'm2'
+    ncvar[:] = area1D
+    #
+    ncvar = fp.createVariable('targets', str, ('ntgt',))
+    ncvar.long_name = f"target_identifier"
+    ncvar.units = ''
+    for itgt,tgt in enumerate(target_list):
+        ncvar[itgt] = tgt
+    #
+    ncvar = fp.createVariable('tgt_jacobian', 'f8', ('ntgt','ng',),
+                              compression='zlib', complevel=complevel)
+    ncvar.units = ''
+    ncvar[:] = tjac2D[:]
+
+    #
+    #-- global attributes
+    #
+    fp.description = f"Target Jacobian for Fortran inversion environment within FIT-IC"
+    fp.history = f"{' '.join(sys.argv)}"
+    fp.date_created = Timestamp.utcnow().isoformat()
+    #
+    #-- close
+    #
+    fp.close()
+    msg = f"generated file ***{outname}***"
+    logger.info(msg)
+
+
+    
 ################################################################################
 #
 #                   p a r s e r
@@ -1209,6 +1384,37 @@ sparser.add_argument('--outdir',
 sparser.add_argument('--outname',
                     help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
 
+#
+#--       create_target_jacobian
+#
+sparser = subparsers.add_parser('create_target_jacobian',
+                                help="""preparation of dedicated target Jacobian for Fortran inversion system.""")
+sparser.add_argument('outpath_tm5',
+                     help="""top-level directory of series of TM5 adjoint runs for footprint creation each of those for one observation day.""")
+sparser.add_argument('--countryfrct_filepath',
+                     type=Path,
+                     help="""provide 1degree gridded NetCDF file with country fractions.""")
+sparser.add_argument('--countries',
+                     nargs='+',
+                     help="""select list of countries (ISO3 identifier) which must be fully covered within the FIT-IC innermost zoom domain.""")
+sparser.add_argument('--obsdir',
+                     default="/lunarc/nobackup/projects/ghg_inv/michael/FIT-IC/observations_fitic-gui",
+                     help="""directory providing obspack NetCDF data files with CH4 observations for selected station/site (default: %(default)s).""")
+sparser.add_argument('--obsid',
+                     nargs='+',
+                     default=['cbw_207',],
+                     help="""select one single observational location (default: %(default)s).""")
+sparser.add_argument('--selday',
+                     default="20210103",
+                     help="""last observational day of accumulation period (default: %(default)s).""")
+sparser.add_argument('--days',
+                     type=int,
+                     default=1,
+                     help="""number of days backwards of accumulation period (default: %(default)s).""")
+sparser.add_argument('--outdir',
+                    help="""top-level directory for any generated outputs..""")
+sparser.add_argument('--outname',
+                    help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
 
 
 ################################################################################
@@ -1234,6 +1440,9 @@ def main(args):
 
     if args.subcmds=='monthly_emissions_for_inversion':
         subcmd_monthly_emissions_for_inversion(args)
+
+    if args.subcmds=='create_target_jacobian':
+        subcmd_create_target_jacobian(args)
 
 if __name__ == '__main__':
     import datetime as dtm
