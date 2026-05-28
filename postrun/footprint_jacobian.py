@@ -1168,6 +1168,9 @@ def subcmd_create_target_jacobian(args):
     #-- prepare output
     #
     outname_tokens = [f"fitic-inversion_target-jacobian-ntgt{ntgt}",]
+    if len(tgt_country_table)>0:
+        country_tag = 'with-' + '-'.join(list(tgt_country_table.keys()))
+        outname_tokens.append(country_tag)
     outname = '_'.join(outname_tokens) + '.nc'
     outname = set_outname(args, outname)
     msg = f"writing inversion inputs to file ***{outname}***..."
