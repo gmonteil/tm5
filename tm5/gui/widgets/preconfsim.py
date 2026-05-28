@@ -6,9 +6,10 @@ from pathlib import Path
 import sys
 from loguru import logger
 import xarray as xr
-from pandas import read_csv, DataFrame
+from pandas import read_csv, DataFrame, concat
 import numpy as np
 from numpy import corrcoef
+from glob import glob
 import panel as pn
 import param
 import hvplot.xarray
@@ -117,7 +118,7 @@ def simulation_read_targets( simu : pn.viewable.Viewer, output_path : str|Path )
         raise RuntimeError(msg)
     else:
         dft = read_csv(tfile, sep=r"\s+|\t+", engine='python')
-        dft.to_csv('tgt-apri.csv')
+        # dft.to_csv('tgt-apri.csv')
         # msg = f"prior targets -->{dft}<--"
         # logger.debug(msg)
         tgt_dict['prior'] = dft.loc[:,'col_1'].values
@@ -132,7 +133,7 @@ def simulation_read_targets( simu : pn.viewable.Viewer, output_path : str|Path )
         raise RuntimeError(msg)
     else:
         dft = read_csv(tfile, sep=r"\s+|\t+", engine='python')
-        dft.to_csv('tgt-apos.csv')
+        # dft.to_csv('tgt-apos.csv')
         # msg = f"prior targets -->{dft}<--"
         # logger.debug(msg)
         tgt_dict['posterior'] = dft.loc[:,'col_1'].values
@@ -147,7 +148,7 @@ def simulation_read_targets( simu : pn.viewable.Viewer, output_path : str|Path )
         raise RuntimeError(msg)
     else:
         dft = read_csv(tfile, sep=r"\s+|\t+", engine='python')
-        dft.to_csv('tgtunc-apos.csv')
+        # dft.to_csv('tgtunc-apos.csv')
         for itgt,tgt in enumerate(simu.targets):
             #-- correlation matrix (!), need to take square root of diagonal
             #-- MVO-ATTENTION:column indexing is Fortran based (col_1,col_2,col_3,...)
@@ -232,6 +233,55 @@ def conc_statistics( conc : xr.Dataset, stations : list[str] ) -> DataFrame:
 
     return stats
 
+
+def load_observations_metadata(fname: Path) -> DataFrame:
+    """
+    Complementary function to "load_observations_data": this one loads a bunch of metadata, for each site:
+    - site_name
+    - site_code
+    - country
+    - latitude
+    - longitude
+    - elevation
+    - doi
+    - filename
+    """
+    vars_select = ['time', 'value', 'altitude', 'latitude', 'longitude', 'elevation', 'intake_height']
+    ds = xr.open_dataset(fname, decode_timedelta=False)[vars_select]
+    return DataFrame({
+        'site_name': ds.attrs['site_name'],
+        'site_code': ds.attrs['site_code'],
+        'country': ds.attrs['site_country'],
+        'latitude': ds.attrs['site_latitude'],
+        'longitude': ds.attrs['site_longitude'],
+        'elevation': ds.attrs['site_elevation'],
+        'doi': ds.attrs['obspack_identifier_link'],
+        'filename': fname
+    }, index=[ds.attrs['site_name']])
+
+
+def plot_site_info(sites: DataFrame, station: str | None):
+    site = sites.loc[station]
+
+    text = pn.pane.Markdown(f"""
+    ### {site.site_name}
+
+    - latitude: {site.latitude}
+    - longitude: {site.longitude}
+    - elevation: {site.elevation}
+    - DOI: {site.doi}
+    """)
+
+    return pn.Column(
+        text,
+        sites.hvplot.points(
+            x='longitude', y='latitude', geo=True, coastline=True, xlim=(-180, 180), ylim=(-90, 90),
+            frame_width=300, hover_cols=['site_name']
+        ) *
+        sites.loc[[station]].hvplot.points(
+            x='longitude', y='latitude', geo=True, coastline=True, xlim=(-180, 180), ylim=(-90, 90), frame_width=300, color='r'
+        )
+    )
 
 class PreconfExperimentGUI(pn.viewable.Viewer):
     experiment = param.FileSelector(doc='Prior emission dataset')
@@ -368,7 +418,23 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         # logger.debug(f"stations -->{self.stations}<--")
         obs['forward'] = fc['conc']
         self.conc = obs[['obs', 'forward', 'iniconc']]
-
+        # ####
+        # obsfile_list_all = glob(self.gui_settings.observations.files)
+        # obsinfo_list = []
+        # for ista,_staid in enumerate(self.stations):
+        #     staid,sta_alt = _staid.split('_')
+        #     for o in obsfile_list_all:
+        #         p = Path(o)
+        #         # logger.debug(f"@{_staid}: staid-->{staid}<-- {p.name}")
+        #         if p.name.startswith(f'ch4_{staid}'):
+        #             # msg = f"station -->{_staid}<-- with obsfile ***{o}***"
+        #             # logger.info(msg)
+        #             df = load_observations_metadata(p)
+        #             obsinfo_list.append(df)
+        # self.obstable = concat(obsinfo_list)
+        # logger.debug(f"self.obstable -->{self.obstable.shape}<--")
+        
+            
     @param.depends('run_inv', watch=True)
     def _run_inv(self):
         #
