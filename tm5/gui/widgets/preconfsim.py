@@ -536,20 +536,20 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         #-- prefer station identifier (rather than station index) for output
         dfc.loc[:,'station'] = self.stations[dfc.loc[:,'nsta'].values]
         p = dfc.hvplot.points(x='nobsday', y='obs', grid=True, c='k', label='obs', groupby='station')
-        if 'forward' in self.conc.data_vars:  #-- only forward simulation
+        if 'forward' in dfc.columns:  #-- only forward simulation
             p *= dfc.hvplot.line(x='nobsday', y='forward', label='forward', groupby='station', line_width=5)
             # Get all the other (older) forwards:
-            for fwd in [_ for _ in self.conc if _.startswith('forward') and not _.endswith(self.experiment)]:
+            for fwd in [_ for _ in dfc.columns if _.startswith('forward') and not _.endswith(self.experiment)]:
                 col = next(color_palette)
-                p *= dfc.hvplot.line(x='nobsday', y=fwd, label=fwd, groupby='station', line_width=1, color=col)
-        elif 'apos' in self.conc.data_vars:   #-- result from inversion
+                p *= dfc.hvplot.line(x='nobsday', y=fwd, label=fwd.rsplit('_', maxsplit=1)[0], groupby='station', line_width=1, color=col)
+        elif 'apos' in dfc.columns:   #-- result from inversion
             p *= dfc.hvplot.line(x='nobsday', y='apri', label='prior', groupby='station', line_width=5, line_dash='dotted', color='b')
             p *= dfc.hvplot.line(x='nobsday', y='apos', label='posterior', groupby='station', line_width=5, color='b')
-            for apri in [_ for _ in self.conc if _.startswith('apri') and not _.endswith(self.experiment)]:
+            for apri in [_ for _ in dfc.columns if _.startswith('apri') and not _.endswith(self.experiment)]:
                 apos = apri.replace('apri', 'apos')
                 col = next(color_palette)
-                p *= dfc.hvplot.line(x='nobsday', y='apri', label='prior', groupby='station', color=col, line_dash='dotted')
-                p *= dfc.hvplot.line(x='nobsday', y='apos', label='posterior', groupby='station', color=col)
+                p *= dfc.hvplot.line(x='nobsday', y='apri', label=apri.rsplit('_', maxsplit=1)[0], groupby='station', color=col, line_dash='dotted')
+                p *= dfc.hvplot.line(x='nobsday', y='apos', label=apos.rsplit('_', maxsplit=1)[0], groupby='station', color=col)
         title = "Time-series of observed and simulated concentration at selected station"
         #-- MVO-TODO::units ['ppb'] should not be hard-coded!!
         plotcfg = opts.Overlay(title=title, ylabel="[ppb]")
