@@ -498,7 +498,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         else:
             df = self.tgt_table
             nc = len(df.columns)
-            formatters = [lambda x: f'{x:.2f}'] * nc
+            formatters = [lambda x: f'{x:.3f}'] * nc
             p = pn.pane.DataFrame(df, text_align='center', formatters=formatters)
             #-- MVO-TODO::units [MtCH4] should not be hard-coded here
             return pn.Column(pn.pane.Markdown('# Target emission quantities [MtCH4]'), p)
