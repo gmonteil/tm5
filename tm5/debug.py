@@ -67,13 +67,13 @@ def trace_call(func):
         frame = inspect.stack()[1]
         
         # Ensure that the "<" are escaped
-        modname = func.__module__.replace('<', '\<')#.replace('>', '\>')
-        funcname = func.__name__.replace('<', '\<')
+        modname = func.__module__.replace(r'<', r'\<')#.replace('>', '\>')
+        funcname = func.__name__.replace(r'<', r'\<')
         if inspect.getmodule(frame.frame):
-            callmodname = inspect.getmodule(frame.frame).__name__.replace('<', '\<') + '.'
+            callmodname = inspect.getmodule(frame.frame).__name__.replace(r'<', r'\<') + '.'
         else :
             callmodname = '__main__.'
-        callfuncname = frame.function.replace('<', '\<')
+        callfuncname = frame.function.replace(r'<', r'\<')
         filename = f'file {frame.filename}, '
         if frame.filename == '<string>':
             filename = ''
@@ -150,6 +150,6 @@ def timer(func):
         start = time.perf_counter()
         result = func(*args, **kwargs)
         end = time.perf_counter()
-        logger.opt(colors=True).debug(f"<y>{func.__module__}.{func.__name__}</> ran in <r>{end - start:.3f}</r> seconds")
+        logger.opt(colors=True).debug(f"<y>{func.__module__}.{func.__name__}</>  ran in <r>{end - start:.3f}</r> seconds")
         return result
     return inner
