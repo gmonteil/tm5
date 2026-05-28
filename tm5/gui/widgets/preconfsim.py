@@ -421,7 +421,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         # logger.debug(f"stations -->{self.stations}<--")
         obs['forward'] = fc['conc']
         if self.conc is None:
-            self.conc['obs'] = obs['obs']
+            self.conc = obs[['obs']]
         tag = self.experiment
         self.conc[f'forward_{tag}'] = obs['forward']
         self.conc['forward'] = obs['forward']
@@ -503,7 +503,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         # msg = f"setting self.conc/self.stats4conc"
         # logger.debug(msg)
         if self.conc is None:
-            self.conc[obs] = obs['obs']
+            self.conc = obs[['obs']]
         tag = self.experiment
         self.conc['apri'] = obs['apri']
         self.conc['apos'] = obs['apos']
