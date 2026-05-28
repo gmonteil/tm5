@@ -16,8 +16,10 @@ requires-python = '>=3.10'
 
 
 [tool.setuptools.packages.find]
-include = ['tm5']
-
+#include = ['tm5']
+#-- 2026-05-27: otherwise some files are missing when installing with 'pip install .'
+#               (reason not yet clear...)
+include = ['tm5', 'tm5.gui', 'tm5.gui.widgets']
 
 [project.optional-dependencies]
 dev = ['ipython', 'mkdocs']
