@@ -37,41 +37,41 @@ def experiment_desc( exp : str ) -> str:
                 f"generated in AVENGERS WP2."
         case 'regional_no-agri':
             desc = f"Emissions similar to the regional case, " \
-                f"buth without emissions from the agriculture sector " \
+                f"but without emissions from the agriculture sector " \
                 f"over the European domain."
         case 'regional_anthro-no-agri':
             desc = f"Emissions similar to the regional case, " \
-                f"buth without emissions from the agriculture sector " \
+                f"but without emissions from the agriculture sector " \
                 f"over the European domain."
         case 'regional_no-fossil':
             desc = f"Emissions similar to the regional case, " \
-                f"buth without emissions from the fossil sector " \
+                f"but without emissions from the fossil sector " \
                 f"over the European domain."
         case 'regional_anthro-no-fossil':
             desc = f"Emissions similar to the regional case, " \
-                f"buth without emissions from the fossil sector " \
+                f"but without emissions from the fossil sector " \
                 f"over the European domain."
         case 'regional_no-waste':
             desc = f"Emissions similar to the regional case, " \
-                f"buth without emissions from the waste sector " \
+                f"but without emissions from the waste sector " \
                 f"over the European domain."
         case 'regional_anthro-no-waste':
             desc = f"Emissions similar to the regional case, " \
-                f"buth without emissions from the waste sector " \
+                f"but without emissions from the waste sector " \
                 f"over the European domain."
         case 'regional_no-anthro-france':
             desc = f"Emissions similar to the regional case, " \
-                f"buth without anthropogenic emissions over France."
+                f"but without anthropogenic emissions over France."
         case 'regional_anthro-no-france':
             desc = f"Emissions similar to the regional case, " \
-                f"buth without anthropogenic emissions over France."
+                f"but without anthropogenic emissions over France."
         case 'regional_no-anthro-netherlands':
             desc = f"Emissions similar to the regional case, " \
-                f"buth without anthropogenic emissions over " \
+                f"but without anthropogenic emissions over " \
                 f"the Netherlands."
         case 'regional_anthro-no-netherlands':
             desc = f"Emissions similar to the regional case, " \
-                f"buth without anthropogenic emissions over " \
+                f"but without anthropogenic emissions over " \
                 f"the Netherlands."
         case 'half-oh':
             desc = f"Emissions similar to the default case, " \
@@ -289,7 +289,7 @@ def plot_site_info(sites: DataFrame, station: str | None):
 
 class PreconfExperimentGUI(pn.viewable.Viewer):
     experiment = param.FileSelector(doc='Prior emission dataset')
-    run_forward = param.Event(doc='Do a forward run', label='Perfrom a forward simulation')
+    run_forward = param.Event(doc='Do a forward run', label='Perform a forward simulation')
     run_inv = param.Event(doc='Do an inversion', label='Perform an inversion')
 
     # Data containers:
