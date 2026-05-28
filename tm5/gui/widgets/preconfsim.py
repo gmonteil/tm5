@@ -420,7 +420,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.stations = obs.station.values #-- get station identifiers
         # logger.debug(f"stations -->{self.stations}<--")
         obs['forward'] = fc['conc']
-        if 'obs' not in self.conc:
+        if self.conc is None:
             self.conc['obs'] = obs['obs']
         tag = self.experiment
         self.conc[f'forward_{tag}'] = obs['forward']
@@ -502,7 +502,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         obs['apos'] = fc['cpost']
         # msg = f"setting self.conc/self.stats4conc"
         # logger.debug(msg)
-        if 'obs' not in self.conc:
+        if self.conc is None:
             sef.conc[obs] = obs['obs']
         tag = self.experiment
         self.conc['apri'] = obs['apri']
