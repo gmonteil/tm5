@@ -198,6 +198,14 @@ class TM5Grids(RectiLinearGrid):
         return cls.from_corners(-180, 180, -90, 90, 6, 4)
 
     @classmethod
+    def eur3x2(cls) -> "TM5Grids":
+        return cls.from_corners(west=-36, east=54, south=22, north=74, dlon=3, dlat=2)
+
+    @classmethod
+    def gns1x1(cls) -> "TM5Grids":
+        return cls.from_corners(west=0, east=18, south=42, north=58, dlon=1, dlat=1)
+    
+    @classmethod
     def from_corners(cls, west: float, east: float, south: float, north: float, dlon: int, dlat: int) -> "TM5Grids":
         nlon = (east - west) / dlon
         nlat = (north - south) / dlat
