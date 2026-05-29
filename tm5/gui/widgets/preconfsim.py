@@ -89,6 +89,10 @@ def experiment_desc( exp : str ) -> str:
             desc = "Emissions similar to the default case, " \
                 f"but without emissions over Northern America " \
                 f"(165W-55W,25N-80N)."
+        #-- MVO-20260529:ad-hoc catch for the file Zois had placed onto the exploredata platform!
+        case 'mytest-emissions':
+            desc = "!!!NOT ACTIVE YET!!! for the future it is foreseen that users can upload " \
+                f"their own emission fields."
     return desc
 
 @debug.timer
