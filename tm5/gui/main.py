@@ -269,7 +269,11 @@ class FitIC_UI(pn.viewable.Viewer):
 
     @property
     def drop_precomputed(self):
-        return self.conf.get('drop_precomputed', False)
+        #-- MVO-20260602: FIT-IC now focusing on simulations/inversions actually run
+        #                 with the Jacobian,
+        #                 the former 'precomputed results' must now be  explicitly
+        #                 activated and probably being removed on the mid-term time scale...
+        return self.conf.get('show_precomputed', True)
     
     @property
     def setup_tab(self):
