@@ -1147,13 +1147,13 @@ def subcmd_create_target_jacobian(args):
     #
     #-- target jacobian
     #
-    target_list = ['global', 'gns1x1',] + list(tgt_country_table.keys())
+    target_list = ['global', 'zoom_domain',] + list(tgt_country_table.keys())
     ntgt = len(target_list)
     tjac2D = zeros((ntgt,ng), dtype='f8')
     for itgt,tgt in enumerate(target_list):
         if tgt=='global':
             tjac2D[itgt,:] = 1.
-        elif tgt=='gns1x1':
+        elif tgt=='zoom_domain':
             cnd_gns = outemis_info.reg1D=='gns100x100'
             tjac2D[itgt,cnd_gns] = 1.
         elif tgt in tgt_country_table:
