@@ -273,7 +273,8 @@ class FitIC_UI(pn.viewable.Viewer):
         #                 with the Jacobian,
         #                 the former 'precomputed results' must now be  explicitly
         #                 activated and probably being removed on the mid-term time scale...
-        return self.conf.get('show_precomputed', True)
+        show_precomputed = self.conf.get('show_precomputed',False)
+        return (not show_precomputed)
     
     @property
     def setup_tab(self):
