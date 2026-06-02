@@ -8,7 +8,7 @@ from loguru import logger
 import xarray as xr
 from pandas import read_csv, DataFrame, concat
 import numpy as np
-from numpy import corrcoef
+from collections import OrderedDict
 from glob import glob
 import panel as pn
 import param
@@ -17,83 +17,11 @@ from holoviews import opts
 
 from tm5 import debug
 from tm5.gui.css import *
+from tm5.gui.widgets.widget_utils import experiment_desc, plot_site_info, load_observations_metadata
 
 from itertools import cycle
 from bokeh.palettes import Category10 as color_palette
 
-
-def experiment_desc( exp : str ) -> str:
-    desc = "!!! description missing !!!"
-    match exp:
-        case 'default':
-            desc = f"standard/default emission scenario"
-        case 'edgarflat':
-            desc = f"Similar to the default case, but using a flat " \
-                f"temporal profile for EDGAR anthropogenic emissions."
-        case 'regional':
-            desc = f"Similar to the default case, but emissions from " \
-                f"wetlands, mineral-soils, and anthropogenic sources " \
-                f"over the European domain are taken from dedicated datasets " \
-                f"generated in AVENGERS WP2."
-        case 'regional_no-agri':
-            desc = f"Emissions similar to the regional case, " \
-                f"but without emissions from the agriculture sector " \
-                f"over the European domain."
-        case 'regional_anthro-no-agri':
-            desc = f"Emissions similar to the regional case, " \
-                f"but without emissions from the agriculture sector " \
-                f"over the European domain."
-        case 'regional_no-fossil':
-            desc = f"Emissions similar to the regional case, " \
-                f"but without emissions from the fossil sector " \
-                f"over the European domain."
-        case 'regional_anthro-no-fossil':
-            desc = f"Emissions similar to the regional case, " \
-                f"but without emissions from the fossil sector " \
-                f"over the European domain."
-        case 'regional_no-waste':
-            desc = f"Emissions similar to the regional case, " \
-                f"but without emissions from the waste sector " \
-                f"over the European domain."
-        case 'regional_anthro-no-waste':
-            desc = f"Emissions similar to the regional case, " \
-                f"but without emissions from the waste sector " \
-                f"over the European domain."
-        case 'regional_no-anthro-france':
-            desc = f"Emissions similar to the regional case, " \
-                f"but without anthropogenic emissions over France."
-        case 'regional_anthro-no-france':
-            desc = f"Emissions similar to the regional case, " \
-                f"but without anthropogenic emissions over France."
-        case 'regional_no-anthro-netherlands':
-            desc = f"Emissions similar to the regional case, " \
-                f"but without anthropogenic emissions over " \
-                f"the Netherlands."
-        case 'regional_anthro-no-netherlands':
-            desc = f"Emissions similar to the regional case, " \
-                f"but without anthropogenic emissions over " \
-                f"the Netherlands."
-        case 'half-oh':
-            desc = f"Emissions similar to the default case, " \
-                f"but using halved CAMS OH concentrations " \
-                f"(which are entering the TM5 chemistry)."
-        case 'no-germany':
-            desc = "Emissions similar to the default case, " \
-                f"but without emissions over domain around Germany " \
-                f"(6E-15E,47N-55N)."
-        case 'no-gns':
-            desc = "Emissions similar to the default case, " \
-                f"but without emissions over the innermost zoom domain " \
-                f"(0E-18E,42N-58N) covering Germany, Netherlands, and Switzerland."
-        case 'no-northamerica':
-            desc = "Emissions similar to the default case, " \
-                f"but without emissions over Northern America " \
-                f"(165W-55W,25N-80N)."
-        #-- MVO-20260529:ad-hoc catch for the file Zois had placed onto the exploredata platform!
-        case 'mytest-emissions':
-            desc = "!!!NOT ACTIVE YET!!! for the future it is foreseen that users can upload " \
-                f"their own emission fields."
-    return desc
 
 @debug.timer
 def simulation_read_targets( simu : pn.viewable.Viewer, output_path : str|Path ) -> None:
@@ -209,7 +137,7 @@ def conc_statistics( conc : xr.Dataset, stations : list[str] ) -> DataFrame:
         _bias_prior  = _capri - _cobs
         meanbias_prior = _bias_prior.mean()
         rmse_prior = (_bias_prior ** 2).mean() ** .5
-        corrcoef_prior = corrcoef(_capri.values,_cobs.values)[0,1]
+        corrcoef_prior = np.corrcoef(_capri.values,_cobs.values)[0,1]
         # msg = f"@{sta}, rmse prior ==>{rmse_prior}<=="
         # logger.debug(msg)
         #
@@ -218,7 +146,7 @@ def conc_statistics( conc : xr.Dataset, stations : list[str] ) -> DataFrame:
         _bias_post  = _capos - _cobs
         meanbias_post = _bias_post.mean()       
         rmse_post  = (_bias_post **2).mean() ** .5
-        corrcoef_post = corrcoef(_capos.values,_cobs.values)[0,1]
+        corrcoef_post = np.corrcoef(_capos.values,_cobs.values)[0,1]
         # msg = f"@{sta}, rmse post ==>{rmse_post}<=="
         # logger.debug(msg)
         #
@@ -241,64 +169,14 @@ def conc_statistics( conc : xr.Dataset, stations : list[str] ) -> DataFrame:
     return stats
 
 
-def load_observations_metadata(fname: Path) -> DataFrame:
-    """
-    Complementary function to "load_observations_data": this one loads a bunch of metadata, for each site:
-    - site_name
-    - site_code
-    - country
-    - latitude
-    - longitude
-    - elevation
-    - doi
-    - filename
-    """
-    vars_select = ['time', 'value', 'altitude', 'latitude', 'longitude', 'elevation', 'intake_height']
-    ds = xr.open_dataset(fname, decode_timedelta=False)[vars_select]
-    return DataFrame({
-        'site_name': ds.attrs['site_name'],
-        'site_code': ds.attrs['site_code'],
-        'country': ds.attrs['site_country'],
-        'latitude': ds.attrs['site_latitude'],
-        'longitude': ds.attrs['site_longitude'],
-        'elevation': ds.attrs['site_elevation'],
-        'doi': ds.attrs['obspack_identifier_link'],
-        'filename': fname
-    }, index=[ds.attrs['site_name']])
-
-
-def plot_site_info(sites: DataFrame, station: str | None):
-    site = sites.loc[station]
-
-    text = pn.pane.Markdown(f"""
-    ### {site.site_name}
-
-    - latitude: {site.latitude}
-    - longitude: {site.longitude}
-    - elevation: {site.elevation}
-    - DOI: {site.doi}
-    """)
-
-    return pn.Column(
-        text,
-        sites.hvplot.points(
-            x='longitude', y='latitude', geo=True, coastline=True, xlim=(-180, 180), ylim=(-90, 90),
-            frame_width=300, hover_cols=['site_name']
-        ) *
-        sites.loc[[station]].hvplot.points(
-            x='longitude', y='latitude', geo=True, coastline=True, xlim=(-180, 180), ylim=(-90, 90), frame_width=300, color='r'
-        )
-    )
-
-
 class PreconfExperimentGUI(pn.viewable.Viewer):
     experiment = param.FileSelector(doc='Prior emission dataset')
     run_forward = param.Event(doc='Do a forward run', label='Perform a forward simulation')
     run_inv = param.Event(doc='Do an inversion', label='Perform an inversion')
 
     # Data containers:
-    conc       = param.ClassSelector(class_=xr.Dataset, precedence=-1)
-    stats4conc = param.ClassSelector(class_=DataFrame, precedence=-1)
+    conc        = param.ClassSelector(class_=xr.Dataset, precedence=-1)
+    stats4conc  = param.ClassSelector(class_=DataFrame, precedence=-1)
     tgt_table   = param.ClassSelector(class_=DataFrame, precedence=-1)
 
     def __init__(self, gui_settings: DictConfig):
@@ -310,8 +188,11 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         # Load the file list
         self.param.experiment.path = self.gui_settings.emissions.glob_pattern
         self.experiment = self.param.experiment.objects[0]
+        self.cache_fwd = OrderedDict()
+        self.cache_inv = OrderedDict()
         self.stations = None
         # self.stations_widgets = pn.Column()
+        self.obs_table = None
 
     def __panel__(self):
         header_pane = pn.pane.Markdown('# Preconfigured experiments',
@@ -373,6 +254,29 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
         return tbl
 
+    def _set_obstable(self):
+        #-- code below to visualise station info next to time-series
+        #   does *NOT* work yet.
+        #   Thus need to keep value None for self.obstable !
+        return
+        ####
+        logger.debug(f"--> start creation of self.obs_table...")
+        obsfile_list_all = glob(self.gui_settings.observations.files)
+        obsinfo_list = []
+        for ista,_staid in enumerate(self.stations):
+            staid,sta_alt = _staid.split('_')
+            for o in obsfile_list_all:
+                p = Path(o)
+                # logger.debug(f"@{_staid}: staid-->{staid}<-- {p.name}")
+                if p.name.startswith(f'ch4_{staid}'):
+                    # msg = f"station -->{_staid}<-- with obsfile ***{o}***"
+                    # logger.info(msg)
+                    df = load_observations_metadata(p)
+                    obsinfo_list.append(df)
+        self.obs_table = concat(obsinfo_list)
+        logger.debug(f"self.obs_table -->{self.obs_table.shape}<--")
+        
+    
     @param.depends('run_forward', watch=True)
     def _run_forward(self):
         #
@@ -390,25 +294,34 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         #>>MVO:: it must be the full path (otherwise symlink will fail on the backend)
         # emis = Path(self.experiment).name
         emis = str(self.experiment)
-        url = f"{self.gui_settings.backend_url}/forward"
-        r = requests.get(url, params={'emis': emis, 'task': 'forward'})
-        
-        if not r.ok:
-            logger.error(
-                f"forward run failed: backend returned {r.status_code} for "
-                f"emis={emis!r} at {url}. Body: {r.text[:500]}"
-            )
-            return
-        try:
-            payload = r.json()
-        except requests.exceptions.JSONDecodeError:
-            logger.error(
-                f"forward run failed: backend returned non-JSON for "
-                f"emis={emis!r} at {url}. Body: {r.text[:500]}"
-            )
-            return
-        output_path = Path(payload['output'])
-      
+        if emis in self.cache_fwd:
+            output_path = self.cache_fwd[emis]
+            msg = f"forward simulation already cached for emis -->{emis}<--"
+            logger.debug(msg)
+        else:
+            msg = f"running forward simulation for emissions -->{emis}<--"
+            logger.debug(msg)
+            url = f"{self.gui_settings.backend_url}/forward"
+            r = requests.get(url, params={'emis': emis, 'task': 'forward'})
+
+            if not r.ok:
+                logger.error(
+                    f"forward run failed: backend returned {r.status_code} for "
+                    f"emis={emis!r} at {url}. Body: {r.text[:500]}"
+                )
+                return
+            try:
+                payload = r.json()
+            except requests.exceptions.JSONDecodeError:
+                logger.error(
+                    f"forward run failed: backend returned non-JSON for "
+                    f"emis={emis!r} at {url}. Body: {r.text[:500]}"
+                )
+                return
+            output_path = Path(payload['output'])
+            #-- store in cache
+            self.cache_fwd[emis] = output_path
+        #--
         logger.debug(f"reading from ouput directory {str(output_path)}")
 
         #
@@ -431,22 +344,14 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         # self.conc[f'forward_{tag}'] = obs['forward']
         # self.conc['forward'] = obs['forward']
         self.conc = obs[['obs', 'forward', 'iniconc']]
+        #
+        #--
+        #
+        logger.debug(f"self.obs_table ==>{self.obs_table}<== ({self.obs_table is None})")
+        if self.obs_table is None:
+            logger.debug(f"--> setting self.obs_table...")
+            self._set_obstable()
         
-        # ####
-        # obsfile_list_all = glob(self.gui_settings.observations.files)
-        # obsinfo_list = []
-        # for ista,_staid in enumerate(self.stations):
-        #     staid,sta_alt = _staid.split('_')
-        #     for o in obsfile_list_all:
-        #         p = Path(o)
-        #         # logger.debug(f"@{_staid}: staid-->{staid}<-- {p.name}")
-        #         if p.name.startswith(f'ch4_{staid}'):
-        #             # msg = f"station -->{_staid}<-- with obsfile ***{o}***"
-        #             # logger.info(msg)
-        #             df = load_observations_metadata(p)
-        #             obsinfo_list.append(df)
-        # self.obstable = concat(obsinfo_list)
-        # logger.debug(f"self.obstable -->{self.obstable.shape}<--")
         
     @param.depends('run_inv', watch=True)
     def _run_inv(self):
@@ -467,27 +372,36 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         #
         #>>MVO:: it must be the full path (otherwise symlink will fail on the backend)
         # emis = Path(self.experiment).name
-
+        
         emis = str(self.experiment)
-        url = f"{self.gui_settings.backend_url}/forward"
-        r = requests.get(url, params={'emis': emis, 'task': 'inversion'})
-        
-        if not r.ok:
-            logger.error(
-                f"inversion failed: backend returned {r.status_code} for "
-                f"emis={emis!r} at {url}. Body: {r.text[:500]}"
-            )
-            return
-        try:
-            payload = r.json()
-        except requests.exceptions.JSONDecodeError:
-            logger.error(
-                f"inversion failed: backend returned non-JSON for "
-                f"emis={emis!r} at {url}. Body: {r.text[:500]}"
-            )
-            return
-        
-        output_path = Path(payload['output'])
+        if emis in self.cache_inv:
+            output_path = self.cache_inv[emis]
+            msg = f"forward simulation already cached for emis -->{emis}<--"
+            logger.debug(msg)
+        else:
+            msg = f"running inversion for emissions -->{emis}<--"
+            logger.debug(msg)
+            url = f"{self.gui_settings.backend_url}/forward"
+            r = requests.get(url, params={'emis': emis, 'task': 'inversion'})
+
+            if not r.ok:
+                logger.error(
+                    f"inversion failed: backend returned {r.status_code} for "
+                    f"emis={emis!r} at {url}. Body: {r.text[:500]}"
+                )
+                return
+            try:
+                payload = r.json()
+            except requests.exceptions.JSONDecodeError:
+                logger.error(
+                    f"inversion failed: backend returned non-JSON for "
+                    f"emis={emis!r} at {url}. Body: {r.text[:500]}"
+                )
+                return
+            output_path = Path(payload['output'])
+            #-- store in cache
+            self.cache_inv[emis] = output_path
+        #--
         logger.debug(f"reading from ouput directory {str(output_path)}")
 
         #
@@ -529,6 +443,12 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         # self.tgt_table.to_csv('yy.csv', index=True)
         # msg = f"...generated target table -->\n{self.tgt_table}\n<--"
         # logger.info(msg)
+        #
+        #--
+        #
+        if self.obs_table is None:
+            self._set_obstable()
+
 
     @param.depends('conc')
     def _conc_plot(self):
@@ -559,7 +479,13 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         #-- MVO-TODO::units ['ppb'] should not be hard-coded!!
         plotcfg = opts.Overlay(title=title, ylabel="[ppb]")
         p.opts(plotcfg)
-        return p
+        msg = f"self.obs_table -->{self.obs_table}<--"
+        logger.debug(msg)
+        if self.obs_table is None:
+            return p
+        else:
+            return pn.Row(p, plot_site_info(self.obs_table, 'cbw_207'))
+        # return p
         # return pn.Column(
         #     pn.pane.Markdown('# Concentration time-series at selected station'),
         #     p

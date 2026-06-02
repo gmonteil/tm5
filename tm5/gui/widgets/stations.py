@@ -24,7 +24,7 @@ from loguru import logger
 from tm5 import debug
 from tm5.util import md5, utc_to_lst
 from tm5.gui.css import *
-
+from tm5.gui.widgets.widget_utils import plot_site_info, load_observations_metadata
 
 
 #@debug.timer
@@ -176,31 +176,6 @@ def load_all_observations(observation_files: str, nproc : int | None = None) -> 
     with mp.Pool(processes=nproc) as pp:
         return concat(pp.map(load_observations_data, list(glob(observation_files))))
 
-
-def load_observations_metadata(fname: Path) -> DataFrame:
-    """
-    Complementary function to "load_observations_data": this one loads a bunch of metadata, for each site:
-    - site_name
-    - site_code
-    - country
-    - latitude
-    - longitude
-    - elevation
-    - doi
-    - filename
-    """
-    vars_select = ['time', 'value', 'altitude', 'latitude', 'longitude', 'elevation', 'intake_height']
-    ds = xr.open_dataset(fname, decode_timedelta=False)[vars_select]
-    return DataFrame({
-        'site_name': ds.attrs['site_name'],
-        'site_code': ds.attrs['site_code'],
-        'country': ds.attrs['site_country'],
-        'latitude': ds.attrs['site_latitude'],
-        'longitude': ds.attrs['site_longitude'],
-        'elevation': ds.attrs['site_elevation'],
-        'doi': ds.attrs['obspack_identifier_link'],
-        'filename': fname
-    }, index=[ds.attrs['site_name']])
 
 @debug.timer
 def extract_timeperiod_during_day( obs_model : DataFrame,
@@ -415,29 +390,29 @@ def plot_weekly_bias_v3(obs_model: DataFrame, station: str | None, experiments, 
     )
     return plot
 
-@debug.timer
-def plot_site_info(sites: DataFrame, station: str | None):
-    site = sites.loc[station]
+# @debug.timer
+# def plot_site_info(sites: DataFrame, station: str | None):
+#     site = sites.loc[station]
 
-    text = pn.pane.Markdown(f"""
-    ### {site.site_name}
+#     text = pn.pane.Markdown(f"""
+#     ### {site.site_name}
 
-    - latitude: {site.latitude}
-    - longitude: {site.longitude}
-    - elevation: {site.elevation}
-    - DOI: {site.doi}
-    """)
+#     - latitude: {site.latitude}
+#     - longitude: {site.longitude}
+#     - elevation: {site.elevation}
+#     - DOI: {site.doi}
+#     """)
 
-    return pn.Column(
-        text,
-        sites.hvplot.points(
-            x='longitude', y='latitude', geo=True, coastline=True, xlim=(-180, 180), ylim=(-90, 90),
-            frame_width=300, hover_cols=['site_name']
-        ) *
-        sites.loc[[station]].hvplot.points(
-            x='longitude', y='latitude', geo=True, coastline=True, xlim=(-180, 180), ylim=(-90, 90), frame_width=300, color='r'
-        )
-    )
+#     return pn.Column(
+#         text,
+#         sites.hvplot.points(
+#             x='longitude', y='latitude', geo=True, coastline=True, xlim=(-180, 180), ylim=(-90, 90),
+#             frame_width=300, hover_cols=['site_name']
+#         ) *
+#         sites.loc[[station]].hvplot.points(
+#             x='longitude', y='latitude', geo=True, coastline=True, xlim=(-180, 180), ylim=(-90, 90), frame_width=300, color='r'
+#         )
+#     )
 
 
 @debug.timer

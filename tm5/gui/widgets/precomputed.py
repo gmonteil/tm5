@@ -23,62 +23,13 @@ from loguru import logger
 
 from tm5 import debug
 from tm5.gui.css import *
+from tm5.gui.widgets.widget_utils import experiment_desc
 
 CSS2 = """
 :host {
     --font-size: 64px;
 }
 """
-
-def experiment_desc( exp : str ) -> str:
-    desc = "!!! description missing !!!"
-    match exp:
-        case 'default':
-            desc = f"standard/default emission scenario"
-        case 'edgarflat':
-            desc = f"Similar to the default case, but using a flat " \
-                f"temporal profile for EDGAR anthropogenic emissions."
-        case 'regional':
-            desc = f"Similar to the default case, but emissions from " \
-                f"wetlands, mineral-soils, and anthropogenic sources " \
-                f"over the European domain are taken from dedicated datasets " \
-                f"generated in AVENGERS WP2."
-        case 'regional_no-agri':
-            desc = f"Emissions similar to the regional case, " \
-                f"buth without emissions from the agriculture sector " \
-                f"over the European domain."
-        case 'regional_no-fossil':
-            desc = f"Emissions similar to the regional case, " \
-                f"buth without emissions from the fossil sector " \
-                f"over the European domain."
-        case 'regional_no-waste':
-            desc = f"Emissions similar to the regional case, " \
-                f"buth without emissions from the waste sector " \
-                f"over the European domain."
-        case 'regional_no-anthro-france':
-            desc = f"Emissions similar to the regional case, " \
-                f"buth without anthropogenic emissions over France."
-        case 'regional_no-anthro-netherlands':
-            desc = f"Emissions similar to the regional case, " \
-                f"buth without anthropogenic emissions over " \
-                f"the Netherlands."
-        case 'half-oh':
-            desc = f"Emissions similar to the default case, " \
-                f"but using halved CAMS OH concentrations " \
-                f"(which are entering the TM5 chemistry)."
-        case 'no-germany':
-            desc = "Emissions similar to the default case, " \
-                f"but without emissions over domain around Germany " \
-                f"(6E-15E,47N-55N)."
-        case 'no-gns':
-            desc = "Emissions similar to the default case, " \
-                f"but without emissions over the innermost zoom domain " \
-                f"(0E-18E,42N-58N) covering Germany, Netherlands, and Switzerland."
-        case 'no-northamerica':
-            desc = "Emissions similar to the default case, " \
-                f"but without emissions over Northern America " \
-                f"(165W-55W,25N-80N)."
-    return desc
 
 class PrecomputedInfo(pn.viewable.Viewer):
 
