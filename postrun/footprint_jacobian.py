@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace as ArgumentNamespace
 import sys
 import os
 from omegaconf import OmegaConf, DictConfig
@@ -74,7 +74,7 @@ def tm5refdir_load_stationconc( refdir : str | Path, obsid : str ) -> xr.DataArr
     return df_conc
 
 
-def collect_input4inversion( args ) -> SimpleNamespace:
+def collect_input4inversion( args : ArgumentNamespace ) -> SimpleNamespace:
     """
     """
     #-- arguments
@@ -292,7 +292,7 @@ def collect_input4inversion( args ) -> SimpleNamespace:
     return input4inv
     
 
-def subcmd_test_jacobianfwd_1day(args):
+def subcmd_test_jacobianfwd_1day(args : ArgumentNamespace) -> None:
     tm5rundir = args.tm5rundir
     obsid     = args.obsid
     if args.trange!=None:
@@ -313,7 +313,7 @@ def subcmd_test_jacobianfwd_1day(args):
     print(f"csim={csim}")
 
 
-def subcmd_testbuild_jacobian_1day( args ):
+def subcmd_testbuild_jacobian_1day( args : ArgumentNamespace ) -> None:
     tm5rundir = args.tm5rundir
     obsid     = args.obsid
     
@@ -358,7 +358,7 @@ def subcmd_testbuild_jacobian_1day( args ):
     print(f"cobs -->{cobs}<--")
 
 
-def subcmd_testbuild_jacobian_period(args):
+def subcmd_testbuild_jacobian_period(args : ArgumentNamespace) -> None:
     """Test preparation of inputs for Fortran-based inversion environment
     based on sensitivities for one single observational site *and* a selected
     period of observational days.
@@ -621,7 +621,7 @@ def subcmd_testbuild_jacobian_period(args):
     logger.info(msg)
 
 
-def subcmd_testbuild_jacobian_period_new(args):
+def subcmd_testbuild_jacobian_period_new(args : ArgumentNamespace) -> None:
     """Test preparation of inputs for Fortran-based inversion environment
     based on sensitivities for one single observational site *and* a selected
     period of observational days.
@@ -771,7 +771,7 @@ def subcmd_testbuild_jacobian_period_new(args):
     logger.info(msg)
 
 
-def subcmd_testbuild_jacobian_period_noemisdays(args):
+def subcmd_testbuild_jacobian_period_noemisdays(args : ArgumentNamespace) -> None:
     """Test preparation of inputs for Fortran-based inversion environment
     based on sensitivities for one single observational site *and* a selected
     period of observational days.
@@ -780,6 +780,9 @@ def subcmd_testbuild_jacobian_period_noemisdays(args):
     obsid = args.obsid
     complevel = args.__dict__.get('complevel',4)
 
+    #
+    #-- collect inputs
+    #
     input4inv = collect_input4inversion(args)
     day_range = input4inv.day_range
     station_list = input4inv.station_list
@@ -813,19 +816,6 @@ def subcmd_testbuild_jacobian_period_noemisdays(args):
             print(msg)
 
     #
-    #
-    #-- target jacobian
-    #
-    target_list = ['global', 'gns1x1',]
-    ntgt = len(target_list)
-    tjac2D = zeros((ntgt,ng), dtype='f8')
-    for itgt,tgt in enumerate(target_list):
-        if tgt=='global':
-            tjac2D[itgt,:] = 1.
-        elif tgt=='gns1x1':
-            cnd_gns = outemis_info.reg1D=='gns100x100'
-            tjac2D[itgt,cnd_gns] = 1.
-    #
     #-- prepare output
     #
     nsta = len(station_list)
@@ -848,7 +838,6 @@ def subcmd_testbuild_jacobian_period_noemisdays(args):
     fp.createDimension('ng', ng)
     fp.createDimension('nobsday', nobsday)
     fp.createDimension('nsta', len(station_list))
-    fp.createDimension('ntgt', ntgt)
 
     #-- 
     ncvar = fp.createVariable('emission', 'f8', ('ng'),
@@ -905,17 +894,6 @@ def subcmd_testbuild_jacobian_period_noemisdays(args):
     ncvar.units = ''
     for ista,staid in enumerate(station_list):
         ncvar[ista] = staid
-    #
-    ncvar = fp.createVariable('targets', str, ('ntgt',))
-    ncvar.long_name = f"target_identifier"
-    ncvar.units = ''
-    for itgt,tgt in enumerate(target_list):
-        ncvar[itgt] = tgt
-    #
-    ncvar = fp.createVariable('tgt_jacobian', 'f8', ('ntgt','ng',),
-                              compression='zlib', complevel=complevel)
-    ncvar.units = ''
-    ncvar[:] = tjac2D[:]
 
     #
     #-- global attributes
