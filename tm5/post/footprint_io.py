@@ -91,8 +91,9 @@ def regions1D_info( regions : list, clip_child : bool = False ) -> SimpleNamespa
         msg = f"...initialise region table"
         logger.info(msg)
         _init_region_table()
-
-    assert regions==list(region_table.keys())
+    expected_region_list = [ list(region_table.keys()), ['glb600x400',] ]
+    assert regions in expected_region_list, \
+        f"region_list -->{region_list}<-- but supported -->{expected_region_list}<--"
     region_list = []
     lonc_list = []
     latc_list = []
@@ -423,6 +424,9 @@ def tm5rundir_iniconc_1obs( outpath : str | Path, obs_info : Series ) -> SimpleN
     if not outp_file.exists():
         msg = f"expected point output file ***{str(outp_file)}*** not found."
         raise FileNotFoundError(msg)
+    else:
+        msg = f"...@{sta_id}, reading initial concentration from ==>{str(outp_file)}<=="
+        logger.debug(msg)
     #
     #-- select region/tracer for current observation
     #
@@ -613,7 +617,7 @@ def tm5rundir_jacobian2D( outpath : str | Path, trange : date_range = None, obsi
 
 def tm5rundir_jacobian3D( outpath : str | Path, trange : date_range = None, obsid : str|list|None = None, clip_child : bool = False ) -> NDArray:
     """
-    Reads in the sensitivity (or Jacobian) from one single TM5 adjoint run,
+    Reads in the sensitivity (or Jacobian) from ***one single TM5 adjoint run***,
     meaning it should be for one observational day.
     
     will yield an array of shape jac(nobs,nemis)
@@ -844,7 +848,14 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, trange : date_range =
         _init_region_table()
     #
     region_list = dconf.run.regions
-    assert region_list==list(region_table.keys())
+    #
+    #-- for now we handle
+    #   - ['glb600x400', 'eur300x200', 'gns100x100']
+    #   - ['glb600x400',]
+    #
+    expected_region_list = [ list(region_table.keys()), ['glb600x400',] ]
+    assert region_list in expected_region_list, \
+        f"region_list -->{region_list}<-- but supported -->{expected_region_list}<--"
     #
     #-- set temporal domain
     #
