@@ -211,9 +211,9 @@ def collect_input4inversion( args : ArgumentNamespace ) -> SimpleNamespace:
         if not rundir.is_dir():
             msg = f"...expected directory -->{str(rundir)}<-- not found!"
             raise RuntimeError(msg)
-        #--
         #
-        
+        #-- 
+        #
         jac_info = tm5rundir_jacobian3D(rundir, trange=day_range, obsid=station_list, clip_child=clip_child)
         jac3D = jac_info.jac3D
         #-- dimensional consistency with emissions
@@ -289,6 +289,281 @@ def collect_input4inversion( args : ArgumentNamespace ) -> SimpleNamespace:
         #     pass
         # msg = f"verification modus, terminating without generating output!"
         # logger.info(msg)
+    return input4inv
+    
+
+def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) -> SimpleNamespace:
+    """Routine to collect results from (a series of) TM5 adjoint footprint simulations
+    that were run for observations within a dedicated domain.
+    Expected directory naming is
+    - footprints_gns100x100_yyyymmdd (for continuous measurements at stations in the innermost zoom)
+    - footprints_glb600x400_yyyymmdd (for flask measurements)
+
+    In the observations space the data will be concatenated to a 1D vector
+    - day1
+      - sta1, sta2, sta3,...
+    - day2
+      - sta1, sta2, ...
+
+    Note, in particular for the flask measurements, the list of stations varies per day.
+    """
+    #-- arguments
+    topdir = Path(args.outpath_tm5)
+    dayl = args.selday
+    host = args.__dict__.get('host', 'cosmos')
+    obsid = args.obsid
+    clip_child = args.__dict__.get('clip_child', False)
+    #-- turn dates into timestamp
+    dayl = Timestamp(dayl)
+    dayf = dayl - Timedelta(days=args.days-1) #-- #args.days overall, selected day is last
+    day_range = date_range(dayf, dayl, freq='1d')
+    nday = len(day_range)
+    msg = f"...assembling for temporal range {dayf.strftime('%Y%m%d')} - {dayl.strftime('%Y%m%d')}"
+    logger.info(msg)
+
+    #
+    #-- loop over (obs) days
+    #
+    emis_info = None
+    obsfile_info_cache = OrderedDict()
+    stationlist_1D = []
+    obsdaylist_1D = []
+    obs_array1D = np.empty(0)
+    inic_array1D = np.empty(0)
+    jac_array = None
+    rundir_list = []
+    for iday,day in enumerate(day_range):
+        #-- naming pattern used by Guillaume: footprints_<domain_tag>_%Y%m%d,
+        #   where '%Y%m%d' refers to last day of simulation at 0:00 !
+        #   E.g. to assemble inputs for February (Feb 1 to Feb 28)
+        #   the footprint directory names are ranging from
+        #   footprints_<domain_tag>_20210202, ..., footprints_<domain_tag>_20210301
+        dirday = day + Timedelta(days=1)
+        rundir = topdir / dirday.strftime(f"footprints_{domain_tag}_%Y%m%d")
+        msg = f"@day={day.strftime('%Y-%m-%d')}, reading from directory -->{rundir}<--"
+        logger.info(msg)
+        if not rundir.is_dir():
+            msg = f"...expected directory -->{str(rundir)}<-- not found!"
+            raise RuntimeError(msg)
+        else:
+            rundir_list.append(rundir)
+        #
+        #-- emission information (!!! only from first directory !!! )
+        #
+        cur_emis_info = tm5rundir_emissions2D(rundir, trange=day_range, clip_child=clip_child)
+        if emis_info is None:
+            emis_info = cur_emis_info
+        else:
+            if not np.all(cur_emis_info.emis2D==emis_info.emis2D):
+                msg = f"...detected differing emissions on {day}"
+                raise RuntimeError(msg)
+        #
+        #--
+        #
+        obs_table = tm5rundir_obstable(rundir)
+        if obsid==None:
+            cur_obsinfo = obs_table.copy()
+        else:
+            #-- ATTENTION:problematic for flask sites (as these have the date appended)
+            cnd_sta = obs_table.index.isin(obsid)
+            cur_obsinfo = obs_table.loc[cnd_sta,:]
+        #
+        #-- read observations
+        #
+        day_obs_list = []
+        day_sta_list = []
+        for ista,_obsid in enumerate(cur_obsinfo.index):
+            if domain_tag=='glb600x400': #-- flask measurements
+                day_obs_list.append(cur_obsinfo.loc[_obsid,'mixing_ratio'])
+                day_sta_list.append(_obsid)
+            else:
+                obs_hr = cur_obsinfo.loc[_obsid,'time'].hour
+                obs_tw = cur_obsinfo.loc[_obsid,'time_window_length'] #-- time-window length [s]
+                if not _obsid in obsfile_info_cache:
+                    #
+                    #-- extract station identifier, e.g. from 'cbw_207' or xxx
+                    #
+                    _obsid_tokens = _obsid.split('_')
+                    if len(_obsid_tokens)==2:
+                        staid,sta_alt = _obsid_tokens
+                    elif len(_obsid_tokens)==3:
+                        staid,sta_alt,obs_time = _obsid_tokens
+                    else:
+                        msg = f"unexpected obsid -->{_obsid}<--"
+                        raise RuntimeError(msg)
+                    #
+                    #-- gns100x100: should be the continuous measurements
+                    #
+                    if domain_tag=='gns100x100':
+                        ptn = f"ch4_{staid}_*.nc"
+                    elif domain_tag=='glb600x400':
+                        ptn = f"ch4_{staid.lower()}_surface-flask_*_representative.nc"
+                    obspack_list = list(Path(args.obsdir).glob(ptn))
+                    if len(obspack_list)==0:
+                        msg = f"no matching observation file found for staid -->{staid}<--"
+                        raise RuntimeError(msg)
+                    elif len(obspack_list)>1:
+                        msg = f"staid -->{staid}<-- yields multiple observation files " \
+                            f"==>{obspack_list}<==. This cannot be handled yet and station is " \
+                            f"ignored."
+                        logger.warning(msg)
+                        continue
+                    else:
+                        obsfile = obspack_list[0]
+                    msg = f"...reading observed concentrations from file ***{str(obsfile)}***..."
+                    logger.info(msg)
+                    tstart = dayf
+                    tend   = dayl+Timedelta(seconds=86399)
+                    obspack_info = read_obspack_file(obsfile, start=tstart, end=tend)
+                    obs_df = obspack_info.data
+                    obsfile_info_cache[_obsid] = obspack_info
+                else:
+                    obs_df = obsfile_info_cache[_obsid].data
+                #
+                #--
+                #
+                _ostart = day + Timedelta(hours=obs_hr) - Timedelta(seconds=obs_tw)
+                _oend   = day + Timedelta(hours=obs_hr) + Timedelta(seconds=obs_tw)
+                cnd_time = (obs_df['time']>=_ostart)&(obs_df['time']<=_oend)
+                if np.count_nonzero(cnd_time)>0:
+                    mix_day = obs_df.loc[cnd_time,'value'].mean()
+                    mix_day *= 1.e9 #-- [mol/mol] to [ppb]
+                    day_obs_list.append(mix_day)
+                    day_sta_list.append(_obsid)
+                else:
+                    msg = f"...@{staid}, no observations found in time window {_ostart}==>{_oend}"
+                    logger.info(msg)
+        #
+        #-- observations done
+        #
+        nobs = len(day_obs_list)
+        msg = f"...@day={day.strftime('%Y-%m-%d')}, nobs={nobs}"
+        logger.info(msg)
+        #
+        #-- update/restrict
+        if len(day_sta_list)!=len(cur_obsinfo):
+            cnd_sta = cur_obsinfo.index.isin(day_sta_list)
+            cur_obsinfo = cur_obsinfo.loc[cnd_sta,:]
+        #
+        #-- extend 1D arrays
+        #
+        if domain_tag=='glb600x400':
+            stationlist_1D += [ '_'.join(_.lower().split('_')[:2]) for _ in cur_obsinfo.index ]
+        elif domain_tag=='gns100x100':
+            stationlist_1D += list(cur_obsinfo.index)
+        else:
+            raise RuntimeError(f"unexpected domain -->{domain_tag}<--")
+        obsdaylist_1D += [day,]*nobs
+        obs_array1D = np.concat((obs_array1D,np.array(day_obs_list))) 
+        #
+        #-- initial concentration
+        #
+        day_inic_list = []
+        for ista,staid in enumerate(cur_obsinfo.index):
+            sta_obs_info = cur_obsinfo.loc[staid,:]
+            # print(f"...@{staid}, sta_obs_info\n{sta_obs_info}\n")
+            msg = f"...@{staid}, reading initial concentration."
+            logger.info(msg)
+            inic_info = tm5rundir_iniconc_1obs(rundir, sta_obs_info)
+            # print(f"...@{staid} ==> inic_info -->{inic_info}<--")
+            day_inic_list.append(inic_info.conc)
+        cur_inic_array = np.array(day_inic_list)
+        inic_array1D = np.concat((inic_array1D,cur_inic_array))
+        #
+        #--
+        #
+        jac_info = tm5rundir_jacobian3D(rundir, trange=day_range, obsid=list(cur_obsinfo.index),
+                                        clip_child=clip_child)
+        jac3D = jac_info.jac3D #-- nobs/nemisday/ng
+        # print(f"@{dirday}, jac3D.shape={jac3D.shape}")
+        if jac_array is None:
+            jac_array = np.copy(jac3D)
+        else:
+            jac_array = np.concatenate((jac_array,jac3D), axis=0)
+    #
+    nobs = len(obs_array1D)
+    msg = f"...collected {nobs} observations overall."
+    logger.info(msg)
+    # print(f"stationlist_1D -->{stationlist_1D}<--")
+    # print(f"obsdaylist_1D -->{obsdaylist_1D}<--")
+    # print(f"obs_array1D -->{obs_array1D}<--")
+    # print(f"inic_array1D -->{inic_array1D}<--")
+    # print(f"jac_array shape={jac_array.shape}")
+
+    #->
+    #
+    #-- instantiate namespace to be returned
+    #
+    input4inv = SimpleNamespace(
+        day_range=day_range,
+        rundir_list=rundir_list,
+        emis_info=emis_info,
+        stationlist_1D=np.array(stationlist_1D),
+        obsdaylist_1D=obsdaylist_1D,
+        obs_array1D=obs_array1D,
+        inic_array1D=inic_array1D,
+        jac_array=jac_array)
+    return input4inv
+
+    # #
+    # #-- verification
+    # #
+    # if not 'refdir' in args.__dict__ or args.refdir==None:
+    #     outemis_info = emis_info
+    # else:
+    #     if nsta!=1:
+    #         msg = f"...verification currently not supported for nsta={nsta}"
+    #         raise NotImplementedError(msg)
+    #     refdir = Path(args.refdir)
+    #     #
+    #     #-- emissions used in reference run
+    #     #
+    #     msg = f"reading emissions from reference directory ***{refdir}***..."
+    #     logger.info(msg)
+    #     tm5rundir_emissions1D(refdir, trange=day_range)
+    #     refemis_info = tm5rundir_emissions2D(ldir, trange=day_range)
+    #     refemis2D = refemis_info.emis2D
+    #     assert refemis2D.shape==emis2D.shape
+    #     #--
+    #     input4inv.emis_info = refemis_info
+    #     #
+    #     #-- use emissions from here for the output
+    #     #
+    #     outemis_info = refemis_info
+    #     #
+    #     #--
+    #     #
+    #     refconc = tm5refdir_load_stationconc(refdir, obsid)
+    #     refconc_list = []
+    #     msg = f"verification based on " \
+    #         f"footprint directory ***{str(topdir)}*** and refdir ***{str(refdir)}***"
+    #     print(msg)
+    #     ista = 0 #-- single station currently
+    #     for iday,day in enumerate(day_range):
+    #         _ostart = day + Timedelta(hours=obs_hr) - Timedelta(seconds=obs_tw)
+    #         _oend   = day + Timedelta(hours=obs_hr) + Timedelta(seconds=obs_tw)
+    #         cnd_day = (refconc['time']>=_ostart)&(refconc['time']<=_oend)
+    #         refconc_day = refconc.loc[cnd_day,'conc'].mean()
+    #         refconc_list.append(refconc_day)
+    #         jac_day = ojac4D[iday,ista,:,:]
+    #         em_day  = refemis2D[:]
+    #         iniconc_day = iniconc_data[iday, ista]
+    #         obs_day     = obs_data[iday, ista]
+    #         assert jac_day.shape==em_day.shape
+    #         linconc_day = np.dot(jac_day.ravel(), em_day.ravel()) + iniconc_day
+    #         msg = f"@{day.strftime('%Y%m%d')}, emistot={refemis2D[iday,:].sum()}"
+    #         print(msg)
+    #         msg = f"@{day.strftime('%Y%m%d')}, " \
+    #             f"refconc/linconc/iniconc / obsconc = " \
+    #             f"{refconc_day}/{linconc_day}/{iniconc_day} / {obs_day}"
+    #         print(msg)
+    #     # try:
+    #     #     refconc_info = tm5rundir_iniconc_1obs(refdir, obs_info)
+    #     #     print(refconc_info.conc)
+    #     # except FileNotFoundError:
+    #     #     pass
+    #     # msg = f"verification modus, terminating without generating output!"
+    #     # logger.info(msg)
     return input4inv
     
 
@@ -913,7 +1188,169 @@ def subcmd_testbuild_jacobian_period_noemisdays(args : ArgumentNamespace) -> Non
     logger.info(msg)
 
 
-def subcmd_monthly_emissions_for_inversion(args):
+def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
+    """Updated approach for preparation of inputs for Fortran-based inversion environment
+    based on TM5 adjoint runs for a selected period of observations.
+    Observations (i.e. the combination of station and observational day) are being
+    stored as 1D array, and similar for the initial concentration and the first
+    dimension (row index) of the Jacobian.
+    Sensitivities are being computed w.r.t. to emissions on each day of the temporal
+    period.
+
+    On invocation the user has the option to condense the Jacobian to
+    reflect sensitivity of the total emission within the selected temporal range.
+    """
+    topdir = Path(args.outpath_tm5)
+    obsid = args.obsid
+    complevel = args.__dict__.get('complevel',4)
+
+    #
+    #-- collect inputs
+    #
+    msg = f"START collecting sensitiy inputs..."
+    logger.info(msg)
+    input4inv = collect_input4inversion_obs1D(args, args.domain)
+    msg = f"...input collection FINISHED."
+    logger.info(msg)
+    #
+    #--
+    #
+    day_range = input4inv.day_range
+    dayf = day_range[0]
+    dayl = day_range[-1]
+    nday = len(day_range)
+    nemisday,ng = input4inv.emis_info.emis2D.shape
+    stationlist_1D = input4inv.stationlist_1D
+    station_list = np.unique(stationlist_1D)
+    obsdaylist_1D = input4inv.obsdaylist_1D
+    #--
+    obs_array1D = input4inv.obs_array1D
+    nobs = len(obs_array1D)
+    inic_array1D = input4inv.inic_array1D
+    jac_array = input4inv.jac_array #-- nobs/nemisday/ng
+    #
+    #-- so far
+    #   - Jacobian quantifies deltac [ppb] w.r.t. daily emission rates [kgCH4/cell/s]
+    #   - emissions are (daily) emission rates also in [kgCH4/cell/s]
+    #
+    #-- convert to
+    #   - total emissions (per grid-cell) for the complete period
+    #   - need to scale and average entries in Jacobian accordingly
+    #
+    if args.jac4totemis:
+        emis2D = input4inv.emis_info.emis2D
+        nsecday = 86400
+        ojac_tot = jac_array.sum(axis=1)/(nday*nsecday)
+        emis_tot = np.sum(emis2D*nsecday, axis=0) #-- overall emissions in temporal range
+        #
+        for iobs in range(nobs):
+            _staid  = stationlist_1D[iobs]
+            _obsday = obsdaylist_1D[iobs].strftime('%Y%m%d')
+            dc_tot = np.dot(ojac_tot[iobs,:], emis_tot)
+            dc     = np.dot(jac_array[iobs,:].ravel(), emis2D.ravel())
+            msg = f"@{_obsday},{_staid}: deltac derived by daily-rate/temporal-total = " \
+                f"{dc}/{dc_tot}"
+            print(msg)
+
+    #
+    #-- prepare output
+    #
+    nsta = len(station_list)
+    trange_tag = f"{dayf.strftime('%Y%m%d')}--{dayl.strftime('%Y%m%d')}"
+    if nsta==1:
+        obsid_tag = station_list[0]
+    elif nsta<=5:
+        obsid_tag = '--' + '--'.join([_ for _ in station_list]) + '--'
+    else:
+        obsid_tag = f"{nsta}-obslocations"
+    outname_tokens = ["fitic-inversion-input-obs1D", obsid_tag, trange_tag,]
+    outname = '_'.join(outname_tokens) + '.nc'
+    outname = set_outname(args, outname)
+    msg = f"writing inversion inputs to file ***{outname}***..."
+    logger.info(msg)
+    #
+    #-- spatial dimensions
+    #
+    fp = Dataset(outname, 'w')
+    fp.createDimension('ng', ng)
+    fp.createDimension('nobs', nobs)
+    if not args.jac4totemis:
+        fp.createDimension('nemisday', nday)
+    #
+    ncvar = fp.createVariable('lon', 'f8', ('ng',),
+                              compression='zlib', complevel=complevel)
+    ncvar.long_name = 'longitude'
+    ncvar.units = 'degrees_east'
+    ncvar.comment = 'references center of grid-cell in related zoom domain'
+    ncvar[:] = input4inv.emis_info.lonc1D
+    #
+    ncvar = fp.createVariable('lat', 'f8', ('ng',),
+                              compression='zlib', complevel=complevel)
+    ncvar.long_name = 'latitude'
+    ncvar.units = 'degrees_north'
+    ncvar.comment = 'references center of grid-cell in related zoom domain'
+    ncvar[:] = input4inv.emis_info.latc1D
+    #
+    ncvar = fp.createVariable('region', input4inv.emis_info.reg1D.dtype, ('ng',))
+    ncvar.long_name = f"emission_region_identifier"
+    ncvar.units = ''
+    ncvar[:] = input4inv.emis_info.reg1D[:]
+    #
+    ncvar = fp.createVariable('obs', 'f8', ('nobs',),
+                              compression='zlib', complevel=complevel)
+    ncvar[:] = obs_array1D[:]
+    ncvar.long_name = f"observed CH4 concentration"
+    ncvar.units = 'ppb'
+    #
+    ncvar = fp.createVariable('iniconc', 'f8', ('nobs',),
+                              compression='zlib', complevel=complevel)
+    ncvar[:] = inic_array1D[:]
+    ncvar.long_name = f"initial_concentration"
+    ncvar.units = 'ppb'
+    #
+    ncvar = fp.createVariable('station', str, ('nobs',) )
+    ncvar[:] = stationlist_1D[:]
+    ncvar.long_name = 'station_identifier'
+    ncvar.units = ''
+    #
+    ncvar = fp.createVariable('obsday', str, ('nobs',) )
+    for iobs in range(nobs):
+        ncvar[iobs] = obsdaylist_1D[iobs].strftime('%Y%m%d')
+    # ncvar[:] = [ _.strftime('%Y%m%d') for _ in obsdaylist_1D ]
+    ncvar.long_name = 'day_of_observation'
+    ncvar.units = ''
+    #
+    if not args.jac4totemis:
+        ncvar = fp.createVariable('obs_jacobian', 'f8', ('nobs','nemisday','ng',),
+                                  compression='zlib', complevel=complevel)
+        ncvar = jac_array[:]
+        ncvar.units = 'ppb/(kgCH4/cell/s)'
+    else:
+        ncvar = fp.createVariable('obs_jacobian', 'f8', ('nobs','ng',),
+                                  compression='zlib', complevel=complevel)
+        ncvar[:] = ojac_tot[:]
+        ncvar.units = 'ppb/(kgCH4/cell)'
+        ncvar.comment = "sensitivity valid for emissions in temporal range from " \
+            f"{dayf.strftime('%Y%m%d')} to {dayl.strftime('%Y%m%d')}"
+    #
+    #-- global attributes
+    #
+    fp.description = f"Jacobian quantifies sensitivity of concentration at each individual day " \
+        f"w.r.t. to emissions within the selected period."
+    fp.footprint_directory = str(topdir.absolute())
+    # fp.emission_directory = str(outemis_info.emisdir)
+    # fp.obsfile = ", ".join(input4inv.obsfile_list)
+    fp.history = f"{' '.join(sys.argv)}"
+    fp.date_created = Timestamp.utcnow().isoformat()
+    #
+    #-- close
+    #
+    fp.close()
+    msg = f"generated file ***{outname}***"
+    logger.info(msg)
+   
+    
+def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
     """
     Preparation of monthly averaged emissions suitable as input for (Fortran based)
     inversion system.
@@ -1031,7 +1468,7 @@ def subcmd_monthly_emissions_for_inversion(args):
     logger.info(msg)
 
     
-def subcmd_create_target_jacobian(args):
+def subcmd_create_target_jacobian(args : ArgumentNamespace) -> None:
     """
     """
     topdir = Path(args.outpath_tm5)
@@ -1345,6 +1782,39 @@ sparser.add_argument('--outname',
                     help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
 
 #
+#--       build_jacobian_period_obs1D
+#
+sparser = subparsers.add_parser('build_jacobian_period_obs1D',
+                                help="""test preparation of inputs for Fortran inversion system.""")
+sparser.add_argument('outpath_tm5',
+                     help="""top-level directory of series of TM5 adjoint runs for footprint creation each of those for one observation day.""")
+sparser.add_argument('domain',
+                     choices=['gns100x100','glb600x400',],
+                     help="""observational domain.""")
+sparser.add_argument('--obsdir',
+                     default="/lunarc/nobackup/projects/ghg_inv/michael/FIT-IC/observations_fitic-gui",
+                     help="""directory providing obspack NetCDF data files with CH4 observations for selected station/site (default: %(default)s).""")
+sparser.add_argument('--obsid',
+                     nargs='+',
+                     help="""select one single observational location (default: %(default)s).""")
+sparser.add_argument('--selday',
+                     default="20210131",
+                     help="""last observational day of accumulation period (default: %(default)s).""")
+sparser.add_argument('--jac4totemis',
+                     action='store_true',
+                     help="""whether to condense the Jacobian such that it reflects the sensitivity w.r.t. to the total emissions within the temporal domain.""")
+sparser.add_argument('--days',
+                     type=int,
+                     default=2,
+                     help="""number of days backwards of accumulation period (default: %(default)s).""")
+sparser.add_argument('--refdir',
+                     help="""TM5 forward simulation, can be used to verify the Jacobian approach.""") 
+sparser.add_argument('--outdir',
+                    help="""top-level directory for any generated outputs..""")
+sparser.add_argument('--outname',
+                    help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
+
+#
 #--       monthly_emissions_for_inversion
 #
 sparser = subparsers.add_parser('monthly_emissions_for_inversion',
@@ -1418,6 +1888,9 @@ def main(args):
 
     if args.subcmds=='testbuild_jacobian_period_noemisdays':
         subcmd_testbuild_jacobian_period_noemisdays(args)
+
+    if args.subcmds=='build_jacobian_period_obs1D':
+        subcmd_build_jacobian_period_obs1D(args)
 
     if args.subcmds=='monthly_emissions_for_inversion':
         subcmd_monthly_emissions_for_inversion(args)
