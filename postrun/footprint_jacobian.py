@@ -333,11 +333,13 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
     jac_array = None
     rundir_list = []
     for iday,day in enumerate(day_range):
-        #-- naming pattern used by Guillaume: footprints_<domain_tag>_%Y%m%d,
-        #   where '%Y%m%d' refers to last day of simulation at 0:00 !
-        #   E.g. to assemble inputs for February (Feb 1 to Feb 28)
-        #   the footprint directory names are ranging from
-        #   footprints_<domain_tag>_20210202, ..., footprints_<domain_tag>_20210301
+        #
+        #-- naming pattern used by Guillaume: footprints_<domain_tag>_%Y%m%d
+        #   -  where '%Y%m%d' refers to last day of simulation at 0:00 !
+        #      E.g. to assemble inputs for February (Feb 1 to Feb 28)
+        #      the footprint directory names are ranging from
+        #      footprints_<domain_tag>_20210202, ..., footprints_<domain_tag>_20210301
+        #
         dirday = day + Timedelta(days=1)
         rundir = topdir / dirday.strftime(f"footprints_{domain_tag}_%Y%m%d")
         msg = f"@day={day.strftime('%Y-%m-%d')}, reading from directory -->{rundir}<--"
@@ -362,35 +364,61 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
         #
         obs_table = tm5rundir_obstable(rundir)
         if obsid==None:
-            cur_obsinfo = obs_table.copy()
+            obsinfo_curday = obs_table.copy()
         else:
             #-- ATTENTION:problematic for flask sites (as these have the date appended)
             # cnd_sta = obs_table.index.isin(obsid)
-            # cur_obsinfo = obs_table.loc[cnd_sta,:]
-            cur_obsinfo = obs_table.loc[obsid,:] #-- keep station ordering from command line
+            # obsinfo_curday = obs_table.loc[cnd_sta,:]
+            if domain_tag=='gns100x100':
+                obsinfo_curday = obs_table.loc[obsid,:] #-- keep station ordering from command line
+            elif domain_tag=='glb600x400':
+                #-- CBW_60_20210131
+                obsids_shortened = [ '_'.join(_.lower().split('_')[:2]) for _ in obs_table.index ]
+                xobsids = []
+                for _obsid in obsid:
+                    if _obsid in obsids_shortened:
+                        try:
+                            idx = obsids_shortened.index(_obsid)
+                            xobsids.append(obs_table.index[idx])
+                        except KeyError:
+                            continue
+                obsinfo_curday = obs_table.loc[xobsids,:]
+        #
+        #-- drop duplicated 'obsid' in obstable index
+        #   NOTE: e.g. on January 16, 2021 there were two entries
+        #         for 'SPO_2847_2021011520' (with measurement times 20:43 and 20:56)
+        #
+        _n1 = len(obsinfo_curday.index)
+        _n2 = len(list(set(obsinfo_curday.index)))
+        if _n2<_n1:
+            msg = f"@{rundir}, need to drop duplicate observation identifiers in index!"
+            logger.error(msg)
+            logger.info(f"initially: -->{obsinfo_curday.index}<--")
+            obsinfo_curday = obsinfo_curday.loc[~obsinfo_curday.index.duplicated()]
+            logger.info(f"after droping duplicates: -->{obsinfo_curday.index}<--")
         #
         #-- read observations
         #
         obslist_curday = []
         stalist_curday = []
-        for ista,_obsid in enumerate(cur_obsinfo.index):
+        for ista,_obsid in enumerate(obsinfo_curday.index):
             #
             #-- NOTE: Guillaume has prepared flask obs table files
             #         such that the actual measurement is included
             #
             if domain_tag=='glb600x400': #-- flask measurements
-                _mix = cur_obsinfo.loc[_obsid,'mixing_ratio']
-                _obstime = cur_obsinfo.loc[_obsid,'time']
-                obslist_curday.append(cur_obsinfo.loc[_obsid,'mixing_ratio'])
+                _mix = obsinfo_curday.loc[_obsid,'mixing_ratio']
+                _obstime = obsinfo_curday.loc[_obsid,'time']
+                obslist_curday.append(obsinfo_curday.loc[_obsid,'mixing_ratio'])
                 stalist_curday.append(_obsid)
                 obstimelist_1D.append(_obstime)
             else:
-                _obstime = cur_obsinfo.loc[_obsid,'time']
+                _obstime = obsinfo_curday.loc[_obsid,'time']
                 obs_hr = _obstime.hour
-                obs_tw = cur_obsinfo.loc[_obsid,'time_window_length'] #-- time-window length [s]
+                obs_tw = obsinfo_curday.loc[_obsid,'time_window_length'] #-- time-window length [s]
                 if not _obsid in obsfile_info_cache:
                     #
-                    #-- extract station identifier, e.g. from 'cbw_207' or xxx
+                    #-- extract station identifier (e.g. from 'cbw_207' or xxx)
                     #
                     _obsid_tokens = _obsid.split('_')
                     if len(_obsid_tokens)==2:
@@ -446,22 +474,24 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
         #
         #-- restrict obsdata frame of this day to those stations without missing obs.
         #
-        if len(stalist_curday)!=len(cur_obsinfo):
-            cnd_sta = cur_obsinfo.index.isin(stalist_curday)
-            cur_obsinfo = cur_obsinfo.loc[cnd_sta,:]
+        if len(stalist_curday)!=len(obsinfo_curday):
+            cnd_sta = obsinfo_curday.index.isin(stalist_curday)
+            obsinfo_curday = obsinfo_curday.loc[cnd_sta,:]
         #
         #-- observations done
         #
         nobs = len(obslist_curday)
         msg = f"...@day={day.strftime('%Y-%m-%d')}, nobs={nobs}"
         logger.info(msg)
+        if nobs==0:
+            continue
         #
         #-- extend 1D arrays
         #
         if domain_tag=='glb600x400':
-            stationlist_1D += [ '_'.join(_.lower().split('_')[:2]) for _ in cur_obsinfo.index ]
+            stationlist_1D += [ '_'.join(_.lower().split('_')[:2]) for _ in obsinfo_curday.index ]
         elif domain_tag=='gns100x100':
-            stationlist_1D += list(cur_obsinfo.index)
+            stationlist_1D += list(obsinfo_curday.index)
         else:
             raise RuntimeError(f"unexpected domain -->{domain_tag}<--")
         obs_array1D = np.concat((obs_array1D,np.array(obslist_curday))) 
@@ -469,20 +499,44 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
         #-- initial concentration
         #
         iniclist_curday = []
-        for ista,staid in enumerate(cur_obsinfo.index):
-            sta_obs_info = cur_obsinfo.loc[staid,:]
+        for ista,staid in enumerate(obsinfo_curday.index):
+            sta_obs_info = obsinfo_curday.loc[staid,:]
             # print(f"...@{staid}, sta_obs_info\n{sta_obs_info}\n")
             msg = f"...@{staid}, reading initial concentration."
             logger.info(msg)
             inic_info = tm5rundir_iniconc_1obs(rundir, sta_obs_info)
-            # print(f"...@{staid} ==> inic_info -->{inic_info}<--")
-            iniclist_curday.append(inic_info.conc)
+            point_out = inic_info.point_output
+            # logger.info(f"-->{point_out}<--")
+            if 'mixing_ratio' in point_out.index:
+                inic = point_out.mixing_ratio
+            else:
+                #
+                #-- different station identifiers being mapped to same numerical ID
+                #   e.g. on January 29, 2021 the obs identifiers
+                #   "BRW_27_2021012919", "BRW_16_2021012920" were both mapped to
+                #   station_id=75.
+                #
+                _station_id  = np.unique(np.array(point_out.index))
+                assert len(_station_id)==1, \
+                    f"expected one single station_id but found ==>{_station_id}<=="
+                _station_id = _station_id[0]
+                #
+                #-- extract entries with this station_id
+                #
+                _cnd = obsinfo_curday['station_id']==_station_id
+                _obsinfo_cnd = obsinfo_curday.loc[_cnd,:]#.reset_index()
+                logger.info(f"\n{_obsinfo_cnd[['time','lat','lon','mixing_ratio']]}")
+                #
+                #-- select index where observation identifier matches current station
+                #
+                inic = _obsinfo_cnd.loc[staid,'mixing_ratio']
+            iniclist_curday.append(inic)
         cur_inic_array = np.array(iniclist_curday)
         inic_array1D = np.concat((inic_array1D,cur_inic_array))
         #
         #--
         #
-        jac_info = tm5rundir_jacobian3D(rundir, trange=day_range, obsid=list(cur_obsinfo.index),
+        jac_info = tm5rundir_jacobian3D(rundir, trange=day_range, obsid=list(obsinfo_curday.index),
                                         clip_child=clip_child)
         jac3D = jac_info.jac3D #-- nobs/nemisday/ng
         # print(f"@{dirday}, jac3D.shape={jac3D.shape}")
@@ -1345,7 +1399,7 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     if not args.jac4totemis:
         ncvar = fp.createVariable('obs_jacobian', 'f8', ('nobs','nemisday','ng',),
                                   compression='zlib', complevel=complevel)
-        ncvar = jac_array[:]
+        ncvar[:] = jac_array[:]
         ncvar.units = 'ppb/(kgCH4/cell/s)'
         ncvar.comment = f"Jacobian quantifies the sensitivity of concentration at " \
             f"observed times and locations w.r.t. to daily emission rates."
