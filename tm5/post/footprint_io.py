@@ -437,7 +437,7 @@ def tm5rundir_iniconc_1obs( outpath : str | Path, obs_info : Series ) -> SimpleN
     sta_outp = outp.set_index('station_id').loc[sta_id,:]
     # msg = f"@{outpath.name}, sta_id={sta_id} conc={sta_outp.mixing_ratio}"
     # print(msg)
-    return SimpleNamespace(conc=sta_outp.mixing_ratio, nsamples=sta_outp.nsamples, averaging_time=sta_outp.averaging_time)
+    return SimpleNamespace(point_output=sta_outp, conc=sta_outp.mixing_ratio, nsamples=sta_outp.nsamples, averaging_time=sta_outp.averaging_time)
 
 
 def tm5rundir_emissions1D( outpath : str | Path, trange : date_range = None, host : str = 'cosmos') -> SimpleNamespace:
