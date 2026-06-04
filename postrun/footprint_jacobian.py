@@ -327,7 +327,7 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
     emis_info = None
     obsfile_info_cache = OrderedDict()
     stationlist_1D = []
-    obsdaylist_1D = []
+    obstimelist_1D = []
     obs_array1D = np.empty(0)
     inic_array1D = np.empty(0)
     jac_array = None
@@ -365,19 +365,28 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
             cur_obsinfo = obs_table.copy()
         else:
             #-- ATTENTION:problematic for flask sites (as these have the date appended)
-            cnd_sta = obs_table.index.isin(obsid)
-            cur_obsinfo = obs_table.loc[cnd_sta,:]
+            # cnd_sta = obs_table.index.isin(obsid)
+            # cur_obsinfo = obs_table.loc[cnd_sta,:]
+            cur_obsinfo = obs_table.loc[obsid,:] #-- keep station ordering from command line
         #
         #-- read observations
         #
-        day_obs_list = []
-        day_sta_list = []
+        obslist_curday = []
+        stalist_curday = []
         for ista,_obsid in enumerate(cur_obsinfo.index):
+            #
+            #-- NOTE: Guillaume has prepared flask obs table files
+            #         such that the actual measurement is included
+            #
             if domain_tag=='glb600x400': #-- flask measurements
-                day_obs_list.append(cur_obsinfo.loc[_obsid,'mixing_ratio'])
-                day_sta_list.append(_obsid)
+                _mix = cur_obsinfo.loc[_obsid,'mixing_ratio']
+                _obstime = cur_obsinfo.loc[_obsid,'time']
+                obslist_curday.append(cur_obsinfo.loc[_obsid,'mixing_ratio'])
+                stalist_curday.append(_obsid)
+                obstimelist_1D.append(_obstime)
             else:
-                obs_hr = cur_obsinfo.loc[_obsid,'time'].hour
+                _obstime = cur_obsinfo.loc[_obsid,'time']
+                obs_hr = _obstime.hour
                 obs_tw = cur_obsinfo.loc[_obsid,'time_window_length'] #-- time-window length [s]
                 if not _obsid in obsfile_info_cache:
                     #
@@ -428,22 +437,24 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
                 if np.count_nonzero(cnd_time)>0:
                     mix_day = obs_df.loc[cnd_time,'value'].mean()
                     mix_day *= 1.e9 #-- [mol/mol] to [ppb]
-                    day_obs_list.append(mix_day)
-                    day_sta_list.append(_obsid)
+                    obslist_curday.append(mix_day)
+                    stalist_curday.append(_obsid)
+                    obstimelist_1D.append(_obstime)
                 else:
                     msg = f"...@{staid}, no observations found in time window {_ostart}==>{_oend}"
                     logger.info(msg)
         #
+        #-- restrict obsdata frame of this day to those stations without missing obs.
+        #
+        if len(stalist_curday)!=len(cur_obsinfo):
+            cnd_sta = cur_obsinfo.index.isin(stalist_curday)
+            cur_obsinfo = cur_obsinfo.loc[cnd_sta,:]
+        #
         #-- observations done
         #
-        nobs = len(day_obs_list)
+        nobs = len(obslist_curday)
         msg = f"...@day={day.strftime('%Y-%m-%d')}, nobs={nobs}"
         logger.info(msg)
-        #
-        #-- update/restrict
-        if len(day_sta_list)!=len(cur_obsinfo):
-            cnd_sta = cur_obsinfo.index.isin(day_sta_list)
-            cur_obsinfo = cur_obsinfo.loc[cnd_sta,:]
         #
         #-- extend 1D arrays
         #
@@ -453,12 +464,11 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
             stationlist_1D += list(cur_obsinfo.index)
         else:
             raise RuntimeError(f"unexpected domain -->{domain_tag}<--")
-        obsdaylist_1D += [day,]*nobs
-        obs_array1D = np.concat((obs_array1D,np.array(day_obs_list))) 
+        obs_array1D = np.concat((obs_array1D,np.array(obslist_curday))) 
         #
         #-- initial concentration
         #
-        day_inic_list = []
+        iniclist_curday = []
         for ista,staid in enumerate(cur_obsinfo.index):
             sta_obs_info = cur_obsinfo.loc[staid,:]
             # print(f"...@{staid}, sta_obs_info\n{sta_obs_info}\n")
@@ -466,8 +476,8 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
             logger.info(msg)
             inic_info = tm5rundir_iniconc_1obs(rundir, sta_obs_info)
             # print(f"...@{staid} ==> inic_info -->{inic_info}<--")
-            day_inic_list.append(inic_info.conc)
-        cur_inic_array = np.array(day_inic_list)
+            iniclist_curday.append(inic_info.conc)
+        cur_inic_array = np.array(iniclist_curday)
         inic_array1D = np.concat((inic_array1D,cur_inic_array))
         #
         #--
@@ -485,7 +495,7 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
     msg = f"...collected {nobs} observations overall."
     logger.info(msg)
     # print(f"stationlist_1D -->{stationlist_1D}<--")
-    # print(f"obsdaylist_1D -->{obsdaylist_1D}<--")
+    # print(f"obstimelist_1D -->{obstimelist_1D}<--")
     # print(f"obs_array1D -->{obs_array1D}<--")
     # print(f"inic_array1D -->{inic_array1D}<--")
     # print(f"jac_array shape={jac_array.shape}")
@@ -499,7 +509,7 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
         rundir_list=rundir_list,
         emis_info=emis_info,
         stationlist_1D=np.array(stationlist_1D),
-        obsdaylist_1D=obsdaylist_1D,
+        obstimelist_1D=obstimelist_1D,
         obs_array1D=obs_array1D,
         inic_array1D=inic_array1D,
         jac_array=jac_array)
@@ -1221,8 +1231,7 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     nday = len(day_range)
     nemisday,ng = input4inv.emis_info.emis2D.shape
     stationlist_1D = input4inv.stationlist_1D
-    station_list = np.unique(stationlist_1D)
-    obsdaylist_1D = input4inv.obsdaylist_1D
+    obstimelist_1D = input4inv.obstimelist_1D
     #--
     obs_array1D = input4inv.obs_array1D
     nobs = len(obs_array1D)
@@ -1245,7 +1254,7 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
         #
         for iobs in range(nobs):
             _staid  = stationlist_1D[iobs]
-            _obsday = obsdaylist_1D[iobs].strftime('%Y%m%d')
+            _obsday = obstimelist_1D[iobs].strftime('%Y%m%d')
             dc_tot = np.dot(ojac_tot[iobs,:], emis_tot)
             dc     = np.dot(jac_array[iobs,:].ravel(), emis2D.ravel())
             msg = f"@{_obsday},{_staid}: deltac derived by daily-rate/temporal-total = " \
@@ -1255,6 +1264,10 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     #
     #-- prepare output
     #
+    if args.obsid==None:
+        station_list = np.unique(stationlist_1D)
+    else:
+        station_list = np.array(args.obsid)
     nsta = len(station_list)
     trange_tag = f"{dayf.strftime('%Y%m%d')}--{dayl.strftime('%Y%m%d')}"
     if nsta==1:
@@ -1263,7 +1276,9 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
         obsid_tag = '--' + '--'.join([_ for _ in station_list]) + '--'
     else:
         obsid_tag = f"{nsta}-obslocations"
-    outname_tokens = ["fitic-inversion-input-obs1D", obsid_tag, trange_tag,]
+    outname_tokens = ["fitic-inversion-input-obs1D", obsid_tag, args.domain, trange_tag,]
+    if args.jac4totemis:
+        outname_tokens.append('jac4totemis')
     outname = '_'.join(outname_tokens) + '.nc'
     outname = set_outname(args, outname)
     msg = f"writing inversion inputs to file ***{outname}***..."
@@ -1276,6 +1291,13 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     fp.createDimension('nobs', nobs)
     if not args.jac4totemis:
         fp.createDimension('nemisday', nday)
+    fp.createDimension('nsta', nsta)
+    #-- unique list of stations
+    ncvar = fp.createVariable('station_list', str, ('nsta',))
+    ncvar[:] = station_list[:]
+    ncvar.long_name = f"station_identifier_list"
+    ncvar.units = ''
+    ncvar.comment = f"comprises the list of unique stations. Note, that there may be no observations for a station on certain day(s)."
     #
     ncvar = fp.createVariable('lon', 'f8', ('ng',),
                               compression='zlib', complevel=complevel)
@@ -1313,10 +1335,10 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     ncvar.long_name = 'station_identifier'
     ncvar.units = ''
     #
-    ncvar = fp.createVariable('obsday', str, ('nobs',) )
-    for iobs in range(nobs):
-        ncvar[iobs] = obsdaylist_1D[iobs].strftime('%Y%m%d')
-    # ncvar[:] = [ _.strftime('%Y%m%d') for _ in obsdaylist_1D ]
+    ncvar = fp.createVariable('obstime', str, ('nobs',) )
+    ncvar[:] = np.array([ _.strftime('%Y%m%dT%H%M%S') for _ in obstimelist_1D ])
+    # for iobs in range(nobs):
+    #     ncvar[iobs] = obstimelist_1D[iobs].strftime('%Y%m%dT%H')
     ncvar.long_name = 'day_of_observation'
     ncvar.units = ''
     #
@@ -1325,18 +1347,20 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
                                   compression='zlib', complevel=complevel)
         ncvar = jac_array[:]
         ncvar.units = 'ppb/(kgCH4/cell/s)'
+        ncvar.comment = f"Jacobian quantifies the sensitivity of concentration at " \
+            f"observed times and locations w.r.t. to daily emission rates."
     else:
         ncvar = fp.createVariable('obs_jacobian', 'f8', ('nobs','ng',),
                                   compression='zlib', complevel=complevel)
         ncvar[:] = ojac_tot[:]
         ncvar.units = 'ppb/(kgCH4/cell)'
-        ncvar.comment = "sensitivity valid for emissions in temporal range from " \
-            f"{dayf.strftime('%Y%m%d')} to {dayl.strftime('%Y%m%d')}"
+        ncvar.comment = f"Jacobian quantifies the sensitivity of concentration at " \
+            f"observed times and locations w.r.t. to the total emission field in the " \
+            f"temporal range from {dayf.strftime('%Y%m%d')} to {dayl.strftime('%Y%m%d')}"
     #
     #-- global attributes
     #
-    fp.description = f"Jacobian quantifies sensitivity of concentration at each individual day " \
-        f"w.r.t. to emissions within the selected period."
+    fp.description = f"Inputs for FIT-IC inversion environment."
     fp.footprint_directory = str(topdir.absolute())
     # fp.emission_directory = str(outemis_info.emisdir)
     # fp.obsfile = ", ".join(input4inv.obsfile_list)
