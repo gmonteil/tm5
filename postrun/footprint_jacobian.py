@@ -524,8 +524,8 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
                 #-- extract entries with this station_id
                 #
                 _cnd = obsinfo_curday['station_id']==_station_id
-                _obsinfo_cnd = obsinfo_curday.loc[_cnd,:]#.reset_index()
-                logger.info(f"\n{_obsinfo_cnd[['time','lat','lon','mixing_ratio']]}")
+                _obsinfo_cnd = obsinfo_curday.loc[_cnd,:]
+                # logger.info(f"\n{_obsinfo_cnd[['time','lat','lon','mixing_ratio']]}")
                 #
                 #-- select index where observation identifier matches current station
                 #
