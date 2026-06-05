@@ -6,21 +6,29 @@ import os
 from omegaconf import OmegaConf
 from pathlib import Path
 from loguru import logger
+from pandas import Timestamp, Timedelta
 import tm5
 from tm5.system import runcmd
 from tm5.fitic import read_obs_table, create_departure_files
 
+try:
+    default_host = os.environ['TM5_HOST']
+except KeyError:
+    default_host = None
                 
 parser = ArgumentParser()
 parser.add_argument('-b', '--build', action='store_true', default=False, help='Use this option to compile the code')
 parser.add_argument('--build-dir',
                     help="""over-ride default build directory as it is defined in configuration file.""")
 parser.add_argument('--build-only', action='store_true', default=False)
-parser.add_argument('-m', '--host', default=os.environ['TM5_HOST'])
+parser.add_argument('-m', '--host', default=default_host)
 parser.add_argument('--trange',
                     metavar=('tstart','tend'),
                     nargs=2,
                     help="""whether to override simulation start/end time specified in the yaml file (strings must be parseable as pandas Timestamp).""")
+parser.add_argument('--ndays',
+                    type=int,
+                    help="""number of days to simulate (ATTENTION: overrules 'tend' provided by --trange).""")
 parser.add_argument('--obsfile',
                     help="""whether to override the observations file used to create the departures for the adjoint run.""")
 parser.add_argument('--outdir',
@@ -51,6 +59,9 @@ if args.trange!=None:
     tstart, tend = args.trange
     dconf.run['start'] = tstart
     dconf.run['end']   = tend
+if args.ndays!=None:
+    dend = Timestamp(dconf.run.start) + Timedelta(days=args.ndays)
+    dconf.run['end'] = dend.strftime('%Y%m%d')
 if args.obsfile!=None:
     obsfile_sav = dconf.observations.file
     msg = f"setting observations file -->{args.obsfile}<-- " \
@@ -80,6 +91,13 @@ if args.tm5exec!=None:
             raise RuntimeError(msg)
         else:
             dconf.run.paths['tm5exec'] = str(exe)
+#
+#-- adapt obsfile
+#
+if dconf.observations.file.find('%Y-%m-%d')>0:
+    date_end = Timestamp(dconf.run.end) #-- end-of-simulation (yyyymmddT00:00:00)
+    date_obs = date_end - Timedelta(days=1)
+    dconf.observations.file = date_obs.strftime(dconf.observations.file)
 
 # =====================================================
 # 0. create configuration instance
