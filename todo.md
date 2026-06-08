@@ -4,6 +4,7 @@
     - [ ] MV so send name of routine that show how the 1D emission vector is extracted
     - [ ] MV to send to GM the command to run the flask server
     - [ ] GM to do the emission plots (either write new or reuse: "Reactivate "Emission Explorer" in the "master GUI")
+    - [ ] GM to "combine the two tabs "setup simulation" and "preconfigured simulation"
 - GUI (analysis)
     - [ ] (7) GM: check domain size on plot after change of region
     - [x] (2) GM+MV: extract TM5 output and obspack for selected stations averaged over a pre-specified period of the day (as in inversions), e.g. above 1000 m height take nighttime data (midnight to 4am local solar time) and below afternoon date (from 12 to 4 local solar time) (there is a flag in obspack for filtering, but don't take it as an absolute reference, just for a sanity check) at highest level
