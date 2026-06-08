@@ -118,9 +118,13 @@ def subcmd_emis_visu_debug(args):
         cbar.set_label(f"[{da_plot.units}]")
         #--
         if args.extent!=None:
-            lonw,lone,latw,latn = args.extent
-            domain_tag = f"{lonstr(lonw)}-{lonstr(lone)}x{latstr(lats)}-{latstr(latn)}"
+            lonw,lone,lats,latn = args.extent
+            if args.extent==[-180,180,-90,90]:
+                domain_tag = 'global'
+            else:
+                domain_tag = f"{lonstr(lonw)}-{lonstr(lone)}x{latstr(lats)}-{latstr(latn)}"
             ax.set_extent(args.extent)
+
         #
         ax.coastlines()
         ax.add_feature(cfeature.BORDERS, lw=boarders_lw)
