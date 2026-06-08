@@ -208,7 +208,7 @@ def tm5emisdir_load_emissions2D( emisdir : str | Path, emis_prefix : str, day_ra
                            emisdir=emisdir)
 
 
-def emisvector_to_global1x1( filepath_emis : str | Path, tosqm : bool = False ) -> SimpleNamespace:
+def emisvector_to_global1x1( filepath_emis : str | Path, varname : str = 'emission', tosqm : bool = False ) -> SimpleNamespace:
     """Function that remaps a 1D emission vector used within the FIT-IC
     inversion system back to global gridded emissions at 1x1 degree resolution.
     """
@@ -245,7 +245,7 @@ def emisvector_to_global1x1( filepath_emis : str | Path, tosqm : bool = False ) 
     #
     #-- load emissions
     #
-    ncemis = dsemis['/emission']
+    ncemis = dsemis[f"/{varname}"]
     try:
         emis_units = ncemis.units
     except AttributeError:
