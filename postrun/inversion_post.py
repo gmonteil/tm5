@@ -156,8 +156,10 @@ def subcmd_emis_visu(args):
     #
     #-- read in emissions onto 1x1 global grid
     #
-    emis_info = emisvector_to_global1x1(filepath_emis)
-    #-- use the combined field
+    emis_info = emisvector_to_global1x1(filepath_emis, tosqm=args.tosqm)
+    #
+    #-- use the merged emissions field on 1x1 degree
+    #
     emis_select = emis_info.emis_glb1x1
     #-- this was for debugging only
     # emis_select = emis_info.table_native['glb600x400']
@@ -166,10 +168,6 @@ def subcmd_emis_visu(args):
         emis_units = emis_select.attrs['units']
     except AttributeError:
         emis_units = "unknown"
-    if args.tosqm and emis_units=='kgCH4/cell':
-        grid_glb1x1 = emis_info.grid_glb1x1
-        emis_select = emis_select / grid_glb1x1.area
-        emis_select.attrs['units'] = 'kgCH4/m2'
     #
     #-- extent for plotting
     #
@@ -229,7 +227,42 @@ def subcmd_emis_visu(args):
     logger.info(f"generated ***{outname}***")
 
 
-    
+def subcmd_inversion_inspect(args):
+    fcpost = args.fcpost
+    obsfile = args.obsfile
+    if not fcpost.exists():
+        msg = f"fcpost file not present ***{fcpost.name}***"
+        raise RuntimeError(msg)
+    if not obsfile.exists():
+        msg = f"obsfile not present ***{obsfile.name}***"
+        raise RuntimeError(msg)
+    dspost = xr.open_dataset(fcpost)
+    dsobs  = xr.open_dataset(obsfile)
+    stations = dspost['station'].values
+    #
+    #-- concentrations as numpy arrays
+    #
+    cprior = dspost['cprior'].values
+    cpost  = dspost['cpost'].values
+    cobs   = dsobs['obs'].values
+    nobsday,nsta = cprior.shape
+    msg = f"nobsday={nobsday} nsta={nsta}"
+    logger.info(msg)
+    #
+    #-- over all stations
+    #
+    bias_prior = (cprior - cobs).ravel()
+    bias_post  = (cpost - cobs).ravel()
+    rmse_prior = (bias_prior**2).mean()**0.5
+    rmse_post  = (bias_post**2).mean()**0.5
+    print(f"RMSE prior/post = {rmse_prior}/{rmse_post}")
+    for ista in range(nsta):
+        sta = stations[ista]
+        bias_prior = cprior[:,ista] - cobs[:,ista]
+        bias_post = cpost[:,ista] - cobs[:,ista]
+        rmse_prior = (bias_prior**2).mean()**0.5
+        rmse_post  = (bias_post**2).mean()**0.5
+        print(f"@{sta}: RMSE prior/post = {rmse_prior}/{rmse_post}")
 ################################################################################
 #
 #                   p a r s e r
@@ -320,6 +353,16 @@ sparser.add_argument('--outname',
                      help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
 
 
+sparser = subparsers.add_parser('inversion_inspect',
+                                help="""debugging inversion results.""")
+sparser.add_argument('fcpost',
+                     type=Path,
+                     help="""NetCDF file providing prior and posterior concentrations.""")
+sparser.add_argument('obsfile',
+                     type=Path,
+                     help="""NetCDF file provding observed concentrations (currently those are still integrated in the foj.nc file.""")
+
+
 
 ################################################################################
 #
@@ -332,6 +375,9 @@ def main(args):
 
     if args.subcmds=='emis_visu_debug':
         subcmd_emis_visu_debug(args)
+
+    if args.subcmds=='inversion_inspect':
+        subcmd_inversion_inspect(args)
 
 if __name__ == '__main__':
     import datetime as dtm
