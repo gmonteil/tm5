@@ -21,6 +21,7 @@ import matplotlib.pyplot as plt
 from matplotlib.pyplot import subplots,colorbar
 from cartopy import crs
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
+import cartopy.feature as cfeature
 from tm5.fitic import read_obs_table
 from tm5.gridtools import TM5Grids
 from tm5.observations import read_obspack_file
@@ -41,75 +42,68 @@ regions_expect = ['glb600x400','eur300x200','gns100x100',]
 
 def subcmd_emis_visu_debug(args):
     filepath_emis = args.emisfile
+    emisname = args.emisvar
     regions_select = args.region
-
-    #
-    #-- load meta information from prior emissions file
-    #
-    if not Path(filepath_emis).exists():
-        msg = f"prior emissions file ***{filepath_emis}*** not found!"
-        raise FileNotFoundError(msg)
-    dsemis = Dataset(filepath_emis)
-    ng = dsemis.dimensions['ng'].size
-    reg1D = dsemis['/region'][:]
-    reg1D_uniq = np.unique(reg1D)
-    if len(reg1D_uniq)!=len(regions_expect):
-        msg = f"...detected unexpected regions ***{reg1D_uniq}***"
-        raise RuntimeError(msg)
-    elif not set(reg1D_uniq)==set(regions_expect):
-        msg = f"...detected unexpected regions ***{reg1D_uniq}***"
-        raise RuntimeError(msg)
-    msg = f"...emissions vector is for regions -->{regions_expect}<--"
-    logger.info(msg)
-    region_info = regions1D_info(regions_expect)
-    region_table = region_info.table
-
-    #
-    #-- extent for plotting
-    #
-    lonw, lone, lats, latn = args.extent
-    if lonw==-180 and lone==180 and lats==-90 and latn==90:
-        domain_tag = 'global'
-    else:
+    boarders_lw = args.__dict__.get('boarders_lw', 1.5)
+    if args.extent!=None:
+        lonw, lone, lats, latn = args.extent
         domain_tag = f"{lonstr(lonw)}-{lonstr(lone)}x{latstr(lats)}-{latstr(latn)}"
-    msg = f"...using domain tag -->{domain_tag}<--"
-    logger.info(msg)
+    else:
+        lonw, lone, lats, latn = -180, 180, -90, 90
+        domain_tag = 'global'
+    lat_slice = slice(lats,latn)
+    lon_slice = slice(lonw,lone)
+    #
+    #--
+    #
+    emis_results = emisvector_to_global1x1(filepath_emis, varname=emisname, tosqm=False)
+    emistable_native = emis_results.table_native
+    for reg,reg_data in emistable_native.items():
+        sel_data = reg_data.loc[dict(lat=lat_slice,lon=lon_slice)]
+        # print(f"@{reg} sel_data lon/lat = {sel_data.lon} / {sel_data.lat}")
+        emtot = sel_data.sum().values
+        units = sel_data.units
+        units = units.replace('/cell','')
+        print(f"@{reg}, {domain_tag}: emission shape/total = {sel_data.shape} {emtot}[{units}]")
+
+    # #
+    # #-- extent for plotting
+    # #
+    # lonw, lone, lats, latn = args.extent
+    # if lonw==-180 and lone==180 and lats==-90 and latn==90:
+    #     domain_tag = 'global'
+    # else:
+    #     domain_tag = f"{lonstr(lonw)}-{lonstr(lone)}x{latstr(lats)}-{latstr(latn)}"
+    # msg = f"...using domain tag -->{domain_tag}<--"
+    # logger.info(msg)
 
     #
-    #-- load emissions
+    #-- load emissions (at their native resolution and extent)
     #
-    emission_table = {}
-    ncemis = dsemis['/emission']
-    try:
-        emis_units = ncemis.units
-    except AttributeError:
-        msg = f"expected attribute -->{units}<-- missing for variable 'emissions'"
-        raise AttributeError(msg)
     for reg in regions_select:
-        grid = region_table[reg].grid
-        cnd_reg = reg1D==reg
-        assert np.count_nonzero(cnd_reg)==region_table[reg].ng1D
-        if ncemis.dimensions==('nmon','ng'):
-            emis_data = ncemis[:][:,cnd_reg]
-            nt,_ng = emis_data.shape
-            emis_data = emis_data.reshape(nt,grid.nlat,grid.nlon)
-        elif ncemis.dimensions==('ng',):
-            emis_data = ncemis[:][cnd_reg]
-            emis_data = emis_data.reshape(grid.nlat,grid.nlon)
-        else:
-            raise RuntimeError(f"unexpected dimensions {ncemis.dimensions}")
-        if 'nmon' in ncemis.dimensions:
-            emis_plot = emis_data[0,:]
-        else:
-            emis_plot = emis_data[:]
-        #-- turn into data array which eases plotting
-        da_plot = xr.DataArray(
-            emis_plot,
-            dims=('lat','lon'),
-            coords = {'lon': grid.lonc, 'lat': grid.latc }
-        )
+        if not reg in emistable_native:
+            msg = f"no emissions at native resolution for {reg}"
+            logger.error(msg)
+            continue
+        da_plot = emistable_native[reg]
+        #
         #-- restrict to extent
+        #
+        lon = da_plot.lon.values
+        lat = da_plot.lat.values
+        dlon = np.unique(np.diff(lon))
+        dlat = np.unique(np.diff(lat))
+        assert len(dlon)==1 and len(dlat)==1
+        dlon = dlon[0]
+        dlat = dlat[0]
+        lonw = lon.min() - dlon/2
+        lone = lon.max() + dlon/2
+        lats = lat.min() - dlat/2
+        latn = lat.max() + dlat/2
+        domain_tag = f"{lonstr(lonw)}-{lonstr(lone)}x{latstr(lats)}-{latstr(latn)}"
+        domain_extent = [lonw,lone,lats,latn]
         da_plot = da_plot.sel(lat=slice(lats,latn),lon=slice(lonw,lone))
+        # print(da_plot)
         emis_tot = da_plot.sum().values
         pltmin = da_plot.min().values
         pltmean = da_plot.mean().values
@@ -118,15 +112,20 @@ def subcmd_emis_visu_debug(args):
         pkw, cnorm = cnorm_set(pkw, pltmin, pltmax)
         cmap = 'Reds'
         f, ax = subplots(1, 1, figsize=args.figsize, subplot_kw=dict(projection=crs.PlateCarree()))
-        img = ax.imshow(da_plot, origin='lower', extent=args.extent, norm=cnorm, cmap=cmap)
+        img = ax.imshow(da_plot, origin='lower', extent=domain_extent, norm=cnorm, cmap=cmap)
         #-- add colorbar
         cbar = colorbar(img)
-        cbar.set_label(f"[{emis_units}]")
+        cbar.set_label(f"[{da_plot.units}]")
         #--
-        ax.set_extent(args.extent)
+        if args.extent!=None:
+            lonw,lone,latw,latn = args.extent
+            domain_tag = f"{lonstr(lonw)}-{lonstr(lone)}x{latstr(lats)}-{latstr(latn)}"
+            ax.set_extent(args.extent)
+        #
         ax.coastlines()
+        ax.add_feature(cfeature.BORDERS, lw=boarders_lw)
         #-- title
-        title = f"emissions@{reg} ({str(filepath_emis)}), total: {emis_tot:.1f}"
+        title = f"emissions@{reg} ({filepath_emis.name}), total: {emis_tot:.1f}"
         # title += f"min/mean/max = {pltmin}/{pltmean}/{pltmax}"
         ax.set_title(title)
         #-- add gridlines
@@ -147,12 +146,11 @@ def subcmd_emis_visu_debug(args):
         plt.savefig(str(outname), dpi=args.dpi)
         plt.close()
         logger.info(f"generated ***{outname}***")
-    #-- close handles
-    dsemis.close()
 
 
 def subcmd_emis_visu(args):
     filepath_emis = args.emisfile
+    boarders_lw = args.__dict__.get('boarders_lw', 1.5)
     #
     #-- read in emissions onto 1x1 global grid
     #
@@ -197,6 +195,10 @@ def subcmd_emis_visu(args):
     cbar.set_label(f"[{emis_units}]")
     #--
     ax.set_extent(args.extent)
+    #
+    #-- coast-lines, country boarders
+    #
+    ax.add_feature(cfeature.BORDERS, lw=boarders_lw)
     ax.coastlines()
     #-- title
     if args.title:
@@ -322,7 +324,11 @@ sparser.add_argument('--outname',
 sparser = subparsers.add_parser('emis_visu_debug',
                                 help="""visualisation of posterior(or prior) emissions.""")
 sparser.add_argument('emisfile',
+                     type=Path,
                      help="""NetCDF file with prior or posterior emissions from FIT-IC inversion experiment directory.""")
+sparser.add_argument('--emisvar',
+                     default='emission',
+                     help="""name of variable quantifiying the emissions (default: %(default)s).""")
 sparser.add_argument('--region',
                      nargs='+',
                      default=['glb600x400',],
