@@ -1,7 +1,9 @@
 # Tasks (by order of priority)
 - GUI (setup)
-    - [ ] (4) GM: Reactivate "Emission Explorer" in the "master GUI"
-    - [x] (5) GM: Distribute the H*f + c0 computation such that (1) the user-specified emission field f is passed from the Jupyter Hub to pancake, (2) H*f (Jacobian times emission) + c0 (response to initial concentration) for 31 daily obs in Jan at Cabauw (highest level) are computed on pancake and (3) the resulting time series of 31 simulated concentrations returned to the Jupyter frontend. 
+    - [ ] GM to update in "preconfigured simulations": add station map; the task you tried the other day: Add multiple simulated concentrations, when user performs multiple forward runs (first for forward runs and then we can still see whether we extend to inversions); allow to download target table
+    - [ ] MV so send name of routine that show how the 1D emission vector is extracted
+    - [ ] MV to send to GM the command to run the flask server
+    - [ ] GM to do the emission plots (either write new or reuse: "Reactivate "Emission Explorer" in the "master GUI")
 - GUI (analysis)
     - [ ] (7) GM: check domain size on plot after change of region
     - [x] (2) GM+MV: extract TM5 output and obspack for selected stations averaged over a pre-specified period of the day (as in inversions), e.g. above 1000 m height take nighttime data (midnight to 4am local solar time) and below afternoon date (from 12 to 4 local solar time) (there is a flag in obspack for filtering, but don't take it as an absolute reference, just for a sanity check) at highest level
@@ -26,14 +28,12 @@
 - Documentation
     - [ ] properly setup github pages with mkdocs
 - Inversion
-    - [x] TXK: implement dummy inversion based on Jacobians to test computational performance
-    - [x] TXK: to specify how the footprints wil be used in the inverse model (dc/df, no emission categories) and how to produce the elements of the Jacobian.
     - [ ] TXK/MV: draft a kind of tutorial guiding the user through one of the experiments
-    - [ ] GM (1) to compute Jacobians for the 34 (?) sites in the zoom domain using the zoom setup.Jacobian should be computed for the average of the available over the preferred time of the day (afternoon for low alt and morning for heigh alt). So, for each observation day, we have a single sensitivity. 
-    - [ ] GM (3) to compute Jacobiains for global network of ~20 sites using the global 6x4 setup for monthly mean obs. Jacobian should be computed for the instantaneous concentrations at the points in the time, when flasks are filled. So for each flask pair we have one sensitivity.
-    - [x] GM (2) to suggest small (10-20) site global network
-    - [x] MV (1) to look at CBW footprint and separate it into one footprint for each emission day
-    - [x] MV (2) to make sure that (only for plotting), we change the unit from ppb/(kg Tracer/gridcell/s) to ppb/(kg Tracer/m^2/s).
+    - [ ] MV (1) to check whether this has worked now: "Compute Jacobians for the 34 (?) sites in the zoom domain using the zoom setup.Jacobian should be computed for the average of the available over the preferred time of the day (afternoon for low alt and morning for heigh alt). So, for each observation day, we have a single sensitivity." 
+    - [x] GM (3) to check compute Jacobiains for global network of ~20 sites using the global 6x4 setup for monthly mean obs. Jacobian should be computed for the instantaneous concentrations at the points in the time, when flasks are filled. So for each flask pair we have one sensitivity.
+    - [ ] MV to look into integraton of flask Jacobian
+    - [ ] GM to revise global footprint calculation (back to Oct and network identifier ... see below)
+    - [ ] MV to revise zoom domain footprint calculation (back to Oct ... see below)
             
 # Task ideas / discussion
 - avoid misuse through implementation of "accepted ranges" => *That's essentially built-in the GUI*
@@ -43,4 +43,7 @@
   - mounting folder from additional VM on notebook
   - mounting folder from Jupyter hub on new VM not needed, because we would only need it to pass the yaml file to the VM, and that can be arranged differently ...
 - Note that the concentration calculation uses fine grid in the full zoom domain, but the emissions close to the boundary are using the coarse resolution (that is applied on the other side of the boundary). If we wanted to change that we would need to enlarge the zoom domain.
+- For each observation, the Jacobians quantify its sensitivity with respect to fluxes in the present and past months
+- For the global Jacobian we use the NOAA flask sampling network, but we compute the footprints for all flasks in Obspack.
+- When we run the footprints for obs from Jan to Dec 2021 back to October 2020 emissions we do the following: For filtering of the footprints wrt to the network, we include the information about the the network into the observation table file
 
