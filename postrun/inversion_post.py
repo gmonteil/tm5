@@ -278,6 +278,88 @@ def subcmd_inversion_inspect(args):
         rmse_prior = (bias_prior**2).mean()**0.5
         rmse_post  = (bias_post**2).mean()**0.5
         print(f"@{sta}: RMSE prior/post = {rmse_prior}/{rmse_post}")
+
+
+def subcmd_inversion_conc_visu(args):
+    """
+    """
+    concfile = args.concfile
+    figsize = args.figsize
+    dpi     = args.dpi
+    if not concfile.exists():
+        msg = f"concentration file ***{str(concfile)}*** not found on system."
+        raise FileNotFoundError(msg)
+    #
+    #
+    #
+    fc = xr.open_dataset(concfile)
+    station_list = fc.station_list.values
+    msg = f"detected stations -->{station_list}<--"
+    logger.info(msg)
+    conc = fc[['obs','iniconc','station','obstime','cprior','cpost']]
+    conc_units = conc.obs.units
+    conc_df = conc.to_dataframe()
+    conc_df.loc[:,'obstime'] = [Timestamp(_) for _ in conc_df.loc[:,'obstime']]
+    tstart = conc_df.loc[:,'obstime'].min()
+    tend   = conc_df.loc[:,'obstime'].max()
+    trange_tag = f"{tstart.strftime('%Y%m%d')}--{tend.strftime('%Y%m%d')}"
+    outname = "fcpost.csv"
+    conc_df.to_csv(outname, index=False)
+#    sys.exit(0)
+    # print(conc_df.loc[:,'obstime'].values)
+    #
+    #--
+    #
+    for ista,sta in enumerate(station_list):
+        # if sta!='cba_57':
+        #     continue
+        cnd_sta = (conc_df.loc[:,'station']==sta)
+        conc_sta = conc_df.loc[cnd_sta,:]
+        _nobs = len(conc_sta)
+        fig, ax = subplots(1, 1, figsize=args.figsize)
+        conc_sta.plot(x='obstime', y='obs', ax=ax, kind='line',
+                      color='black', ls='', marker='D', markersize=4, label='obs')
+        conc_sta.plot(x='obstime', y='cprior', ax=ax, kind='line',
+                      color='red', ls='', marker='+', markersize=4, label='prior')
+        conc_sta.plot(x='obstime', y='cpost', ax=ax, kind='line',
+                      color='blue', alpha=0.5, ls='', marker='o', markersize=4, label='posterior')
+        # conc_sta.plot(x='obstime', y=['obs','cprior','cpost',], ax=ax, kind='line',
+        #               color=['k','r','blue',],
+        #               alpha=[1,1,0.5],
+        #               ls='',#['','','',],
+        #               marker='o', #['D','+','o',],
+        #               markersize=3,#[3, 2, 2],
+        #               label=['obs','prior','post'])
+        ax.set_xlim([tstart, tend])
+        title = f"{sta}, observed and simulated concentration (#obs={_nobs})"
+        #-- fit-statistics (for >=3 observations)
+        if _nobs>=3:
+            _cobs = conc_sta.loc[:,'obs']
+            _capri = conc_sta.loc[:,'cprior']
+            _capos = conc_sta.loc[:,'cpost']
+            _bias_prior = _capri - _cobs
+            meanbias_prior = _bias_prior.mean()
+            rmse_prior = (_bias_prior ** 2).mean() ** .5
+            _bias_post  = _capos - _cobs
+            meanbias_post = _bias_post.mean()       
+            rmse_post  = (_bias_post **2).mean() ** .5
+            title_stats = f"FIT prior/post: pmean-bias = {meanbias_prior:.3f}/{meanbias_post:.3f}, " \
+                f"RMSE = {rmse_prior:.3f}/{rmse_post:.3f}"
+            title_stats = f"RMSE prior/post = {rmse_prior:.3f}/{rmse_post:.3f}"
+            title += '\n' + title_stats
+        ax.set_title(title)
+        ax.set_ylabel(f"[{conc_units}]")
+        outname_tokens = [sta, 'concentrations', trange_tag]
+        outname = Path('_'.join(outname_tokens)+'.png')
+        if args.outdir!=None:
+            outname = args.outdir / outname
+        outname.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(outname, dpi=dpi, bbox_inches='tight')
+        plt.close()
+        msg = f"...generated ***{str(outname)}***"
+        logger.info(msg)
+
+
 ################################################################################
 #
 #                   p a r s e r
@@ -372,6 +454,32 @@ sparser.add_argument('--outname',
                      help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
 
 
+#
+#--          inversion_conc_visu
+#
+sparser = subparsers.add_parser('inversion_conc_visu',
+                                help="""visualisation of concentration time-series after an inversion.""")
+sparser.add_argument('concfile',
+                     type=Path,
+                     help="""NetCDF file containing observed, prior and posterior concentrations.""")
+sparser.add_argument('--figsize',
+                     type=float,
+                     nargs=2,
+                     default=(10,6),
+                     help="""figure size [inches] (default: %(default)s).""")
+sparser.add_argument('--dpi',
+                     type=int,
+                     default=150,
+                     help="""dots-per-inch (default: %(default)s).""")
+sparser.add_argument('--outdir',
+                     type=Path,
+                     help="""top-level directory for any generated outputs..""")
+# sparser.add_argument('--outname',
+#                      help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
+
+#
+#--          inversion_inspect
+#
 sparser = subparsers.add_parser('inversion_inspect',
                                 help="""debugging inversion results.""")
 sparser.add_argument('fcpost',
@@ -394,6 +502,9 @@ def main(args):
 
     if args.subcmds=='emis_visu_debug':
         subcmd_emis_visu_debug(args)
+
+    if args.subcmds=='inversion_conc_visu':
+        subcmd_inversion_conc_visu(args)
 
     if args.subcmds=='inversion_inspect':
         subcmd_inversion_inspect(args)
