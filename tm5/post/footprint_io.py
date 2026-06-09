@@ -323,17 +323,27 @@ def emisvector_to_global1x1( filepath_emis : str | Path, varname : str = 'emissi
             #
             grid_1x1 = TM5Grids.from_corners(west=grid.west, east=grid.east, south=grid.south, north=grid.north, dlon=1, dlat=1)
             nscale = rlat*rlon
-            #
-            #-- MVO-TODO::still a poor man's solution here with explict looping for the upscaling!!
-            #             ...ths was done in a hurry with lack of time for smarter solution...
-            #
             emis_in = emis_data.reshape(nlat,nlon)
-            emis_data_1x1 = zeros((nlat*rlat,nlon*rlon))
-            for iilat in range(nlat*rlat):
-                ilat = iilat//rlat
-                for iilon in range(nlon*rlon):
-                    ilon = iilon//rlon
-                    emis_data_1x1[iilat,iilon] = emis_in[ilat,ilon]
+            #
+            #-- upscale to 1 by 1 degree (nlat*rlat,nlon*rlon)
+            #
+            emis_data_1x1 = np.repeat(emis_in, rlon, axis=1).repeat(rlat, axis=0)
+            # #
+            # #-- MVO-TODO::still a poor man's solution here with explict looping for the upscaling!!
+            # #             ...ths was done in a hurry with lack of time for smarter solution...
+            # #
+            # emis_data_1x1 = zeros((nlat*rlat,nlon*rlon))
+            # for iilat in range(nlat*rlat):
+            #     ilat = iilat//rlat
+            #     for iilon in range(nlon*rlon):
+            #         ilon = iilon//rlon
+            #         emis_data_1x1[iilat,iilon] = emis_in[ilat,ilon]
+            # if np.all(emis_data_1x1==emis_data_1x1x):
+            #     msg = f"*****fast upscaling with numpy.repeat successfull*****"
+            #     logger.info(msg)
+            # else:
+            #     msg = f"...issues with slow vs fast upscaling emissions."
+            #     raise RuntimeError(msg)
             daemis_1x1 = xr.DataArray(
                 emis_data_1x1,
                 dims=('lat','lon'),
@@ -526,7 +536,7 @@ def tm5rundir_emissions1D( outpath : str | Path, trange : date_range = None, hos
     return SimpleNamespace(emis1D=emissions1D, iday1D=iday1D, region1D=region1D, emisdir=emisdir)
 
 
-def tm5rundir_emissions2D( outpath : str | Path, trange : date_range = None, host : str = 'cosmos', clip_child : bool = False ) -> SimpleNamespace:
+def tm5rundir_emissions2D( outpath : str | Path, trange : date_range = None, emis_prefix : str = None, host : str = 'cosmos', clip_child : bool = False ) -> SimpleNamespace:
     """
     """
     yamlfile = Path(outpath) / 'tm5.yaml'
@@ -544,7 +554,13 @@ def tm5rundir_emissions2D( outpath : str | Path, trange : date_range = None, hos
         tstart = Timestamp(dconf.run.start)
         tend   = Timestamp(dconf.run.end)
         trange = date_range(tstart, tend, freq='1d')
-    emis_prefix = dconf.emissions.CH4.prefix
+    emis_prefix_rundir = dconf.emissions.CH4.prefix
+    if emis_prefix!=None:
+        msg = f"TM5 rundir has emis_prefix -->{emis_prefix_rundir}<--, which will be explicitly " \
+            f"overwritten to -->{emis_prefix}<--"
+        logger.warning(msg)
+    else:
+        emis_prefix = emis_prefix_rundir
 
     return tm5emisdir_load_emissions2D(emisdir, emis_prefix, trange, regions, clip_child=clip_child)
 
