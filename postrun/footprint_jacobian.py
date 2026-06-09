@@ -327,7 +327,10 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
     obsfile_info_cache = OrderedDict()
     stationlist_1D = []
     obstimelist_1D = []
-    obs_array1D = np.empty(0)
+    obslon_1D = np.empty(0)
+    obslat_1D = np.empty(0)
+    obsalt_1D = np.empty(0)
+    obsmix_1D = np.empty(0)
     inic_array1D = np.empty(0)
     jac_array = None
     rundir_list = []
@@ -405,6 +408,9 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
         #
         obslist_curday = []
         stalist_curday = []
+        obslonlist_curday = []
+        obslatlist_curday = []
+        obsaltlist_curday = []
         for ista,_obsid in enumerate(obsinfo_curday.index):
             #
             #-- ATTENTION:
@@ -421,11 +427,13 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
             #     
             #
             if domain_tag=='glb600x400': #-- flask measurements
-                _mix = obsinfo_curday.loc[_obsid,'mixing_ratio']
-                _obstime = obsinfo_curday.loc[_obsid,'time']
-                obslist_curday.append(obsinfo_curday.loc[_obsid,'mixing_ratio'])
+                _obsid_data = obsinfo_curday.loc[_obsid,:]
                 stalist_curday.append(_obsid)
-                obstimelist_1D.append(_obstime)
+                obslist_curday.append(_obsid_data.mixing_ratio)
+                obslonlist_curday.append(_obsid_data.lon)
+                obslatlist_curday.append(_obsid_data.lat)
+                obsaltlist_curday.append(_obsid_data.alt)
+                obstimelist_1D.append(_obsid_data.time)
             else:
                 if args.obsdir==None:
                     msg = f"...no observation directory provided for continuous measurements " \
@@ -489,6 +497,9 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
                     obslist_curday.append(mix_day)
                     stalist_curday.append(_obsid)
                     obstimelist_1D.append(_obstime)
+                    obslonlist_curday.append(obs_df.loc[cnd_time,'longitude'].mean())
+                    obslatlist_curday.append(obs_df.loc[cnd_time,'latitude'].mean())
+                    obsaltlist_curday.append(obs_df.loc[cnd_time,'altitude'].mean())
                 else:
                     msg = f"...@{staid}, no observations found in time window {_ostart}==>{_oend}"
                     logger.info(msg)
@@ -515,7 +526,10 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
             stationlist_1D += list(obsinfo_curday.index)
         else:
             raise RuntimeError(f"unexpected domain -->{domain_tag}<--")
-        obs_array1D = np.concat((obs_array1D,np.array(obslist_curday))) 
+        obsmix_1D = np.concat((obsmix_1D,np.array(obslist_curday)))
+        obslon_1D = np.concat((obslon_1D,np.array(obslonlist_curday)))
+        obslat_1D = np.concat((obslat_1D,np.array(obslatlist_curday)))
+        obsalt_1D = np.concat((obsalt_1D,np.array(obsaltlist_curday)))
         #
         #-- initial concentration
         #
@@ -566,12 +580,12 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
         else:
             jac_array = np.concatenate((jac_array,jac3D), axis=0)
     #
-    nobs = len(obs_array1D)
+    nobs = len(obsmix_1D)
     msg = f"...collected {nobs} observations overall."
     logger.info(msg)
     # print(f"stationlist_1D -->{stationlist_1D}<--")
     # print(f"obstimelist_1D -->{obstimelist_1D}<--")
-    # print(f"obs_array1D -->{obs_array1D}<--")
+    # print(f"obsmix_1D -->{obsmix_1D}<--")
     # print(f"inic_array1D -->{inic_array1D}<--")
     # print(f"jac_array shape={jac_array.shape}")
 
@@ -585,7 +599,10 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
         emis_info=emis_info,
         stationlist_1D=np.array(stationlist_1D),
         obstimelist_1D=obstimelist_1D,
-        obs_array1D=obs_array1D,
+        obslon_1D=obslon_1D,
+        obslat_1D=obslat_1D,
+        obsalt_1D=obsalt_1D,
+        obsmix_1D=obsmix_1D,
         inic_array1D=inic_array1D,
         jac_array=jac_array)
     return input4inv
@@ -1287,6 +1304,8 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     """
     topdir = Path(args.outpath_tm5)
     obsid = args.obsid
+    difdeg_max = args.difdeg_max
+    difalt_max = args.difalt_max
     complevel = args.__dict__.get('complevel',4)
 
     #
@@ -1308,8 +1327,8 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     stationlist_1D = input4inv.stationlist_1D
     obstimelist_1D = input4inv.obstimelist_1D
     #--
-    obs_array1D = input4inv.obs_array1D
-    nobs = len(obs_array1D)
+    obsmix_1D = input4inv.obsmix_1D
+    nobs = len(obsmix_1D)
     inic_array1D = input4inv.inic_array1D
     jac_array = input4inv.jac_array #-- nobs/nemisday/ng
     #
@@ -1334,7 +1353,7 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
             dc     = np.dot(jac_array[iobs,:].ravel(), emis2D.ravel())
             msg = f"@{_obsday},{_staid}: deltac derived by daily-rate/temporal-total = " \
                 f"{dc}/{dc_tot}"
-            print(msg)
+            logger.info(msg)
 
     #
     #-- prepare output
@@ -1344,6 +1363,53 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     else:
         station_list = np.array(args.obsid)
     nsta = len(station_list)
+    #
+    #-- station coordinates were collected per-observation
+    #   (but we expect them not to change from obs to obs at the same station)
+    #
+    coords_fill = -9999.
+    station_coords = np.full((nsta,3), coords_fill) #-- lon/lat/alt
+    for ista,sta in enumerate(station_list):
+        idxs_sta = np.where(stationlist_1D==sta)
+        nidxs = len(idxs_sta[0])
+        _lon_sta = input4inv.obslon_1D[idxs_sta]
+        _lat_sta = input4inv.obslat_1D[idxs_sta]
+        _alt_sta = input4inv.obsalt_1D[idxs_sta]
+        if nidxs==1:
+            station_coords[ista,:] = (_lon_sta[0],_lat_sta[0],_alt_sta[0])
+        else:
+            #-- longitude
+            diflon_max = np.max(np.diff(np.abs(_lon_sta-_lon_sta[0])))
+            if diflon_max<=difdeg_max:
+                station_coords[ista,0] = _lon_sta[0]
+            else:
+                msg = f"@{sta}, varying longitudes diflon_max={diflon_max} exceeds threshold " \
+                    f"{difdeg_max}"
+                logger.debug(msg)
+            #-- latitude
+            diflat_max = np.max(np.diff(np.abs(_lat_sta-_lat_sta[0])))
+            if diflat_max<=difdeg_max:
+                station_coords[ista,1] = _lat_sta[0]
+            else:
+                msg = f"@{sta}, varying latitudes diflat_max={diflat_max} exceeds threshold " \
+                    f"{difdeg_max}" 
+                logger.debug(msg)
+            #-- altitude
+            sta_difalt_max = np.max(np.diff(np.abs(_alt_sta-_alt_sta[0])))
+            if sta_difalt_max<=difalt_max:
+                station_coords[ista,2] = _alt_sta[0]
+            else:
+                msg = f"@{sta}, varying altitudes sta_difalt_max={sta_difalt_max} exceeds threshold " \
+                    f"{difalt_max}"
+                logger.debug(msg)
+    #--
+    stacoords_per_sta = not (coords_fill in station_coords)
+    if stacoords_per_sta:
+        msg = f"observation coordinates will be written --per-station--"
+        logger.info(msg)
+    else:
+        msg = f"observation coordinates will be written --per-observation--"
+        logger.info(msg)
     trange_tag = f"{dayf.strftime('%Y%m%d')}--{dayl.strftime('%Y%m%d')}"
     if nsta==1:
         obsid_tag = station_list[0]
@@ -1367,12 +1433,31 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     if not args.jac4totemis:
         fp.createDimension('nemisday', nday)
     fp.createDimension('nsta', nsta)
+    #
     #-- unique list of stations
-    ncvar = fp.createVariable('station_list', str, ('nsta',))
+    #
+    ncvar = fp.createVariable('station_id', str, ('nsta',))
     ncvar[:] = station_list[:]
     ncvar.long_name = f"station_identifier_list"
     ncvar.units = ''
     ncvar.comment = f"comprises the list of unique stations. Note, that there may be no observations for a station on certain day(s)."
+    if stacoords_per_sta:
+        #-- longitude
+        ncvar = fp.createVariable('station_lon', 'f8', ('nsta',))
+        ncvar[:] = station_coords[:,0]
+        ncvar.long_name = 'station_longitude'
+        ncvar.units = 'degrees_east'
+        #-- latitude
+        ncvar = fp.createVariable('station_lat', 'f8', ('nsta',))
+        ncvar[:] = station_coords[:,1]
+        ncvar.long_name = 'station_longitude'
+        ncvar.units = 'degrees_north'
+        #-- altitude
+        ncvar = fp.createVariable('station_alt', 'f8', ('nsta',))
+        ncvar[:] = station_coords[:,2]
+        ncvar.long_name = 'station_altitude'
+        ncvar.units = 'm'
+
     #
     ncvar = fp.createVariable('lon', 'f8', ('ng',),
                               compression='zlib', complevel=complevel)
@@ -1395,7 +1480,7 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     #
     ncvar = fp.createVariable('obs', 'f8', ('nobs',),
                               compression='zlib', complevel=complevel)
-    ncvar[:] = obs_array1D[:]
+    ncvar[:] = obsmix_1D[:]
     ncvar.long_name = f"observed CH4 concentration"
     ncvar.units = 'ppb'
     #
@@ -1414,8 +1499,28 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     ncvar[:] = np.array([ _.strftime('%Y%m%dT%H%M%S') for _ in obstimelist_1D ])
     # for iobs in range(nobs):
     #     ncvar[iobs] = obstimelist_1D[iobs].strftime('%Y%m%dT%H')
-    ncvar.long_name = 'day_of_observation'
+    ncvar.long_name = 'time_of_observation'
     ncvar.units = ''
+    if not stacoords_per_sta:
+        #
+        ncvar = fp.createVariable('obslon', 'f8', ('nobs',),
+                                  compression='zlib', complevel=complevel)
+        ncvar[:] = input4inv.obslon_1D[:]
+        ncvar.long_name = 'longitude_of_observation'
+        ncvar.units = 'degrees_east'
+        #
+        ncvar = fp.createVariable('obslat', 'f8', ('nobs',),
+                                  compression='zlib', complevel=complevel)
+        ncvar[:] = input4inv.obslat_1D[:]
+        ncvar.long_name = 'latitude_of_observation'
+        ncvar.units = 'degrees_north'
+        #
+        ncvar = fp.createVariable('obsalt', 'f8', ('nobs',),
+                                  compression='zlib', complevel=complevel)
+        ncvar[:] = input4inv.obsalt_1D[:]
+        ncvar.long_name = 'altitude_of_observation'
+        ncvar.units = 'm'
+
     #
     if not args.jac4totemis:
         ncvar = fp.createVariable('obs_jacobian', 'f8', ('nobs','nemisday','ng',),
@@ -1905,6 +2010,14 @@ sparser.add_argument('--obsdir',
                      type=Path,
                      # default="/lunarc/nobackup/projects/ghg_inv/michael/FIT-IC/observations_fitic-gui",
                      help="""explicitly provided directory that contains obspack NetCDF data files with CH4 observations for selected station/site (!!!NOTE: this is only required in case the obs table files used for the underlying footprint computations still contain dummy measurement values instead of the real ones.!!!).""")
+sparser.add_argument('--difdeg_max',
+                     type=float,
+                     default=0.00001,
+                     help="""geographical coordinates may be varying per observation, in case their differences are below this threshold a single value is associated to only the station in the NetCDF file (default: %(default)s).""")
+sparser.add_argument('--difalt_max',
+                     type=float,
+                     default=0.1,
+                     help="""measurement altitude may be varying per observation, in case their differences are below this threshold a single value is associated to only the station in the NetCDF file (default: %(default)s[m]).""")
 sparser.add_argument('--refdir',
                      help="""TM5 forward simulation, can be used to verify the Jacobian approach.""") 
 sparser.add_argument('--outdir',
