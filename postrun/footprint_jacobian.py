@@ -82,7 +82,6 @@ def collect_input4inversion( args : ArgumentNamespace ) -> SimpleNamespace:
     dayl = args.selday
     host = args.__dict__.get('host', 'cosmos')
     obsid = args.obsid
-    clip_child = args.__dict__.get('clip_child', False)
     #-- turn dates into timestamp
     dayl = Timestamp(dayl)
     dayf = dayl - Timedelta(days=args.days-1) #-- #args.days overall, selected day is last
@@ -135,7 +134,7 @@ def collect_input4inversion( args : ArgumentNamespace ) -> SimpleNamespace:
     #-- load emissions
     #
     ldir = topdir / f"footprints_gns100x100_{dir_trange[-1].strftime('%Y%m%d')}"
-    emis_info = tm5rundir_emissions2D(ldir, trange=day_range, clip_child=clip_child)
+    emis_info = tm5rundir_emissions2D(ldir, trange=day_range, clip_child=False)
     emis2D = emis_info.emis2D
     nemisday,ng = emis2D.shape
     input4inv.emis_info = emis_info
@@ -214,7 +213,8 @@ def collect_input4inversion( args : ArgumentNamespace ) -> SimpleNamespace:
         #
         #-- 
         #
-        jac_info = tm5rundir_jacobian3D(rundir, trange=day_range, obsid=station_list, clip_child=clip_child)
+        jac_info = tm5rundir_jacobian3D(rundir, trange=day_range, obsid=station_list,
+                                        clip_child=False)
         jac3D = jac_info.jac3D
         #-- dimensional consistency with emissions
         if not np.all(emis_info.reg1D==jac_info.reg1D):
@@ -312,7 +312,6 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
     dayl = args.selday
     host = args.__dict__.get('host', 'cosmos')
     obsid = args.obsid
-    clip_child = args.__dict__.get('clip_child', False)
     #-- turn dates into timestamp
     dayl = Timestamp(dayl)
     dayf = dayl - Timedelta(days=args.days-1) #-- #args.days overall, selected day is last
@@ -341,18 +340,23 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
         #      footprints_<domain_tag>_20210202, ..., footprints_<domain_tag>_20210301
         #
         dirday = day + Timedelta(days=1)
-        rundir = topdir / dirday.strftime(f"footprints_{domain_tag}_%Y%m%d")
+        tstdir = topdir / dirday.strftime(f"footprints_{domain_tag}_%Y%m%d")
+        if not tstdir.is_dir():
+            tstdir_v2 = topdir / dirday.strftime(f"footprints_{domain_tag}_20210101--%Y%m%d")
+            if not tstdir_v2.is_dir():
+                msg = f"...neither ***{str(tstdir)}*** nor ***{str(tstdir_v2)}*** found on system"
+                raise RuntimeError(msg)
+            else:
+                rundir = tstdir_v2
+        else:
+            rundir = tstdir
         msg = f"@day={day.strftime('%Y-%m-%d')}, reading from directory -->{rundir}<--"
         logger.info(msg)
-        if not rundir.is_dir():
-            msg = f"...expected directory -->{str(rundir)}<-- not found!"
-            raise RuntimeError(msg)
-        else:
-            rundir_list.append(rundir)
+        rundir_list.append(rundir)
         #
         #-- emission information (!!! only from first directory !!! )
         #
-        cur_emis_info = tm5rundir_emissions2D(rundir, trange=day_range, clip_child=clip_child)
+        cur_emis_info = tm5rundir_emissions2D(rundir, trange=day_range, clip_child=False)
         if emis_info is None:
             emis_info = cur_emis_info
         else:
@@ -391,10 +395,10 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
         _n1 = len(obsinfo_curday.index)
         _n2 = len(list(set(obsinfo_curday.index)))
         if _n2<_n1:
-            msg = f"@{rundir}, need to drop duplicate observation identifiers in index!"
+            msg = f"@{rundir}, will drop duplicated observation identifiers in index!"
             logger.error(msg)
             logger.info(f"initially: -->{obsinfo_curday.index}<--")
-            obsinfo_curday = obsinfo_curday.loc[~obsinfo_curday.index.duplicated()]
+            obsinfo_curday = obsinfo_curday.loc[~obsinfo_curday.index.duplicated(keep=False)]
             logger.info(f"after droping duplicates: -->{obsinfo_curday.index}<--")
         #
         #-- read observations
@@ -403,8 +407,18 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
         stalist_curday = []
         for ista,_obsid in enumerate(obsinfo_curday.index):
             #
-            #-- NOTE: Guillaume has prepared flask obs table files
-            #         such that the actual measurement is included
+            #-- ATTENTION:
+            #   - Guillaume has prepared flask obs table files
+            #     such that the actual measurement is included and we can take if directly
+            #     from this file.
+            #   - !!!Contrary!!! the continuous obs table files that were used
+            #     -->SO FAR<-- for the footprint simulations only contain dummy
+            #     observations.
+            #     In this case, getting the measurement value is much more cumbersome:
+            #     - we have to go through the original observation files
+            #       (the user must have specified the observation directory on invocation!),
+            #       and extract the observation averaged over the station-specific time-window.
+            #     
             #
             if domain_tag=='glb600x400': #-- flask measurements
                 _mix = obsinfo_curday.loc[_obsid,'mixing_ratio']
@@ -413,6 +427,13 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
                 stalist_curday.append(_obsid)
                 obstimelist_1D.append(_obstime)
             else:
+                if args.obsdir==None:
+                    msg = f"...no observation directory provided for continuous measurements " \
+                        f"(domain {domain_tag})"
+                    raise RuntimeError(msg)
+                #
+                #-- cumbersome case: extract averaged observation from original observation file
+                #
                 _obstime = obsinfo_curday.loc[_obsid,'time']
                 obs_hr = _obstime.hour
                 obs_tw = obsinfo_curday.loc[_obsid,'time_window_length'] #-- time-window length [s]
@@ -537,7 +558,7 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
         #--
         #
         jac_info = tm5rundir_jacobian3D(rundir, trange=day_range, obsid=list(obsinfo_curday.index),
-                                        clip_child=clip_child)
+                                        clip_child=False)
         jac3D = jac_info.jac3D #-- nobs/nemisday/ng
         # print(f"@{dirday}, jac3D.shape={jac3D.shape}")
         if jac_array is None:
@@ -1416,8 +1437,6 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     #
     fp.description = f"Inputs for FIT-IC inversion environment."
     fp.footprint_directory = str(topdir.absolute())
-    # fp.emission_directory = str(outemis_info.emisdir)
-    # fp.obsfile = ", ".join(input4inv.obsfile_list)
     fp.history = f"{' '.join(sys.argv)}"
     fp.date_created = Timestamp.utcnow().isoformat()
     #
@@ -1426,7 +1445,7 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     fp.close()
     msg = f"generated file ***{outname}***"
     logger.info(msg)
-   
+
     
 def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
     """
@@ -1869,22 +1888,23 @@ sparser.add_argument('outpath_tm5',
 sparser.add_argument('domain',
                      choices=['gns100x100','glb600x400',],
                      help="""observational domain.""")
-sparser.add_argument('--obsdir',
-                     default="/lunarc/nobackup/projects/ghg_inv/michael/FIT-IC/observations_fitic-gui",
-                     help="""directory providing obspack NetCDF data files with CH4 observations for selected station/site (default: %(default)s).""")
 sparser.add_argument('--obsid',
                      nargs='+',
                      help="""select one single observational location (default: %(default)s).""")
 sparser.add_argument('--selday',
                      default="20210131",
                      help="""last observational day of accumulation period (default: %(default)s).""")
-sparser.add_argument('--jac4totemis',
-                     action='store_true',
-                     help="""whether to condense the Jacobian such that it reflects the sensitivity w.r.t. to the total emissions within the temporal domain.""")
 sparser.add_argument('--days',
                      type=int,
                      default=2,
                      help="""number of days backwards of accumulation period (default: %(default)s).""")
+sparser.add_argument('--jac4totemis',
+                     action='store_true',
+                     help="""whether to condense the Jacobian such that it reflects the sensitivity w.r.t. to the total emissions within the temporal domain.""")
+sparser.add_argument('--obsdir',
+                     type=Path,
+                     # default="/lunarc/nobackup/projects/ghg_inv/michael/FIT-IC/observations_fitic-gui",
+                     help="""explicitly provided directory that contains obspack NetCDF data files with CH4 observations for selected station/site (!!!NOTE: this is only required in case the obs table files used for the underlying footprint computations still contain dummy measurement values instead of the real ones.!!!).""")
 sparser.add_argument('--refdir',
                      help="""TM5 forward simulation, can be used to verify the Jacobian approach.""") 
 sparser.add_argument('--outdir',
