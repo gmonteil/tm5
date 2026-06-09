@@ -102,28 +102,37 @@ def subcmd_emis_visu_debug(args):
         latn = lat.max() + dlat/2
         domain_tag = f"{lonstr(lonw)}-{lonstr(lone)}x{latstr(lats)}-{latstr(latn)}"
         domain_extent = [lonw,lone,lats,latn]
-        da_plot = da_plot.sel(lat=slice(lats,latn),lon=slice(lonw,lone))
+        # da_plot = da_plot.sel(lat=slice(lats,latn),lon=slice(lonw,lone))
         # print(da_plot)
-        emis_tot = da_plot.sum().values
-        pltmin = da_plot.min().values
-        pltmean = da_plot.mean().values
-        pltmax = da_plot.max().values
-        pkw = { 'cbmin':args.cbmin, 'cbmax':args.cbmax }
-        pkw, cnorm = cnorm_set(pkw, pltmin, pltmax)
-        cmap = 'Reds'
-        f, ax = subplots(1, 1, figsize=args.figsize, subplot_kw=dict(projection=crs.PlateCarree()))
-        img = ax.imshow(da_plot, origin='lower', extent=domain_extent, norm=cnorm, cmap=cmap)
-        #-- add colorbar
-        cbar = colorbar(img)
-        cbar.set_label(f"[{da_plot.units}]")
         #--
+        f, ax = subplots(1, 1, figsize=args.figsize, subplot_kw=dict(projection=crs.PlateCarree()))
         if args.extent!=None:
             lonw,lone,lats,latn = args.extent
-            if args.extent==[-180,180,-90,90]:
+            if list(args.extent)==[-180,180,-90,90]:
                 domain_tag = 'global'
             else:
                 domain_tag = f"{lonstr(lonw)}-{lonstr(lone)}x{latstr(lats)}-{latstr(latn)}"
             ax.set_extent(args.extent)
+            #-- compute totals for only the visible domain
+            da_visu = da_plot.sel(lat=slice(lats,latn),lon=slice(lonw,lone))
+            emis_tot = da_visu.sum().values
+            pltmin = da_visu.min().values
+            pltmean = da_visu.mean().values
+            pltmax = da_visu.max().values           
+        else:
+            #-- compute totals for these regional emissions
+            da_visu = da_plot
+            emis_tot = da_visu.sum().values
+            pltmin = da_visu.min().values
+            pltmean = da_visu.mean().values
+            pltmax = da_visu.max().values
+        pkw = { 'cbmin':args.cbmin, 'cbmax':args.cbmax }
+        pkw, cnorm = cnorm_set(pkw, pltmin, pltmax)
+        cmap = 'Reds'
+        img = ax.imshow(da_plot, origin='lower', extent=domain_extent, norm=cnorm, cmap=cmap)
+        #-- add colorbar
+        cbar = colorbar(img)
+        cbar.set_label(f"[{da_plot.units}]")
 
         #
         ax.coastlines()
