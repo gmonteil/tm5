@@ -293,15 +293,15 @@ def subcmd_inversion_conc_visu(args):
     #
     #
     fc = xr.open_dataset(concfile)
-    station_list = fc.station_list.values
+    station_list = fc.station_id.values
     msg = f"detected stations -->{station_list}<--"
     logger.info(msg)
     conc = fc[['obs','iniconc','station','obstime','cprior','cpost']]
     conc_units = conc.obs.units
     conc_df = conc.to_dataframe()
-    conc_df.loc[:,'obstime'] = [Timestamp(_) for _ in conc_df.loc[:,'obstime']]
-    tstart = conc_df.loc[:,'obstime'].min()
-    tend   = conc_df.loc[:,'obstime'].max()
+    conc_df['time'] = [Timestamp(_) for _ in conc_df.loc[:,'obstime']]
+    tstart = conc_df.loc[:,'time'].min()
+    tend   = conc_df.loc[:,'time'].max()
     trange_tag = f"{tstart.strftime('%Y%m%d')}--{tend.strftime('%Y%m%d')}"
     outname = "fcpost.csv"
     conc_df.to_csv(outname, index=False)
@@ -311,25 +311,16 @@ def subcmd_inversion_conc_visu(args):
     #--
     #
     for ista,sta in enumerate(station_list):
-        # if sta!='cba_57':
-        #     continue
         cnd_sta = (conc_df.loc[:,'station']==sta)
         conc_sta = conc_df.loc[cnd_sta,:]
         _nobs = len(conc_sta)
         fig, ax = subplots(1, 1, figsize=args.figsize)
-        conc_sta.plot(x='obstime', y='obs', ax=ax, kind='line',
+        conc_sta.plot(x='time', y='obs', ax=ax, kind='line',
                       color='black', ls='', marker='D', markersize=4, label='obs')
-        conc_sta.plot(x='obstime', y='cprior', ax=ax, kind='line',
+        conc_sta.plot(x='time', y='cprior', ax=ax, kind='line',
                       color='red', ls='', marker='+', markersize=4, label='prior')
-        conc_sta.plot(x='obstime', y='cpost', ax=ax, kind='line',
+        conc_sta.plot(x='time', y='cpost', ax=ax, kind='line',
                       color='blue', alpha=0.5, ls='', marker='o', markersize=4, label='posterior')
-        # conc_sta.plot(x='obstime', y=['obs','cprior','cpost',], ax=ax, kind='line',
-        #               color=['k','r','blue',],
-        #               alpha=[1,1,0.5],
-        #               ls='',#['','','',],
-        #               marker='o', #['D','+','o',],
-        #               markersize=3,#[3, 2, 2],
-        #               label=['obs','prior','post'])
         ax.set_xlim([tstart, tend])
         title = f"{sta}, observed and simulated concentration (#obs={_nobs})"
         #-- fit-statistics (for >=3 observations)
