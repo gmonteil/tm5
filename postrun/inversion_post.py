@@ -114,18 +114,18 @@ def subcmd_emis_visu_debug(args):
                 domain_tag = f"{lonstr(lonw)}-{lonstr(lone)}x{latstr(lats)}-{latstr(latn)}"
             ax.set_extent(args.extent)
             #-- compute totals for only the visible domain
-            da_visu = da_plot.sel(lat=slice(lats,latn),lon=slice(lonw,lone))
-            emis_tot = da_visu.sum().values
-            pltmin = da_visu.min().values
-            pltmean = da_visu.mean().values
-            pltmax = da_visu.max().values           
+            da_visible = da_plot.sel(lat=slice(lats,latn),lon=slice(lonw,lone))
+            emis_tot = da_visible.sum().values
+            pltmin = da_visible.min().values
+            pltmean = da_visible.mean().values
+            pltmax = da_visible.max().values           
         else:
             #-- compute totals for these regional emissions
-            da_visu = da_plot
-            emis_tot = da_visu.sum().values
-            pltmin = da_visu.min().values
-            pltmean = da_visu.mean().values
-            pltmax = da_visu.max().values
+            da_visible = da_plot
+            emis_tot = da_visible.sum().values
+            pltmin = da_visible.min().values
+            pltmean = da_visible.mean().values
+            pltmax = da_visible.max().values
         pkw = { 'cbmin':args.cbmin, 'cbmax':args.cbmax }
         pkw, cnorm = cnorm_set(pkw, pltmin, pltmax)
         cmap = 'Reds'
