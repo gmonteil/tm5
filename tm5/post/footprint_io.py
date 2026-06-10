@@ -60,11 +60,13 @@ def _init_region_table():
     #
     for reg,reg_info in region_table.items():
         grid = reg_info.grid
+        area1D = grid.area.ravel()
         #
         lonmesh,latmesh = np.meshgrid(grid.lonc,grid.latc)
         region_table[reg].ng1D = grid.nlat*grid.nlon
         region_table[reg].lonc1D = lonmesh.ravel()
         region_table[reg].latc1D = latmesh.ravel()
+        region_table[reg].area1D = area1D
         if reg_info.child!=None:
             grid_child = region_table[reg_info.child].grid
             #-- create mask array, 0 within child region and 1 elsewhere 
@@ -84,6 +86,7 @@ def _init_region_table():
             region_table[reg].ng1D_clipped = nguse
             region_table[reg].lonc1D_clipped = lonmesh.ravel()[usemask]
             region_table[reg].latc1D_clipped = latmesh.ravel()[usemask]
+            region_table[reg].area1D_clipped = area1D[usemask]
 
 
 def regions1D_info( regions : list, clip_child : bool = False ) -> SimpleNamespace:
@@ -97,6 +100,7 @@ def regions1D_info( regions : list, clip_child : bool = False ) -> SimpleNamespa
     region_list = []
     lonc_list = []
     latc_list = []
+    area_list = []
     ng = 0
     for reg in regions:
         reg_info = region_table[reg]
@@ -107,21 +111,25 @@ def regions1D_info( regions : list, clip_child : bool = False ) -> SimpleNamespa
                 region_list = region_list + [reg,]*reg_info.ng1D
                 lonc_list.append(reg_info.lonc1D)
                 latc_list.append(reg_info.latc1D)
+                area_list.append(reg_info.area1D)
             else:
                 ng += reg_info.ng1D_clipped
                 region_list = region_list + [reg,]*reg_info.ng1D_clipped
                 lonc_list.append(reg_info.lonc1D_clipped)
                 latc_list.append(reg_info.latc1D_clipped)
+                area_list.append(reg_info.area1D_clipped)
         else:
             ng += reg_info.ng1D
             region_list = region_list + [reg,]*reg_info.ng1D
             lonc_list.append(reg_info.lonc1D)
             latc_list.append(reg_info.latc1D)
+            area_list.append(reg_info.area1D)
     #
     lonc1D = np.hstack(lonc_list)
     latc1D = np.hstack(latc_list)
+    area1D = np.hstack(area_list)
     reg1D  = np.array(region_list)
-    return SimpleNamespace(table=region_table, ng=ng, lonc1D=lonc1D, latc1D=latc1D, reg1D=reg1D)
+    return SimpleNamespace(table=region_table, ng=ng, lonc1D=lonc1D, latc1D=latc1D, area1D=area1D, reg1D=reg1D)
 
 
 def regiondomain_halo( region : str ) -> list:
