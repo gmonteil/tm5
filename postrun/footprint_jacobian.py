@@ -1643,9 +1643,15 @@ def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
     ncvar.units = 'degrees_north'
     ncvar.comment = 'references center of grid-cell in related zoom domain'
     ncvar[:] = reginfo.latc1D
+    #-- area
+    ncvar = fp.createVariable('area', 'f8', ('ng',),
+                              compression='zlib', complevel=complevel)
+    ncvar.long_name = 'gridcell_area'
+    ncvar.units = 'm2'
+    ncvar[:] = reginfo.area1D
     #-- region identifier
     ncvar = fp.createVariable('region', reginfo.reg1D.dtype, ('ng',))
-    ncvar.long_name = f"emission_region_identifier"
+    ncvar.long_name = f"gridcell_region_identifier"
     ncvar.units = ''
     ncvar[:] = reginfo.reg1D[:]
     #-- emission variable
