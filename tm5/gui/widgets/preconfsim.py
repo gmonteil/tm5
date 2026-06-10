@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 from loguru import logger
 import xarray as xr
-from pandas import read_csv, DataFrame, concat
+from pandas import read_csv, DataFrame, concat, Timestamp
 import numpy as np
 from collections import OrderedDict
 from glob import glob
@@ -98,7 +98,7 @@ def simulation_read_targets( simu : pn.viewable.Viewer, output_path : str|Path )
 
 
 @debug.timer
-def conc_statistics( conc : xr.Dataset, stations : list[str] ) -> DataFrame:
+def conc_statistics( conc : DataFrame, stations : list[str] ) -> DataFrame:
     """
     """
     # msg = f"stations -->{stations}<--"
@@ -114,9 +114,7 @@ def conc_statistics( conc : xr.Dataset, stations : list[str] ) -> DataFrame:
         }
     # msg = f"stats initial -->{stats}<-- (==>{stations}<==)"
     # logger.debug(msg)
-    dfc = conc.to_dataframe().reset_index()
-    #-- prefer station identifier (rather than station index) for output
-    dfc.loc[:,'station'] = stations[dfc.loc[:,'nsta'].values]
+    dfc = conc#.to_dataframe().reset_index()
     for sta in stations:
         # msg = f"now @station={sta}"
         # logger.debug(msg)
@@ -175,7 +173,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     run_inv = param.Event(doc='Do an inversion', label='Perform an inversion')
 
     # Data containers:
-    conc        = param.ClassSelector(class_=xr.Dataset, precedence=-1)
+    conc        = param.ClassSelector(class_=DataFrame, precedence=-1)
     stats4conc  = param.ClassSelector(class_=DataFrame, precedence=-1)
     tgt_table   = param.ClassSelector(class_=DataFrame, precedence=-1)
 
@@ -329,21 +327,22 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         #
         #-- fc.nc: simulated concentrations using the ingoing emissions
         #          c = iniconc + ojac*emis
+        #
         fc = xr.open_dataset(output_path / 'fc.nc')
-        #-- for now extracting the observations from file foj.nc
-        #   NOTE: this will certainly change, but currently all
-        #         input for the inversion (including obs.) are present in this file
-        obs = xr.open_dataset(output_path / 'foj.nc')
         #-- store list of stations
-        self.stations = obs.station.values #-- get station identifiers
-        # logger.debug(f"stations -->{self.stations}<--")
-        obs['forward'] = fc['conc']
-        # if self.conc is None:
-        #     self.conc = obs[['obs']]
+        self.stations = fc.station.values #-- get station identifiers
+        self.conc_units = fc.obs.units
+        conc = fc[['obs', 'conc', 'station','obstime',]]
+        conc_df = conc.to_dataframe()
+        conc_df['time'] = [Timestamp(_) for _ in conc_df.loc[:,'obstime']]
+        #-- rename (NOTE: must be consistent with _conc_plot!)
+        conc_df = conc_df.rename(columns={'conc':'forward'})
         # tag = self.experiment
         # self.conc[f'forward_{tag}'] = obs['forward']
         # self.conc['forward'] = obs['forward']
-        self.conc = obs[['obs', 'forward', 'iniconc']]
+        self.conc = conc_df
+        msg = f"self.conc set with columns -->{self.conc.columns}<--"
+        logger.debug(msg)
         #
         #--
         #
@@ -407,28 +406,22 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         #
         #-- processing result/output folder
         #
-        #-- MVO-TODO::currently observations are *still* in file foj.nc
-        #             (which also holds the observational Jacobian),
-        #             this may change in future...
-        obs = xr.open_dataset(output_path / 'foj.nc')
-        self.stations = obs.station.values #-- get station identifiers
         #-- 20260526: txk had changed code such that prior/posterior
         #             simulated concentrations (including the signal from
         #             the initial concentration) both are in file
         #             fcpost.nc
+        #-- 20260609: mvo start adaption to 1d obs vector output
         fc = xr.open_dataset(output_path / 'fcpost.nc')
-        obs['apri'] = fc['cprior']
-        obs['apos'] = fc['cpost']
-        # msg = f"setting self.conc/self.stats4conc"
-        # logger.debug(msg)
-        # if self.conc is None:
-        #     self.conc = obs[['obs']]
-        # tag = self.experiment
-        # self.conc['apri'] = obs['apri']
-        # self.conc['apos'] = obs['apos']
-        # self.conc[f'apri_{tag}'] = obs['apri']
-        # self.conc[f'apos_{tag}'] = obs['apos']
-        self.conc = obs[['obs', 'apri', 'apos']]
+        self.stations = fc.station_id.values #-- get station identifiers
+        conc = fc[['obs', 'cprior', 'cpost','station','obstime',]]
+        #-- turn into data frame
+        conc_df = conc.to_dataframe()
+        conc_df['time'] = [Timestamp(_) for _ in conc_df.loc[:,'obstime']]
+        #-- renaming columns to be consistent with _conc_plot
+        conc_df = conc_df.rename(columns={'cprior':'apri','cpost':'apos'})
+        
+        self.conc = conc_df
+        self.conc_units = fc.obs.units
         self.stats4conc = conc_statistics(self.conc, self.stations)
         # msg = f"...setting done."
         # logger.debug(msg)
@@ -456,35 +449,33 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         # logger.debug(msg)
         if self.conc is None:
             return ''
-        dfc = self.conc.to_dataframe().reset_index()
-        # logger.debug(f"dfc.columns -->{dfc.columns}<--")
-        #-- prefer station identifier (rather than station index) for output
-        dfc.loc[:,'station'] = self.stations[dfc.loc[:,'nsta'].values]
-        p = dfc.hvplot.points(x='nobsday', y='obs', grid=True, c='k', label='obs', groupby='station')
+        #--
+        dfc = self.conc
+        p = dfc.hvplot.points(x='time', y='obs', grid=True, c='k', label='obs', groupby='station')
         if 'forward' in dfc.columns:  #-- only forward simulation
-            p *= dfc.hvplot.line(x='nobsday', y='forward', c='r', label='forward', groupby='station')
+            p *= dfc.hvplot.line(x='time', y='forward', c='r', label='forward', groupby='station')
             # Get all the other (older) forwards:
             # for fwd in [_ for _ in dfc.columns if _.startswith('forward') and not _.endswith(self.experiment)]:
             #     col = next(color_palette)
             #     p *= dfc.hvplot.line(x='nobsday', y=fwd, label=fwd.rsplit('_', maxsplit=1)[0], groupby='station', line_width=1, color=col)
         elif 'apos' in dfc.columns:   #-- result from inversion
-            p *= dfc.hvplot.line(x='nobsday', y='apri', label='prior', groupby='station', c='r')
-            p *= dfc.hvplot.line(x='nobsday', y='apos', label='posterior', groupby='station', c='c')
+            p *= dfc.hvplot.line(x='time', y='apri', label='prior', groupby='station', c='r')
+            p *= dfc.hvplot.line(x='time', y='apos', label='posterior', groupby='station', c='c')
             # for apri in [_ for _ in dfc.columns if _.startswith('apri') and not _.endswith(self.experiment)]:
             #     apos = apri.replace('apri', 'apos')
             #     col = next(color_palette)
-            #     p *= dfc.hvplot.line(x='nobsday', y='apri', label=apri.rsplit('_', maxsplit=1)[0], groupby='station', color=col, line_dash='dotted')
+            #     p *= dfc.hvplot.line(x='time', y='apri', label=apri.rsplit('_', maxsplit=1)[0], groupby='station', color=col, line_dash='time')
             #     p *= dfc.hvplot.line(x='nobsday', y='apos', label=apos.rsplit('_', maxsplit=1)[0], groupby='station', color=col)
         title = "Time-series of observed and simulated concentration at selected station"
-        #-- MVO-TODO::units ['ppb'] should not be hard-coded!!
-        plotcfg = opts.Overlay(title=title, ylabel="[ppb]")
+        plotcfg = opts.Overlay(title=title, ylabel="[{self.conc_units}]")
         p.opts(plotcfg)
         msg = f"self.obs_table -->{self.obs_table}<--"
         logger.debug(msg)
-        if self.obs_table is None:
-            return p
-        else:
-            return pn.Row(p, plot_site_info(self.obs_table, 'cbw_207'))
+        return p
+        # if self.obs_table is None:
+        #     return p
+        # else:
+        #     return pn.Row(p, plot_site_info(self.obs_table, 'cbw_207'))
         # return p
         # return pn.Column(
         #     pn.pane.Markdown('# Concentration time-series at selected station'),
