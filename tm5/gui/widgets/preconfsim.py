@@ -13,7 +13,7 @@ from glob import glob
 import panel as pn
 import param
 import hvplot.xarray
-from holoviews import opts
+from holoviews import opts, Overlay
 from typing import Tuple
 import io
 
@@ -25,6 +25,7 @@ from tm5.gui.widgets.widget_utils import experiment_desc, plot_site_info, load_o
 from itertools import cycle
 from bokeh.palettes import Category10
 import itertools
+import geoviews.feature as gf
 
 
 
@@ -107,7 +108,7 @@ def conc_statistics(conc: xr.Dataset, label: str) -> DataFrame:
     """
     """
     dfc = conc.to_dataframe()
-    stations = set(conc.station.values)
+    stations = set(dfc.station.values)
     
     # msg = f"stations -->{stations}<--"
     # logger.debug(stations)
@@ -178,7 +179,7 @@ def load_inversion_concentrations(path: Path, label: str) -> xr.Dataset:
     fc = xr.open_dataset(path / 'fcpost.nc')
 
     # Reformat the data as a dataframe, consistent with _conc_plot
-    conc = fc[['obs', 'cprior', 'cpost', 'station', 'obstime']].to_dataframe()
+    conc = fc[['obs', 'cprior', 'cpost', 'station', 'obstime', 'station_lon', 'station_lat', 'station_alt']].to_dataframe()
     conc['time'] = [Timestamp(_) for _ in conc.loc[:,'obstime']]
     conc = conc.rename(columns={'cprior':f'apri_{label}', 'cpost':f'apos_{label}'})
     conc = conc.to_xarray()
@@ -188,7 +189,7 @@ def load_inversion_concentrations(path: Path, label: str) -> xr.Dataset:
 
 def load_forward_concentrations(path: Path, label: str) -> xr.Dataset:
     fc = xr.open_dataset(path / 'fc.nc')
-    conc = fc[['obs', 'conc', 'station','obstime']].to_dataframe()
+    conc = fc[['obs', 'conc', 'station','obstime', 'station_lon', 'station_lat', 'station_alt']].to_dataframe()
     conc['time'] = [Timestamp(_) for _ in conc.loc[:,'obstime']]
     conc = conc.rename(columns={'conc':f'forward_{label}'})
     conc = conc.to_xarray()
@@ -201,6 +202,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     run_forward = param.Event(doc='Do a forward run', label='Perform a forward simulation')
     run_inv = param.Event(doc='Do an inversion', label='Perform an inversion')
     alert = param.String(doc='Generic object for error messages or others ...', default='')
+    current_site = param.Selector(doc='Current site to be displayed', default=None)
 
     # Data containers:
     conc        = param.ClassSelector(class_=xr.Dataset)
@@ -219,6 +221,12 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.experiment = self.param.experiment.objects[0]
         self.cache_fwd = OrderedDict()
         self.cache_inv = OrderedDict()
+
+        # Globally accessible widgets
+        self.widgets = {
+            'station_selector': pn.widgets.Select.from_param(self.param.current_site)
+        }
+        self.widgets['station_selector'].visible = False
         
     def __panel__(self):
         header_pane = pn.pane.Markdown('# Preconfigured experiments')
@@ -234,9 +242,12 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                 pn.widgets.Button.from_param(self.param.run_inv)
             ),
             self._alert,
-            self.conc_plot,
-            self.conc_stats_table,
-            self.target_table,
+            # self.conc_plot,
+            pn.Row(self._conc_plot, pn.Column(
+                self.widgets['station_selector'], 
+                self.map_sites)
+            ),
+            pn.Row(self.conc_stats_table, self.target_table),
         )
 
     def _emistable_md(self):
@@ -269,6 +280,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         except requests.exceptions.JSONDecodeError:
             self.alert = f"{task} run failed: backend returned non-JSON for emis={self.experiment} at {url}. Body: {r.text[:500]}"
             return
+        self.alert = ''
 
         output_path = Path(payload['output'])
         if task == 'inversion':
@@ -304,6 +316,9 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             self.conc = conc
         else:
             self.conc = xr.merge([self.conc, conc], compat='override')
+        self.param.current_site.objects = set(self.conc.station.values.reshape(-1))
+        self.current_site = self.param.current_site.objects[0]
+        self.widgets['station_selector'].visible = True
 
     @param.depends('alert')
     def _alert(self):
@@ -311,15 +326,13 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             return ''
         return pn.pane.Alert(self.alert, alert_type='danger')
 
-    @param.depends('conc')
     def conc_plot(self):
         if self.conc is None:
             return ''
-
         cur_exp = get_exp_label(self.experiment)
         dfc = self.conc.to_dataframe()
-        p = dfc.hvplot.points(x='time', y='obs', grid=True, c='k', label='obs', groupby='station', width=1500, height=500)
-        
+        dfc = dfc[dfc.station == self.current_site]
+        p = dfc.hvplot.points(x='time', y='obs', grid=True, c='k', label='obs', width=1500, height=500)
         color_palette = itertools.cycle(Category10[10])
         print(cur_exp, dfc.columns)
 
@@ -328,9 +341,9 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         for iexp, exp in enumerate(experiments):
             col = next(color_palette)# Category10[10][iexp]
             if exp == cur_exp:
-                p *= dfc.hvplot.line(x='time', y=f'forward_{exp}', c=col, label=exp, groupby='station', muted_alpha=0, line_width=3, line_dash='dotdash')
+                p *= dfc.hvplot.line(x='time', y=f'forward_{exp}', c=col, label=exp, muted_alpha=0, line_width=3, line_dash='dotdash')
             else:
-                p *= dfc.hvplot.line(x='time', y=f'forward_{exp}', c=col, label=exp, groupby='station', muted_alpha=0, line_width=1, line_dash='dotdash')
+                p *= dfc.hvplot.line(x='time', y=f'forward_{exp}', c=col, label=exp, muted_alpha=0, line_width=1, line_dash='dotdash')
                     
         # Find all "inversion" experiments
         experiments = {c[5:] for c in dfc.columns if c.startswith('apri_')}
@@ -338,11 +351,11 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         for iexp, exp in enumerate(experiments):
             col = next(color_palette)
             if exp == cur_exp:
-                p *= dfc.hvplot.line(x='time', y=f'apri_{exp}', c=col, line_dash='dashed', label=f'prior_{exp}', groupby='station', line_width=3, muted_alpha=0)
-                p *= dfc.hvplot.line(x='time', y=f'apos_{exp}', c=col, label=f'posterior_{exp}', groupby='station', line_width=3, muted_alpha=0)
+                p *= dfc.hvplot.line(x='time', y=f'apri_{exp}', c=col, line_dash='dashed', label=f'prior_{exp}', line_width=3, muted_alpha=0)
+                p *= dfc.hvplot.line(x='time', y=f'apos_{exp}', c=col, label=f'posterior_{exp}', line_width=3, muted_alpha=0)
             else:
-                p *= dfc.hvplot.line(x='time', y=f'apri_{exp}', c=col, line_dash='dashed', label=f'prior_{exp}', groupby='station', line_width=1, muted_alpha=0)
-                p *= dfc.hvplot.line(x='time', y=f'apos_{exp}', c=col, label=f'posterior_{exp}', groupby='station', line_width=1, muted_alpha=0)
+                p *= dfc.hvplot.line(x='time', y=f'apri_{exp}', c=col, line_dash='dashed', label=f'prior_{exp}', line_width=1, muted_alpha=0)
+                p *= dfc.hvplot.line(x='time', y=f'apos_{exp}', c=col, label=f'posterior_{exp}', line_width=1, muted_alpha=0)
         return p
 
     @param.depends('stats4conc')
@@ -378,7 +391,17 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             #-- MVO-TODO::units [MtCH4] should not be hard-coded here
             return pn.Column(pn.pane.Markdown('# Target emission quantities [MtCH4]'), p)
 
-        
+    @param.depends('conc', 'current_site')
+    def map_sites(self):
+        if self.conc is None:
+            return ''
+        if self.current_site is None:
+            return ''
+        df = self.conc.to_dataframe().loc[:, ['station', 'station_lon', 'station_lat']].drop_duplicates()
+        p = df.hvplot.points(x='station_lon', y='station_lat', geo=True, coastline=True, xlim=(-15, 35), ylim=(33, 73)) * gf.borders()
+        p *= df[df.station == self.current_site].hvplot.points(x='station_lon', y='station_lat', xlim=(-15, 35), ylim=(33, 73), c='r', s=50)
+        return p
+
 # class PreconfExperimentGUI_(pn.viewable.Viewer):
 #     experiment = param.FileSelector(doc='Prior emission dataset')
 #     run_forward = param.Event(doc='Do a forward run', label='Perform a forward simulation')
