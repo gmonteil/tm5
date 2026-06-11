@@ -243,7 +243,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             ),
             self._alert,
             # self.conc_plot,
-            pn.Row(self._conc_plot, pn.Column(
+            pn.Row(self.conc_plot, pn.Column(
                 self.widgets['station_selector'], 
                 self.map_sites)
             ),
