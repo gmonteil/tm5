@@ -109,7 +109,7 @@ def conc_statistics(conc: xr.Dataset, label: str) -> DataFrame:
     """
     dfc = conc.to_dataframe()
     stations = set(dfc.station.values)
-    
+
     # msg = f"stations -->{stations}<--"
     # logger.debug(stations)
     stats = {
@@ -150,7 +150,7 @@ def conc_statistics(conc: xr.Dataset, label: str) -> DataFrame:
         #-- posterior statistics
         #
         _bias_post  = _capos - _cobs
-        meanbias_post = _bias_post.mean()       
+        meanbias_post = _bias_post.mean()
         rmse_post  = (_bias_post **2).mean() ** .5
         corrcoef_post = np.corrcoef(_capos.values,_cobs.values)[0,1]
         # msg = f"@{sta}, rmse post ==>{rmse_post}<=="
@@ -179,17 +179,25 @@ def load_inversion_concentrations(path: Path, label: str) -> xr.Dataset:
     fc = xr.open_dataset(path / 'fcpost.nc')
 
     # Reformat the data as a dataframe, consistent with _conc_plot
-    conc = fc[['obs', 'cprior', 'cpost', 'station', 'obstime', 'station_lon', 'station_lat', 'station_alt']].to_dataframe()
+    conc = fc[['obs', 'cprior', 'cpost', 'station', 'obstime']].to_dataframe()
+    for station_id in fc.station_id.values:
+        stat = fc.sel(nsta = fc.station_id == station_id)
+        conc.loc[conc.station == station_id, 'station_lon'] = float(stat.station_lon.values[0])
+        conc.loc[conc.station == station_id, 'station_lat'] = float(stat.station_lat.values[0])
     conc['time'] = [Timestamp(_) for _ in conc.loc[:,'obstime']]
     conc = conc.rename(columns={'cprior':f'apri_{label}', 'cpost':f'apos_{label}'})
     conc = conc.to_xarray()
     conc.attrs['units'] = fc.obs.units
-    return conc 
+    return conc
 
 
 def load_forward_concentrations(path: Path, label: str) -> xr.Dataset:
     fc = xr.open_dataset(path / 'fc.nc')
-    conc = fc[['obs', 'conc', 'station','obstime', 'station_lon', 'station_lat', 'station_alt']].to_dataframe()
+    conc = fc[['obs', 'conc', 'station', 'obstime']].to_dataframe()
+    for station_id in fc.station_id.values:
+        stat = fc.sel(nsta = fc.station_id == station_id)
+        conc.loc[conc.station == station_id, 'station_lon'] = float(stat.station_lon.values[0])
+        conc.loc[conc.station == station_id, 'station_lat'] = float(stat.station_lat.values[0])
     conc['time'] = [Timestamp(_) for _ in conc.loc[:,'obstime']]
     conc = conc.rename(columns={'conc':f'forward_{label}'})
     conc = conc.to_xarray()
@@ -212,10 +220,10 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     def __init__(self, gui_settings: DictConfig):
 
         self._message = ''
-        
+
         super().__init__()
         self.gui_settings = gui_settings
-        
+
         # Load the file list
         self.param.experiment.path = self.gui_settings.emissions.glob_pattern
         self.experiment = self.param.experiment.objects[0]
@@ -227,7 +235,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             'station_selector': pn.widgets.Select.from_param(self.param.current_site)
         }
         self.widgets['station_selector'].visible = False
-        
+
     def __panel__(self):
         header_pane = pn.pane.Markdown('# Preconfigured experiments')
         expdesc_pane = pn.pane.Markdown(
@@ -235,8 +243,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                     stylesheets=[preconfsim_stylesheet],
                     css_classes=['precomp-right'])
         return pn.Column(
-            header_pane, 
-            pn.Row(pn.widgets.Select.from_param(self.param.experiment), expdesc_pane), 
+            header_pane,
+            pn.Row(pn.widgets.Select.from_param(self.param.experiment), expdesc_pane),
             pn.Row(
                 pn.widgets.Button.from_param(self.param.run_forward),
                 pn.widgets.Button.from_param(self.param.run_inv)
@@ -244,7 +252,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             self._alert,
             # self.conc_plot,
             pn.Row(self.conc_plot, pn.Column(
-                self.widgets['station_selector'], 
+                self.widgets['station_selector'],
                 self.map_sites)
             ),
             pn.Row(self.conc_stats_table, self.target_table),
@@ -269,7 +277,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             return self.cache_inv[self.experiment]
         elif self.experiment in self.cache_fwd and task == 'forward':
             return self.cache_fwd[self.experiment]
-            
+
         url = f"{self.gui_settings.backend_url}/forward"
         r = requests.get(url, params={'emis': self.experiment, 'task': task})
         if not r.ok:
@@ -344,7 +352,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                 p *= dfc.hvplot.line(x='time', y=f'forward_{exp}', c=col, label=exp, muted_alpha=0, line_width=3, line_dash='dotdash')
             else:
                 p *= dfc.hvplot.line(x='time', y=f'forward_{exp}', c=col, label=exp, muted_alpha=0, line_width=1, line_dash='dotdash')
-                    
+
         # Find all "inversion" experiments
         experiments = {c[5:] for c in dfc.columns if c.startswith('apri_')}
         # Plot the experiments:
@@ -371,7 +379,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
     @param.depends('tgt_table')
     def target_table(self):
-        
+
         if self.tgt_table is None:
             return ''
         else:
@@ -382,7 +390,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                 fid.write(df.to_csv(index=False).encode('utf-8'))
                 fid.seek(0)
                 return fid
-                
+
             nc = len(df.columns)
             formatters = [lambda x: f'{x:.3f}'] * nc
             button = pn.widgets.FileDownload(callback=get_csv_file, filename="targets.csv", label="Download Data (CSV)", button_type="primary")
@@ -442,7 +450,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 #             css_classes=['precomp-right'])
 #         return pn.Column(
 #             header_pane,
-#             pn.Row(pn.widgets.Select.from_param(self.param.experiment),expdesc_pane), 
+#             pn.Row(pn.widgets.Select.from_param(self.param.experiment),expdesc_pane),
 #             # pn.pane.Markdown("== some description of the selected experiment =="),
 #             pn.Row(self.button_fwd, self.button_inv),
 #             # self.stations_widgets,
@@ -465,7 +473,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 #             desc_html += f'<td>{desc}</td>'
 #             desc_html += f'</tr>'
 #             return desc_html
-        
+
 #         exp_list = list(self.param.experiment.objects)
 #         tbl = f'<table>'
 #         #-- header
@@ -509,7 +517,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 #     #                 obsinfo_list.append(df)
 #     #     self.obs_table = concat(obsinfo_list)
 #     #     logger.debug(f"self.obs_table -->{self.obs_table.shape}<--")
-        
+
 #     @param.depends('run_forward', watch=True)
 #     def _run_forward(self):
 #         #
@@ -620,7 +628,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 #         self.stations = fc.station_id.values #-- get station identifiers
 #         self.conc = conc
 #         self.conc_units = fc.obs.units
-        
+
 #     @param.depends('run_inv', watch=True)
 #     def _run_inv(self):
 #         self.tgt_table = None
