@@ -334,8 +334,11 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             return ''
         return pn.pane.Alert(self.alert, alert_type='danger')
 
+    @param.depends('conc', 'current_site')
     def conc_plot(self):
         if self.conc is None:
+            return ''
+        if self.current_site is None:
             return ''
         cur_exp = get_exp_label(self.experiment)
         dfc = self.conc.to_dataframe()
