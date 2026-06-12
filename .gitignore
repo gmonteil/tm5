@@ -14,3 +14,8 @@ bin/congrad.exe
 demos/*
 plotsdir/
 plotsdir.old/
+build/lib/tm5/__init__.py
+/build/lib/tm5/
+/footprints/4server-both-11854_8-icos-stations/
+/tm5/gui/.ipynb_checkpoints/
+/tm5/gui/widgets/.ipynb_checkpoints/
