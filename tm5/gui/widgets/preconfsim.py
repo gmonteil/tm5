@@ -211,6 +211,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     alert = param.String(doc='Generic object for error messages or others ...', default='')
     current_site = param.Selector(doc='Current site to be displayed', default=None)
     sites_list = param.List(default=[], doc='List of observation sites available (for internal use ...)')
+    simul_type = param.Selector(objects=['fwd', 'inv'], allow_None=True, default=None)
 
     # Data containers:
     conc        = param.ClassSelector(class_=xr.Dataset)
@@ -252,10 +253,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             ),
             self._alert,
             # self.conc_plot,
-            pn.Row(self.conc_plot, pn.Column(
-                self.widgets['station_selector'],
-                self.map_sites)
-            ),
+            self.widgets['station_selector'],
+            pn.Row(self.conc_plot, self.map_sites),
             pn.Row(self.conc_stats_table, self.target_table),
         )
 
@@ -301,6 +300,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     @param.depends('run_forward', watch=True)
     def _run_forward(self):
         output_path = self._get_output_path('forward')
+        self.simul_type = 'fwd'
         if output_path is not None:
             self._read_concentrations(output_path, 'forward')
             self.stats4conc = None
@@ -309,6 +309,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     @param.depends('run_inv', watch=True)
     def _run_inv(self):
         output_path = self._get_output_path('inversion')
+        self.simul_type = 'inv'
         if output_path is not None:
             self._read_concentrations(output_path, 'inversion')
             self.stats4conc = conc_statistics(self.conc, get_exp_label(self.experiment))
@@ -349,30 +350,34 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         cur_exp = get_exp_label(self.experiment)
         dfc = self.conc.to_dataframe()
         dfc = dfc[dfc.station == self.current_site]
-        p = dfc.hvplot.points(x='time', y='obs', grid=True, c='k', label='obs', width=1000, height=400)
+        p = dfc.hvplot.points(x='time', y='obs', grid=True, c='k', label='obs', width=1200, height=400)
         color_palette = itertools.cycle(Category10[10])
         print(cur_exp, dfc.columns)
 
         # Find all "forward" experiments
-        experiments = {c.split('_', maxsplit=1)[1] for c in dfc.columns if c.startswith('forward_')}
-        for iexp, exp in enumerate(experiments):
-            col = next(color_palette)# Category10[10][iexp]
-            if exp == cur_exp:
-                p *= dfc.hvplot.line(x='time', y=f'forward_{exp}', c=col, label=exp, muted_alpha=0, line_width=3, line_dash='dotdash')
-            else:
-                p *= dfc.hvplot.line(x='time', y=f'forward_{exp}', c=col, label=exp, muted_alpha=0, line_width=1, line_dash='dotdash')
+        if self.simul_type == 'fwd':
+            experiments = [c.split('_', maxsplit=1)[1] for c in dfc.columns if c.startswith('forward_')]
+            print(experiments)
+            for iexp, exp in enumerate(experiments):
+                col = next(color_palette) # Category10[10][iexp]
+                print(exp, iexp, col)
+                if exp == cur_exp:
+                    p *= dfc.hvplot.line(x='time', y=f'forward_{exp}', c=col, label=exp, muted_alpha=0, line_width=4)
+                else:
+                    p *= dfc.hvplot.line(x='time', y=f'forward_{exp}', c=col, label=exp, muted_alpha=0, line_width=2)
 
         # Find all "inversion" experiments
-        experiments = {c[5:] for c in dfc.columns if c.startswith('apri_')}
-        # Plot the experiments:
-        for iexp, exp in enumerate(experiments):
-            col = next(color_palette)
-            if exp == cur_exp:
-                p *= dfc.hvplot.line(x='time', y=f'apri_{exp}', c=col, line_dash='dashed', label=f'prior_{exp}', line_width=3, muted_alpha=0)
-                p *= dfc.hvplot.line(x='time', y=f'apos_{exp}', c=col, label=f'posterior_{exp}', line_width=3, muted_alpha=0)
-            else:
-                p *= dfc.hvplot.line(x='time', y=f'apri_{exp}', c=col, line_dash='dashed', label=f'prior_{exp}', line_width=1, muted_alpha=0)
-                p *= dfc.hvplot.line(x='time', y=f'apos_{exp}', c=col, label=f'posterior_{exp}', line_width=1, muted_alpha=0)
+        elif self.simul_type == 'inv':
+            experiments = [c[5:] for c in dfc.columns if c.startswith('apri_')]
+            # Plot the experiments:
+            for iexp, exp in enumerate(experiments):
+                col = next(color_palette) # Category10[10][iexp]
+                if exp == cur_exp:
+                    p *= dfc.hvplot.line(x='time', y=f'apri_{exp}', c=col, line_dash='dashed', label=f'prior_{exp}', line_width=4, muted_alpha=0)
+                    p *= dfc.hvplot.line(x='time', y=f'apos_{exp}', c=col, label=f'posterior_{exp}', line_width=4, muted_alpha=0)
+                else:
+                    p *= dfc.hvplot.line(x='time', y=f'apri_{exp}', c=col, line_dash='dashed', label=f'prior_{exp}', line_width=2, muted_alpha=0)
+                    p *= dfc.hvplot.line(x='time', y=f'apos_{exp}', c=col, label=f'posterior_{exp}', line_width=2, muted_alpha=0)
         return p
 
     @param.depends('stats4conc')
@@ -419,7 +424,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         df.loc[df.station == self.current_site, 'cur_site'] = 1
         return df.hvplot.points(
             x='station_lon', y='station_lat', color='cur_site', cmap=['LightSlateGray', 'red'],
-            geo=True, coastline=True, xlim=(-15, 35), ylim=(33, 73), colorbar=False
+            geo=True, coastline=True, xlim=(-15, 35), ylim=(33, 73), colorbar=False, tiles='EsriTerrain'
         ) * self.widgets['borders']
 
 # class PreconfExperimentGUI_(pn.viewable.Viewer):
