@@ -402,7 +402,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             #-- MVO-TODO::units [MtCH4] should not be hard-coded here
             return pn.Column(pn.pane.Markdown('# Target emission quantities [MtCH4]'), p)
 
-    @param.depends('conc', 'current_site')
+    @param.depends('current_site')
     def map_sites(self):
         if self.conc is None:
             return ''
