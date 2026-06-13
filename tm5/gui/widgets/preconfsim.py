@@ -210,6 +210,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     run_inv = param.Event(doc='Do an inversion', label='Perform an inversion')
     alert = param.String(doc='Generic object for error messages or others ...', default='')
     current_site = param.Selector(doc='Current site to be displayed', default=None)
+    sites_list = param.List(default=[], doc='List of observation sites available (for internal use ...)')
 
     # Data containers:
     conc        = param.ClassSelector(class_=xr.Dataset)
@@ -324,9 +325,14 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             self.conc = conc
         else:
             self.conc = xr.merge([self.conc, conc], compat='override')
-        self.param.current_site.objects = set(self.conc.station.values.reshape(-1))
-        self.current_site = self.param.current_site.objects[0]
-        self.widgets['station_selector'].visible = True
+
+        # Now update the "sites_list", if needed:
+        sites_available = set(self.conc.station.values.reshape(-1))
+        if sites_available != set(self.sites_list):
+            self.sites_list = list(sites_available)
+            self.param.current_site.objects = set(self.conc.station.values.reshape(-1))
+            self.current_site = self.param.current_site.objects[0]
+            self.widgets['station_selector'].visible = True
 
     @param.depends('alert')
     def _alert(self):
@@ -402,7 +408,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             #-- MVO-TODO::units [MtCH4] should not be hard-coded here
             return pn.Column(pn.pane.Markdown('# Target emission quantities [MtCH4]'), p)
 
-    @param.depends('current_site')
+    @param.depends('current_site', 'sites_list')
     def map_sites(self):
         if self.conc is None:
             return ''
