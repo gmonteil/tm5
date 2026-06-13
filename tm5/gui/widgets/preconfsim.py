@@ -177,7 +177,6 @@ def conc_statistics(conc: xr.Dataset, label: str) -> DataFrame:
 
 def load_inversion_concentrations(path: Path, label: str) -> xr.Dataset:
     fc = xr.open_dataset(path / 'fcpost.nc')
-
     # Reformat the data as a dataframe, consistent with _conc_plot
     conc = fc[['obs', 'cprior', 'cpost', 'station', 'obstime']].to_dataframe()
     for station_id in fc.station_id.values:
@@ -235,6 +234,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             'station_selector': pn.widgets.Select.from_param(self.param.current_site)
         }
         self.widgets['station_selector'].visible = False
+        self.widgets['borders'] = gf.borders()
 
     def __panel__(self):
         header_pane = pn.pane.Markdown('# Preconfigured experiments')
@@ -343,7 +343,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         cur_exp = get_exp_label(self.experiment)
         dfc = self.conc.to_dataframe()
         dfc = dfc[dfc.station == self.current_site]
-        p = dfc.hvplot.points(x='time', y='obs', grid=True, c='k', label='obs', width=1500, height=500)
+        p = dfc.hvplot.points(x='time', y='obs', grid=True, c='k', label='obs', width=1000, height=400)
         color_palette = itertools.cycle(Category10[10])
         print(cur_exp, dfc.columns)
 
@@ -409,9 +409,12 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         if self.current_site is None:
             return ''
         df = self.conc.to_dataframe().loc[:, ['station', 'station_lon', 'station_lat']].drop_duplicates()
-        p = df.hvplot.points(x='station_lon', y='station_lat', geo=True, coastline=True, xlim=(-15, 35), ylim=(33, 73)) * gf.borders()
-        p *= df[df.station == self.current_site].hvplot.points(x='station_lon', y='station_lat', xlim=(-15, 35), ylim=(33, 73), c='r', s=50)
-        return p
+        df.loc[:, 'cur_site'] = 0
+        df.loc[df.station == self.current_site, 'cur_site'] = 1
+        return df.hvplot.points(
+            x='station_lon', y='station_lat', color='cur_site', cmap=['LightSlateGray', 'red'],
+            geo=True, coastline=True, xlim=(-15, 35), ylim=(33, 73), colorbar=False
+        ) * self.widgets['borders']
 
 # class PreconfExperimentGUI_(pn.viewable.Viewer):
 #     experiment = param.FileSelector(doc='Prior emission dataset')
