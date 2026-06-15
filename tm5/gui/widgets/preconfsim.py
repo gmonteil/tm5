@@ -14,8 +14,9 @@ import panel as pn
 import param
 import hvplot.xarray
 from holoviews import opts, Overlay
-from typing import Tuple
+from typing import Tuple, Dict
 import io
+from numpy import zeros
 
 from tm5 import debug
 from tm5.gui.css import *
@@ -26,6 +27,7 @@ from itertools import cycle
 from bokeh.palettes import Category10
 import itertools
 import geoviews.feature as gf
+from cartopy import crs
 
 
 
@@ -204,6 +206,31 @@ def load_forward_concentrations(path: Path, label: str) -> xr.Dataset:
     return conc
 
 
+def extract_emis_map(ds, region: str) -> xr.DataArray:
+    ds = ds.sel(ng = ds.region == region)
+    ilat = ((ds.lat - ds.lat.min()) / int(region[7])).values.astype(int)
+    ilon = ((ds.lon - ds.lon.min()) / int(region[3])).values.astype(int)
+    emis = zeros((ilat.max() + 1, ilon.max() + 1))
+    emis[ilat, ilon] = (ds.emission / ds.area).values
+    emis = xr.DataArray(data = emis, dims=('lat', 'lon'))
+    emis['lat'] = ('lat', sorted(set(ds.lat.values)))
+    emis['lon'] = ('lon', sorted(set(ds.lon.values)))
+    return emis
+
+
+def load_emissions(path: Path) -> Dict[str, xr.Dataset]:
+    apri = xr.open_dataset(path / 'fe.nc').isel(nmon=0)
+    apos = xr.open_dataset(path / 'fepost.nc')
+    apos['area'] = apri['area']  # "area" seems missing in the posterior file ... copy it from the prior
+    emis = {}
+    for region in ['glb600x400', 'eur300x200', 'gns100x100']:
+        emis[region] = xr.Dataset(dict(
+            apri = extract_emis_map(apri, region), 
+            apos = extract_emis_map(apos, region)
+        ))
+    return emis
+
+
 class PreconfExperimentGUI(pn.viewable.Viewer):
     experiment = param.FileSelector(doc='Prior emission dataset')
     run_forward = param.Event(doc='Do a forward run', label='Perform a forward simulation')
@@ -215,8 +242,9 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
     # Data containers:
     conc        = param.ClassSelector(class_=xr.Dataset)
-    stats4conc  = param.ClassSelector(class_=DataFrame)
-    tgt_table   = param.ClassSelector(class_=DataFrame)
+    stats4conc  = param.DataFrame()
+    tgt_table   = param.DataFrame()
+    emissions   = param.Dict()
 
     def __init__(self, gui_settings: DictConfig):
 
@@ -256,6 +284,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             self.widgets['station_selector'],
             pn.Row(self.conc_plot, self.map_sites),
             pn.Row(self.conc_stats_table, self.target_table),
+            self.map_emissions
         )
 
     def _emistable_md(self):
@@ -305,6 +334,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             self._read_concentrations(output_path, 'forward')
             self.stats4conc = None
             self.tgt_table = None
+            self.emissions = None
 
     @param.depends('run_inv', watch=True)
     def _run_inv(self):
@@ -312,6 +342,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.simul_type = 'inv'
         if output_path is not None:
             self._read_concentrations(output_path, 'inversion')
+            self.emissions = load_emissions(output_path)
             self.stats4conc = conc_statistics(self.conc, get_exp_label(self.experiment))
             self.tgt_table = simulation_read_targets(output_path)
 
@@ -426,6 +457,30 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             x='station_lon', y='station_lat', color='cur_site', cmap=['LightSlateGray', 'red'],
             geo=True, coastline=True, xlim=(-15, 35), ylim=(33, 73), colorbar=False, tiles='EsriTerrain'
         ) * self.widgets['borders']
+
+    @param.depends('emissions')
+    def map_emissions(self):
+        if self.emissions is None:
+            print("resetting emission map")
+            return
+        print("computing emission map")
+            
+        projection = crs.RotatedPole(pole_longitude=185, pole_latitude=50)
+        # projection = crs.PlateCarree()
+        cmap = 'RdBu_r'
+        clim = (-0.005, 0.005)
+        xlim = (-15, 35)
+        ylim = (33, 73)
+        return (
+            self.emissions['glb600x400'].apri.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim) *
+            self.emissions['eur300x200'].apri.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim) *
+            self.emissions['gns100x100'].apri.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim) *
+            self.widgets['borders'] +
+            (self.emissions['glb600x400'].apos - self.emissions['glb600x400'].apri).hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim) *
+            (self.emissions['eur300x200'].apos - self.emissions['eur300x200'].apri).hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim) *
+            (self.emissions['gns100x100'].apos - self.emissions['gns100x100'].apri).hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim) *
+            self.widgets['borders']
+        )
 
 # class PreconfExperimentGUI_(pn.viewable.Viewer):
 #     experiment = param.FileSelector(doc='Prior emission dataset')
