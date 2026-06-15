@@ -30,7 +30,7 @@ from tm5.post.footprint_io import tm5rundir_jacobian2D, tm5rundir_emissions1D
 from tm5.post.footprint_io import tm5rundir_jacobian3D, tm5rundir_emissions2D
 from tm5.post.footprint_io import tm5emisdir_load_emissions2D
 from tm5.post.plot_util import cnorm_set
-from tm5.post.utilities import lonstr,latstr,set_outname
+from tm5.post.utilities import lonstr,latstr,set_outname,create_sha512
 
 
 def tm5refdir_load_stationconc( refdir : str | Path, obsid : str ) -> xr.DataArray:
@@ -1559,6 +1559,7 @@ def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
     """
     tm5emisdir = args.tm5emisdir
     year = args.year
+    month = args.month
     regions = args.regions
     complevel = args.__dict__.get('complevel',4)
 
@@ -1601,16 +1602,23 @@ def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
         msg = f"...loading emissions for {dayf.strftime('%Y%m%d')} to {dayl.strftime('%Y%m%d')}"
         logger.info(msg)
         #-- load emissions for days in month
-        emis_info = tm5emisdir_load_emissions2D(tm5emisdir, tm5emisdir+'/ch4emis', day_range, regions)
+        emis_info = tm5emisdir_load_emissions2D(tm5emisdir, tm5emisdir+'/ch4emis', day_range, regions, zeroout_child=args.zeroout_child)
         #-- convert daily emission rates [kgCH4/cell/s] to [kgCH4/cell/month]
         emis_mm =  np.sum(emis_info.emis2D*nsecday, axis=0)
         emis_data[imon,:] = emis_mm[:]
     msg = f"...monthly emission data ready."
     logger.info(msg)
+
+    if month!=None:
+        selmon = Timestamp(f"{year:04}{month:02}01")
+        msg = selmon.strftime(f"restrictint to single month -->%Y-%B<--")
+        logger.info(msg)
+        month_tag = selmon.strftime('%Y-%b')
+    else:
+        month_tag = f"{year:04d}{mon_first:02d}--{year:04d}{mon_last:02d}"
     #
     #-- output preparation
     #
-    month_tag = f"{year:04d}{mon_first:02d}--{year:04d}{mon_last:02d}"
     region_tag = "-".join(regions)
     outname_tokens = [f"fitic-monthly-emissions", month_tag, region_tag,]
     outname = '_'.join(outname_tokens) + '.nc'
@@ -1623,12 +1631,15 @@ def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
     fp = Dataset(outname, 'w')
     fp.createDimension('ntc', ntc)
     fp.createDimension('ng', ng)
-    fp.createDimension('nmon', nmon)
-    #-- time variable
-    ncvar = fp.createVariable('time', 'i4', ('nmon','ntc',))
-    ncvar.long_name = "date_of_first_day_in_month"
-    ncvar.units = ''
-    ncvar[:] = time_data[:]
+    if month==None:
+        fp.createDimension('nmon', nmon)
+        #-- time variable
+        ncvar = fp.createVariable('time', 'i4', ('nmon','ntc',))
+        ncvar.long_name = "date_of_first_day_in_month"
+        ncvar.units = ''
+        ncvar[:] = time_data[:]
+    else:
+        pass
     #-- longitude
     ncvar = fp.createVariable('lon', 'f8', ('ng',),
                               compression='zlib', complevel=complevel)
@@ -1655,12 +1666,16 @@ def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
     ncvar.units = ''
     ncvar[:] = reginfo.reg1D[:]
     #-- emission variable
-    ncvar = fp.createVariable('emission', 'f8', ('nmon','ng'),
-                              compression='zlib', complevel=complevel)
+    if month==None:
+        ncvar = fp.createVariable('emission', 'f8', ('nmon','ng'),
+                                  compression='zlib', complevel=complevel)
+        ncvar[:] = emis_data[:]
+    else:
+        ncvar = fp.createVariable('emission', 'f8', ('ng',),
+                                  compression='zlib', complevel=complevel)
+        ncvar[:] = emis_data[month-1,:]
     ncvar.long_name = "CH4 emissions"
     ncvar.units = 'kgCH4/cell/month'
-    ncvar.comment = 'quantifies the total emission within the selected temporal period (per grid-cell)'
-    ncvar[:] = emis_data[:]
 
     #
     #-- global attributes
@@ -1854,7 +1869,101 @@ def subcmd_create_target_jacobian(args : ArgumentNamespace) -> None:
     logger.info(msg)
 
 
-    
+def subcmd_merge_ojac_obs1D(args):
+    """
+    """
+    filepath_ojac_cont = args.filepath_ojac_cont
+    filepath_ojac_flask = args.filepath_ojac_flask
+    stations_flask = args.stations_flask
+    complevel = args.__dict__.get('complevel',4)
+
+    ds_ojac_cont = xr.open_dataset(filepath_ojac_cont)
+    ds_ojac_flask = xr.open_dataset(filepath_ojac_flask)
+    print(ds_ojac_flask)
+    uniq_station_ids = ds_ojac_flask['station_id'].values
+    print(f"-->{uniq_station_ids}<--")
+    idxs_uniq_station_ids = np.where(np.isin(uniq_station_ids, stations_flask))
+    idxs_uniq_station_ids = idxs_uniq_station_ids[0]
+    obs_station_ids = ds_ojac_flask['station'].values
+    idxs_stations_flask = np.where(np.isin(obs_station_ids, stations_flask))
+    idxs_stations_flask = idxs_stations_flask[0]
+    ds_ojac_flask = ds_ojac_flask.sel(nsta=idxs_uniq_station_ids, nobs=idxs_stations_flask)
+    print(ds_ojac_flask)
+    print(f"-->{ds_ojac_flask['station_id'].values}<--")
+
+    dsmerged_table = OrderedDict()
+    for v in ds_ojac_cont.variables:
+        dims = ds_ojac_cont[v].dims
+        ds_cont = ds_ojac_cont[v].values
+        ds_flask = ds_ojac_flask[v].values
+        if dims==('nsta',):
+            print(f"-->{v}<-- depdends on nsta only")
+            dsmerged_table[v] = (np.hstack((ds_cont,ds_flask)), dims)
+        elif dims==('nobs',):
+            print(f"-->{v}<-- depdends on nobs only ({type(v)})")
+            print(type(ds_cont), type(ds_flask))
+            print(ds_cont.shape, ds_flask.shape)
+            dsmerged_table[v] = (np.hstack((ds_cont,ds_flask)), dims)
+        elif dims==('ng',):
+            print(f"-->{v}<-- depdends on ng only")
+            dsmerged_table[v] = (ds_cont,dims) #-- 1D grid vector taken from
+        elif dims==('nobs','ng'):
+            print(f"-->{v}<-- depdends on ==>{dims}<==")
+            nobs_cont,ng_cont = ds_cont.shape
+            nobs_flask,ng_flask = ds_flask.shape
+            ojac_flask = zeros((nobs_flask,ng_cont))
+            ojac_flask[:,:ng_flask] = ds_flask
+            ojac_out = np.concat((ds_cont,ojac_flask), axis=0)
+            print(f"ojac_out.shape = {ojac_out.shape}")
+            dsmerged_table[v] = (ojac_out, dims)
+        else:
+            raise RuntimeError(f"-->{v}<-- unexpected dimensions ==>{dims}<==")
+    #
+    #--
+    #
+    nobsout, ngout = dsmerged_table['obs_jacobian'][0].shape
+    nstaout     = dsmerged_table['station_id'][0].size
+    #
+    #--
+    #
+    flask_station_tag = 'flask-stations-' + '--'.join(stations_flask)
+    outname_tokens = [filepath_ojac_cont.stem, '---merged---', filepath_ojac_flask.stem, flask_station_tag]
+    outname = '_'.join(outname_tokens) + '.nc'
+    outname = set_outname(args, outname)
+    msg = f"writing inversion inputs to file ***{outname}***..."
+    logger.info(msg)
+    fp = Dataset(outname, 'w')
+    fp.createDimension('ng', ngout)
+    fp.createDimension('nobs', nobsout)
+    fp.createDimension('nsta', nstaout)
+    for v,v_info in dsmerged_table.items():
+        msg = f"@{v}, start with output..."
+        logger.debug(msg)
+        v_data, v_dims = v_info
+        if v in ['station_id','station','region','obstime']:
+            v_dtype = str
+            ncvar = fp.createVariable(v, v_dtype, v_dims)
+        else:
+            v_dtype = 'f8'
+            ncvar = fp.createVariable(v, v_dtype, v_dims, compression='zlib', complevel=complevel)
+        ncvar[:] = v_data[:]
+        attr_table = ds_ojac_cont[v].attrs
+        for k,v in ds_ojac_cont[v].attrs.items():
+            ncvar.setncattr(k, v)
+    #
+    #-- global attributes
+    #
+    fp.description = f"Observational Jacobian merged from continuous and flask observation contributions prepared for use within FIT-IC inversion environment"
+    fp.filepath_ojac_cont = str(filepath_ojac_cont.absolute())
+    fp.filepath_ojac_cont_sha512 = create_sha512(str(filepath_ojac_cont))
+    fp.filepath_ojac_flask = str(filepath_ojac_flask.absolute())
+    fp.filepath_ojac_flask_sha512 = create_sha512(str(filepath_ojac_flask))
+    fp.history = f"{' '.join(sys.argv)}"
+    fp.date_created = Timestamp.utcnow().isoformat()
+    fp.close()
+    msg = f"generated file ***{outname}***"
+    logger.info(msg)
+
 ################################################################################
 #
 #                   p a r s e r
@@ -2032,6 +2141,26 @@ sparser.add_argument('--outname',
                     help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
 
 #
+#--       merge_ojac_obs1D
+#
+sparser = subparsers.add_parser('merge_ojac_obs1D',
+                                help="""combine observational Jacobians prepared for continuous measurements and flask measurements.""")
+sparser.add_argument('filepath_ojac_cont',
+                     type=Path,
+                     help="""NetCDF file prepared for continous observations (it is assumed that it was built for grid-cells based on the AVENGERS 3-level zoom).""")
+sparser.add_argument('filepath_ojac_flask',
+                     type=Path,
+                     help="""NetCDF file prepared for flask observations (it is assumed that it was built for only the grid-cells in the global glb600x400 domain).""")
+sparser.add_argument('--stations_flask',
+                     nargs='+',
+                     default=['asc_90','brw_16','cgo_164','izo_2377','mhd_26','mlo_3437','spo_2815',],
+                     help="""restrict to selected flask stations (default: %(default)s).""")
+sparser.add_argument('--outdir',
+                    help="""top-level directory for any generated outputs..""")
+sparser.add_argument('--outname',
+                    help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
+
+#
 #--       monthly_emissions_for_inversion
 #
 sparser = subparsers.add_parser('monthly_emissions_for_inversion',
@@ -2042,11 +2171,18 @@ sparser.add_argument('--year',
                      type=int,
                      default=2021,
                      help="""selected year (default: %(default)s).""")
+sparser.add_argument('--month',
+                     type=int,
+                     choices=list(np.arange(1,13)),
+                     help="""restrict to single month.""")
 sparser.add_argument('--regions',
                      nargs='+',
                      choices=['glb600x400','eur300x200','gns100x100',],
                      default=['glb600x400','eur300x200','gns100x100',],
                      help="""selected regions (default: %(default)s), better only change for test purposes.""")
+sparser.add_argument('--zeroout_child',
+                     action='store_true',
+                     help="""whether to set emissions to zero when grid-cells are within child domain.""")
 sparser.add_argument('--outdir',
                     help="""top-level directory for any generated outputs..""")
 sparser.add_argument('--outname',
@@ -2115,6 +2251,8 @@ def main(args):
     if args.subcmds=='create_target_jacobian':
         subcmd_create_target_jacobian(args)
 
+    if args.subcmds=='merge_ojac_obs1D':
+        subcmd_merge_ojac_obs1D(args)
 if __name__ == '__main__':
     import datetime as dtm
 
