@@ -109,7 +109,7 @@ def conc_statistics(conc: xr.Dataset, label: str) -> DataFrame:
     """
     dfc = conc.to_dataframe()
     stations = set(dfc.station.values)
-    
+
     # msg = f"stations -->{stations}<--"
     # logger.debug(stations)
     stats = {
@@ -150,7 +150,7 @@ def conc_statistics(conc: xr.Dataset, label: str) -> DataFrame:
         #-- posterior statistics
         #
         _bias_post  = _capos - _cobs
-        meanbias_post = _bias_post.mean()       
+        meanbias_post = _bias_post.mean()
         rmse_post  = (_bias_post **2).mean() ** .5
         corrcoef_post = np.corrcoef(_capos.values,_cobs.values)[0,1]
         # msg = f"@{sta}, rmse post ==>{rmse_post}<=="
@@ -177,19 +177,26 @@ def conc_statistics(conc: xr.Dataset, label: str) -> DataFrame:
 
 def load_inversion_concentrations(path: Path, label: str) -> xr.Dataset:
     fc = xr.open_dataset(path / 'fcpost.nc')
-
     # Reformat the data as a dataframe, consistent with _conc_plot
-    conc = fc[['obs', 'cprior', 'cpost', 'station', 'obstime', 'station_lon', 'station_lat', 'station_alt']].to_dataframe()
+    conc = fc[['obs', 'cprior', 'cpost', 'station', 'obstime']].to_dataframe()
+    for station_id in fc.station_id.values:
+        stat = fc.sel(nsta = fc.station_id == station_id)
+        conc.loc[conc.station == station_id, 'station_lon'] = float(stat.station_lon.values[0])
+        conc.loc[conc.station == station_id, 'station_lat'] = float(stat.station_lat.values[0])
     conc['time'] = [Timestamp(_) for _ in conc.loc[:,'obstime']]
     conc = conc.rename(columns={'cprior':f'apri_{label}', 'cpost':f'apos_{label}'})
     conc = conc.to_xarray()
     conc.attrs['units'] = fc.obs.units
-    return conc 
+    return conc
 
 
 def load_forward_concentrations(path: Path, label: str) -> xr.Dataset:
     fc = xr.open_dataset(path / 'fc.nc')
-    conc = fc[['obs', 'conc', 'station','obstime', 'station_lon', 'station_lat', 'station_alt']].to_dataframe()
+    conc = fc[['obs', 'conc', 'station', 'obstime']].to_dataframe()
+    for station_id in fc.station_id.values:
+        stat = fc.sel(nsta = fc.station_id == station_id)
+        conc.loc[conc.station == station_id, 'station_lon'] = float(stat.station_lon.values[0])
+        conc.loc[conc.station == station_id, 'station_lat'] = float(stat.station_lat.values[0])
     conc['time'] = [Timestamp(_) for _ in conc.loc[:,'obstime']]
     conc = conc.rename(columns={'conc':f'forward_{label}'})
     conc = conc.to_xarray()
@@ -203,6 +210,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     run_inv = param.Event(doc='Do an inversion', label='Perform an inversion')
     alert = param.String(doc='Generic object for error messages or others ...', default='')
     current_site = param.Selector(doc='Current site to be displayed', default=None)
+    sites_list = param.List(default=[], doc='List of observation sites available (for internal use ...)')
+    simul_type = param.Selector(objects=['fwd', 'inv'], allow_None=True, default=None)
 
     # Data containers:
     conc        = param.ClassSelector(class_=xr.Dataset)
@@ -212,10 +221,10 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     def __init__(self, gui_settings: DictConfig):
 
         self._message = ''
-        
+
         super().__init__()
         self.gui_settings = gui_settings
-        
+
         # Load the file list
         self.param.experiment.path = self.gui_settings.emissions.glob_pattern
         self.experiment = self.param.experiment.objects[0]
@@ -227,7 +236,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             'station_selector': pn.widgets.Select.from_param(self.param.current_site)
         }
         self.widgets['station_selector'].visible = False
-        
+        self.widgets['borders'] = gf.borders()
+
     def __panel__(self):
         header_pane = pn.pane.Markdown('# Preconfigured experiments')
         expdesc_pane = pn.pane.Markdown(
@@ -235,18 +245,16 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                     stylesheets=[preconfsim_stylesheet],
                     css_classes=['precomp-right'])
         return pn.Column(
-            header_pane, 
-            pn.Row(pn.widgets.Select.from_param(self.param.experiment), expdesc_pane), 
+            header_pane,
+            pn.Row(pn.widgets.Select.from_param(self.param.experiment), expdesc_pane),
             pn.Row(
                 pn.widgets.Button.from_param(self.param.run_forward),
                 pn.widgets.Button.from_param(self.param.run_inv)
             ),
             self._alert,
             # self.conc_plot,
-            pn.Row(self.conc_plot, pn.Column(
-                self.widgets['station_selector'], 
-                self.map_sites)
-            ),
+            self.widgets['station_selector'],
+            pn.Row(self.conc_plot, self.map_sites),
             pn.Row(self.conc_stats_table, self.target_table),
         )
 
@@ -269,7 +277,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             return self.cache_inv[self.experiment]
         elif self.experiment in self.cache_fwd and task == 'forward':
             return self.cache_fwd[self.experiment]
-            
+
         url = f"{self.gui_settings.backend_url}/forward"
         r = requests.get(url, params={'emis': self.experiment, 'task': task})
         if not r.ok:
@@ -292,6 +300,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     @param.depends('run_forward', watch=True)
     def _run_forward(self):
         output_path = self._get_output_path('forward')
+        self.simul_type = 'fwd'
         if output_path is not None:
             self._read_concentrations(output_path, 'forward')
             self.stats4conc = None
@@ -300,6 +309,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     @param.depends('run_inv', watch=True)
     def _run_inv(self):
         output_path = self._get_output_path('inversion')
+        self.simul_type = 'inv'
         if output_path is not None:
             self._read_concentrations(output_path, 'inversion')
             self.stats4conc = conc_statistics(self.conc, get_exp_label(self.experiment))
@@ -316,9 +326,14 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             self.conc = conc
         else:
             self.conc = xr.merge([self.conc, conc], compat='override')
-        self.param.current_site.objects = set(self.conc.station.values.reshape(-1))
-        self.current_site = self.param.current_site.objects[0]
-        self.widgets['station_selector'].visible = True
+
+        # Now update the "sites_list", if needed:
+        sites_available = set(self.conc.station.values.reshape(-1))
+        if sites_available != set(self.sites_list):
+            self.sites_list = list(sites_available)
+            self.param.current_site.objects = set(self.conc.station.values.reshape(-1))
+            self.current_site = self.param.current_site.objects[0]
+            self.widgets['station_selector'].visible = True
 
     @param.depends('alert')
     def _alert(self):
@@ -326,36 +341,43 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             return ''
         return pn.pane.Alert(self.alert, alert_type='danger')
 
+    @param.depends('conc', 'current_site')
     def conc_plot(self):
         if self.conc is None:
+            return ''
+        if self.current_site is None:
             return ''
         cur_exp = get_exp_label(self.experiment)
         dfc = self.conc.to_dataframe()
         dfc = dfc[dfc.station == self.current_site]
-        p = dfc.hvplot.points(x='time', y='obs', grid=True, c='k', label='obs', width=1500, height=500)
+        p = dfc.hvplot.points(x='time', y='obs', grid=True, c='k', label='obs', width=1200, height=400)
         color_palette = itertools.cycle(Category10[10])
         print(cur_exp, dfc.columns)
 
         # Find all "forward" experiments
-        experiments = {c.split('_', maxsplit=1)[1] for c in dfc.columns if c.startswith('forward_')}
-        for iexp, exp in enumerate(experiments):
-            col = next(color_palette)# Category10[10][iexp]
-            if exp == cur_exp:
-                p *= dfc.hvplot.line(x='time', y=f'forward_{exp}', c=col, label=exp, muted_alpha=0, line_width=3, line_dash='dotdash')
-            else:
-                p *= dfc.hvplot.line(x='time', y=f'forward_{exp}', c=col, label=exp, muted_alpha=0, line_width=1, line_dash='dotdash')
-                    
+        if self.simul_type == 'fwd':
+            experiments = [c.split('_', maxsplit=1)[1] for c in dfc.columns if c.startswith('forward_')]
+            print(experiments)
+            for iexp, exp in enumerate(experiments):
+                col = next(color_palette) # Category10[10][iexp]
+                print(exp, iexp, col)
+                if exp == cur_exp:
+                    p *= dfc.hvplot.line(x='time', y=f'forward_{exp}', c=col, label=exp, muted_alpha=0, line_width=4)
+                else:
+                    p *= dfc.hvplot.line(x='time', y=f'forward_{exp}', c=col, label=exp, muted_alpha=0, line_width=2)
+
         # Find all "inversion" experiments
-        experiments = {c[5:] for c in dfc.columns if c.startswith('apri_')}
-        # Plot the experiments:
-        for iexp, exp in enumerate(experiments):
-            col = next(color_palette)
-            if exp == cur_exp:
-                p *= dfc.hvplot.line(x='time', y=f'apri_{exp}', c=col, line_dash='dashed', label=f'prior_{exp}', line_width=3, muted_alpha=0)
-                p *= dfc.hvplot.line(x='time', y=f'apos_{exp}', c=col, label=f'posterior_{exp}', line_width=3, muted_alpha=0)
-            else:
-                p *= dfc.hvplot.line(x='time', y=f'apri_{exp}', c=col, line_dash='dashed', label=f'prior_{exp}', line_width=1, muted_alpha=0)
-                p *= dfc.hvplot.line(x='time', y=f'apos_{exp}', c=col, label=f'posterior_{exp}', line_width=1, muted_alpha=0)
+        elif self.simul_type == 'inv':
+            experiments = [c[5:] for c in dfc.columns if c.startswith('apri_')]
+            # Plot the experiments:
+            for iexp, exp in enumerate(experiments):
+                col = next(color_palette) # Category10[10][iexp]
+                if exp == cur_exp:
+                    p *= dfc.hvplot.line(x='time', y=f'apri_{exp}', c=col, line_dash='dashed', label=f'prior_{exp}', line_width=4, muted_alpha=0)
+                    p *= dfc.hvplot.line(x='time', y=f'apos_{exp}', c=col, label=f'posterior_{exp}', line_width=4, muted_alpha=0)
+                else:
+                    p *= dfc.hvplot.line(x='time', y=f'apri_{exp}', c=col, line_dash='dashed', label=f'prior_{exp}', line_width=2, muted_alpha=0)
+                    p *= dfc.hvplot.line(x='time', y=f'apos_{exp}', c=col, label=f'posterior_{exp}', line_width=2, muted_alpha=0)
         return p
 
     @param.depends('stats4conc')
@@ -371,7 +393,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
     @param.depends('tgt_table')
     def target_table(self):
-        
+
         if self.tgt_table is None:
             return ''
         else:
@@ -382,7 +404,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                 fid.write(df.to_csv(index=False).encode('utf-8'))
                 fid.seek(0)
                 return fid
-                
+
             nc = len(df.columns)
             formatters = [lambda x: f'{x:.3f}'] * nc
             button = pn.widgets.FileDownload(callback=get_csv_file, filename="targets.csv", label="Download Data (CSV)", button_type="primary")
@@ -391,16 +413,19 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             #-- MVO-TODO::units [MtCH4] should not be hard-coded here
             return pn.Column(pn.pane.Markdown('# Target emission quantities [MtCH4]'), p)
 
-    @param.depends('conc', 'current_site')
+    @param.depends('current_site', 'sites_list')
     def map_sites(self):
         if self.conc is None:
             return ''
         if self.current_site is None:
             return ''
         df = self.conc.to_dataframe().loc[:, ['station', 'station_lon', 'station_lat']].drop_duplicates()
-        p = df.hvplot.points(x='station_lon', y='station_lat', geo=True, coastline=True, xlim=(-15, 35), ylim=(33, 73)) * gf.borders()
-        p *= df[df.station == self.current_site].hvplot.points(x='station_lon', y='station_lat', xlim=(-15, 35), ylim=(33, 73), c='r', s=50)
-        return p
+        df.loc[:, 'cur_site'] = 0
+        df.loc[df.station == self.current_site, 'cur_site'] = 1
+        return df.hvplot.points(
+            x='station_lon', y='station_lat', color='cur_site', cmap=['LightSlateGray', 'red'],
+            geo=True, coastline=True, xlim=(-15, 35), ylim=(33, 73), colorbar=False, tiles='EsriTerrain'
+        ) * self.widgets['borders']
 
 # class PreconfExperimentGUI_(pn.viewable.Viewer):
 #     experiment = param.FileSelector(doc='Prior emission dataset')
@@ -442,7 +467,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 #             css_classes=['precomp-right'])
 #         return pn.Column(
 #             header_pane,
-#             pn.Row(pn.widgets.Select.from_param(self.param.experiment),expdesc_pane), 
+#             pn.Row(pn.widgets.Select.from_param(self.param.experiment),expdesc_pane),
 #             # pn.pane.Markdown("== some description of the selected experiment =="),
 #             pn.Row(self.button_fwd, self.button_inv),
 #             # self.stations_widgets,
@@ -465,7 +490,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 #             desc_html += f'<td>{desc}</td>'
 #             desc_html += f'</tr>'
 #             return desc_html
-        
+
 #         exp_list = list(self.param.experiment.objects)
 #         tbl = f'<table>'
 #         #-- header
@@ -509,7 +534,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 #     #                 obsinfo_list.append(df)
 #     #     self.obs_table = concat(obsinfo_list)
 #     #     logger.debug(f"self.obs_table -->{self.obs_table.shape}<--")
-        
+
 #     @param.depends('run_forward', watch=True)
 #     def _run_forward(self):
 #         #
@@ -620,7 +645,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 #         self.stations = fc.station_id.values #-- get station identifiers
 #         self.conc = conc
 #         self.conc_units = fc.obs.units
-        
+
 #     @param.depends('run_inv', watch=True)
 #     def _run_inv(self):
 #         self.tgt_table = None
