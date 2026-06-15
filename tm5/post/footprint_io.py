@@ -153,7 +153,7 @@ def regiondomain_halo( region : str ) -> list:
     return [lonmin,lonmax,latmin,latmax,]
 
 
-def tm5emisdir_load_emissions2D( emisdir : str | Path, emis_prefix : str, day_range : date_range, regions : list, clip_child : bool = False ) -> SimpleNamespace:
+def tm5emisdir_load_emissions2D( emisdir : str | Path, emis_prefix : str, day_range : date_range, regions : list, zeroout_child : bool = False, clip_child : bool = False ) -> SimpleNamespace:
     """Read in daily emissions as prepared for TM5 for the selected temporal range
     and regions.
     The emissions array will be 2D with only one single dimension in the spatial domain,
@@ -195,6 +195,12 @@ def tm5emisdir_load_emissions2D( emisdir : str | Path, emis_prefix : str, day_ra
             emtot = em.to_array().sum('variable').values
             #-- turn 2D spatial part into 1D
             emtot = emtot.ravel()
+            #
+            #-- potentially set emissions to zero for grid-cells within child domain
+            #
+            if zeroout_child and region_table[reg].child!=None:
+                msk = region_table[reg].usemask
+                emtot[~msk] = 0.
             if clip_child:
                 #--
                 if reg=='gns100x100':
