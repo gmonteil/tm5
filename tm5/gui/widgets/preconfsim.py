@@ -280,6 +280,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                     stylesheets=[preconfsim_stylesheet],
                     css_classes=['precomp-right'])
         logger.debug(f"==>{self.gui_settings.keys()}<==")
+        
         show_emismap = self.gui_settings.get('show_emismap', False)
         logger.debug(f"show_emismap = {show_emismap}")
         if show_emismap:
@@ -408,15 +409,15 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         dfc = dfc[dfc.station == self.current_site]
         p = dfc.hvplot.points(x='time', y='obs', grid=True, c='k', label='obs', width=1200, height=400)
         color_palette = itertools.cycle(Category10[10])
-        print(cur_exp, dfc.columns)
+        # print(cur_exp, dfc.columns)
 
         # Find all "forward" experiments
         if self.simul_type == 'fwd':
             experiments = [c.split('_', maxsplit=1)[1] for c in dfc.columns if c.startswith('forward_')]
-            print(experiments)
+            # print(experiments)
             for iexp, exp in enumerate(experiments):
                 col = next(color_palette) # Category10[10][iexp]
-                print(exp, iexp, col)
+                # print(exp, iexp, col)
                 if exp == cur_exp:
                     p *= dfc.hvplot.line(x='time', y=f'forward_{exp}', c=col, label=exp, muted_alpha=0, line_width=4)
                 else:
@@ -501,10 +502,10 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     @param.depends('emissions')
     def map_emissions(self):
         if self.emissions is None:
-            print("resetting emission map")
+            # print("resetting emission map")
             logger.debug("resetting emission map")
             return
-        print("computing emission map")
+        # print("computing emission map")
         logger.debug("computing emission map")
             
         cmap = 'RdBu_r'
