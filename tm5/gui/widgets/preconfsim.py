@@ -279,20 +279,38 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                     self._emistable_md(),
                     stylesheets=[preconfsim_stylesheet],
                     css_classes=['precomp-right'])
-        return pn.Column(
-            header_pane,
-            pn.Row(pn.widgets.Select.from_param(self.param.experiment), expdesc_pane),
-            pn.Row(
-                pn.widgets.Button.from_param(self.param.run_forward),
-                pn.widgets.Button.from_param(self.param.run_inv)
-            ),
-            self._alert,
-            # self.conc_plot,
-            self.widgets['station_selector'],
-            pn.Row(self.conc_plot, self.map_sites),
-            pn.Row(self.conc_stats_table, self.target_table),
-            self.map_emissions
-        )
+        logger.debug(f"==>{self.gui_settings.keys()}<==")
+        show_emismap = self.gui_settings.get('show_emismap', False)
+        logger.debug(f"show_emismap = {show_emismap}")
+        if show_emismap:
+            return pn.Column(
+                header_pane,
+                pn.Row(pn.widgets.Select.from_param(self.param.experiment), expdesc_pane),
+                pn.Row(
+                    pn.widgets.Button.from_param(self.param.run_forward),
+                    pn.widgets.Button.from_param(self.param.run_inv)
+                ),
+                self._alert,
+                # self.conc_plot,
+                self.widgets['station_selector'],
+                pn.Row(self.conc_plot, self.map_sites),
+                pn.Row(self.conc_stats_table, self.target_table),
+                self.map_emissions
+            )
+        else:
+             return pn.Column(
+                header_pane,
+                pn.Row(pn.widgets.Select.from_param(self.param.experiment), expdesc_pane),
+                pn.Row(
+                    pn.widgets.Button.from_param(self.param.run_forward),
+                    pn.widgets.Button.from_param(self.param.run_inv)
+                ),
+                self._alert,
+                # self.conc_plot,
+                self.widgets['station_selector'],
+                pn.Row(self.conc_plot, self.map_sites),
+                pn.Row(self.conc_stats_table, self.target_table)
+            )
 
     def _emistable_md(self):
         lines = ['| **Emissions setup** | **Description** |']
