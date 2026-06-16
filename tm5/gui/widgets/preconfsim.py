@@ -447,7 +447,11 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
             nc = len(df.columns)
             formatters = [lambda x: f'{x:.3f}'] * nc
+            # outname = f"targets_{get_exp_label(self.experiment)}.csv"
+            # outname = f"targets.csv"
+            # button = pn.widgets.FileDownload(callback=get_csv_file, filename=outname, label="Download Data (CSV)", button_type="primary")
             button = pn.widgets.FileDownload(callback=get_csv_file, filename="targets.csv", label="Download Data (CSV)", button_type="primary")
+
             p = pn.Column(pn.pane.DataFrame(df, text_align='center', formatters=formatters), button)
             # return self.tgt_table
             #-- MVO-TODO::units [MtCH4] should not be hard-coded here
@@ -464,6 +468,13 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         df = self.conc.to_dataframe().loc[:, ['station', 'station_lon', 'station_lat']].drop_duplicates()
         df.loc[:, 'cur_site'] = 0
         df.loc[df.station == self.current_site, 'cur_site'] = 1
+        return df.hvplot.points(
+            x='station_lon', y='station_lat', color='cur_site', cmap=['LightSlateGray', 'red'],
+            geo=True, coastline=True, xlim=(-15, 35), ylim=(33, 73), colorbar=False, tiles='EsriTerrain'
+        )
+        #-- widgets-boarders currently make problems
+        #   on exploredata.icos-cp.eu,
+        #   disabled for NCGG10
         return df.hvplot.points(
             x='station_lon', y='station_lat', color='cur_site', cmap=['LightSlateGray', 'red'],
             geo=True, coastline=True, xlim=(-15, 35), ylim=(33, 73), colorbar=False, tiles='EsriTerrain'
