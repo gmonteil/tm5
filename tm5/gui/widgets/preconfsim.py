@@ -208,13 +208,20 @@ def load_forward_concentrations(path: Path, label: str) -> xr.Dataset:
 
 def extract_emis_map(ds, region: str) -> xr.DataArray:
     ds = ds.sel(ng = ds.region == region)
+    emis_in = ds.emission
+    assert emis_in.attrs['units'] in ['kgCH4/cell',"kgCH4/cell/month"], \
+        f"unexpected emission units -->{emis_in.attrs['units']}<--"
+    emis_out = (emis_in / ds.area).values
     ilat = ((ds.lat - ds.lat.min()) / int(region[7])).values.astype(int)
     ilon = ((ds.lon - ds.lon.min()) / int(region[3])).values.astype(int)
     emis = zeros((ilat.max() + 1, ilon.max() + 1))
-    emis[ilat, ilon] = (ds.emission / ds.area).values
-    emis = xr.DataArray(data = emis, dims=('lat', 'lon'))
+    emis[ilat, ilon] = emis_out
+    emis = xr.DataArray(data = emis,
+                        dims=('lat', 'lon'),
+                        attrs={'units':'kgCH4/m2'})
     emis['lat'] = ('lat', sorted(set(ds.lat.values)))
     emis['lon'] = ('lon', sorted(set(ds.lon.values)))
+#    logger.info(f"@{region}, emis={emis}")
     return emis
 
 
@@ -420,12 +427,14 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             nc = len(df.columns)
             formatters = [lambda x: f'{x:.2f}'] * nc
             p = pn.pane.DataFrame(df, text_align='center', formatters=formatters)
-            return pn.Column(pn.pane.Markdown('# Fit statistics for all stations'), p)
+            title = f'# Fit statistics for all stations ({get_exp_label(self.experiment)})'
+            return pn.Column(pn.pane.Markdown(title), p)
 
     @param.depends('tgt_table')
     def target_table(self):
 
         if self.tgt_table is None:
+            logger.debug("returning None")
             return ''
         else:
             df = self.tgt_table
@@ -442,7 +451,9 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             p = pn.Column(pn.pane.DataFrame(df, text_align='center', formatters=formatters), button)
             # return self.tgt_table
             #-- MVO-TODO::units [MtCH4] should not be hard-coded here
-            return pn.Column(pn.pane.Markdown('# Target emission quantities [MtCH4]'), p)
+            logger.debug("...returning target table now")
+            title = f'# Target emission quantities [MtCH4] ({get_exp_label(self.experiment)})'
+            return pn.Column(pn.pane.Markdown(title), p)
 
     @param.depends('current_site', 'sites_list')
     def map_sites(self):
@@ -462,25 +473,152 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     def map_emissions(self):
         if self.emissions is None:
             print("resetting emission map")
+            logger.debug("resetting emission map")
             return
         print("computing emission map")
+        logger.debug("computing emission map")
             
-        projection = crs.RotatedPole(pole_longitude=185, pole_latitude=50)
-        # projection = crs.PlateCarree()
         cmap = 'RdBu_r'
         clim = (-0.005, 0.005)
+
+        projection = crs.RotatedPole(pole_longitude=185, pole_latitude=50)
         xlim = (-15, 35)
         ylim = (33, 73)
-        return (
-            self.emissions['glb600x400'].apri.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim) *
-            self.emissions['eur300x200'].apri.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim) *
-            self.emissions['gns100x100'].apri.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim) *
-            self.widgets['borders'] +
-            (self.emissions['glb600x400'].apos - self.emissions['glb600x400'].apri).hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim) *
-            (self.emissions['eur300x200'].apos - self.emissions['eur300x200'].apri).hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim) *
-            (self.emissions['gns100x100'].apos - self.emissions['gns100x100'].apri).hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim) *
-            self.widgets['borders']
-        )
+        
+        # projection = crs.PlateCarree()
+        # xlim = (-180,180)
+        # ylim = (-90,90)
+        # projection = crs.PlateCarree()
+        # xlim = (-180,180)
+        # ylim = (-90,90)
+        proj_glb600x400 = crs.PlateCarree()
+        xlim_glb600x400 = (-180,180)
+        ylim_glb600x400 = (-90,90)
+        # 36W-54E, 22N-74N
+        proj_eur300x200 = crs.PlateCarree()
+        xlim_eur300x200 = (-36,54)
+        ylim_eur300x200 = (22,74)
+        # 0E-18E, 42N-58N
+        proj_gns100x100 = crs.RotatedPole(pole_longitude=185, pole_latitude=50)
+        proj_gns100x100 = crs.PlateCarree()
+        xlim_gns100x100 = (0,18)
+        ylim_gns100x100 = (42,58)
+        
+        logger.debug("...returning emissions map now!!!")
+        # apri_glb600x400 = self.emissions['glb600x400'].apri
+        # apos_glb600x400 = self.emissions['glb600x400'].apos
+        # apri_eur300x200 = self.emissions['eur300x200'].apri
+        # apos_eur300x200 = self.emissions['eur300x200'].apos
+        # apri_gns100x100 = self.emissions['gns100x100'].apri
+        # apos_gns100x100 = self.emissions['gns100x100'].apos
+
+        # p = pn.Row(
+        #     apri_glb600x400.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=proj_600x400, xlim=xlim_600x400, ylim=ylim_600x400),
+        #     apos_glb600x400.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=proj_600x400, xlim=xlim_600x400, ylim=ylim_600x400),
+        #     (apos_glb600x400-apri_glb600x400).quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=proj_600x400, xlim=xlim_600x400, ylim=ylim_600x400)     
+        # )
+        # p = pn.Row(
+        #     apri_glb600x400.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=proj_600x400, xlim=xlim_600x400, ylim=ylim_600x400),
+        #     apos_glb600x400.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=proj_600x400, xlim=xlim_600x400, ylim=ylim_600x400)
+        # )
+                   
+        
+        # p = (self.emissions['glb600x400'].apri.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim) +
+        #     self.emissions['glb600x400'].apos.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim)
+        #     )
+        emis_units = self.emissions['glb600x400'].apos.attrs['units']
+        logger.debug(f"emis_units ==>{emis_units}<==")
+        mode = 'guillaume'
+        if mode=='glb600x400':
+            prow = pn.Row(
+                self.emissions['glb600x400'].apos.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=proj_glb600x400, xlim=xlim_glb600x400, ylim=ylim_glb600x400,),
+                self.emissions['glb600x400'].apri.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=proj_glb600x400, xlim=xlim_glb600x400, ylim=ylim_glb600x400),
+                (self.emissions['glb600x400'].apos-self.emissions['glb600x400'].apri).hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=proj_glb600x400, xlim=xlim_glb600x400, ylim=ylim_glb600x400,)
+            )
+            title = f"# emssions maps (posterior, prior, posterior-prior) ({get_exp_label(self.experiment)})"
+            p = pn.Column(pn.pane.Markdown(title), prow)
+        elif mode=='eur300x200':
+            prow_eur300x200 = pn.Row(
+                self.emissions['eur300x200'].apos.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=proj_eur300x200, xlim=xlim_eur300x200, ylim=ylim_eur300x200,),
+                self.emissions['eur300x200'].apri.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=proj_eur300x200, xlim=xlim_eur300x200, ylim=ylim_eur300x200),
+                (self.emissions['eur300x200'].apos-self.emissions['eur300x200'].apri).hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=proj_eur300x200, xlim=xlim_eur300x200, ylim=ylim_eur300x200,)
+            )
+            title = f"# emssions maps (posterior, prior, posterior-prior) ({get_exp_label(self.experiment)})"
+            p = pn.Column(pn.pane.Markdown(title), prow)
+        elif mode=='gns100x100':
+            prow = pn.Row(
+                self.emissions['gns100x100'].apos.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=proj_gns100x100, xlim=xlim_gns100x100, ylim=ylim_gns100x100,),
+                self.emissions['gns100x100'].apri.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=proj_gns100x100, xlim=xlim_gns100x100, ylim=ylim_gns100x100),
+                (self.emissions['gns100x100'].apos-self.emissions['gns100x100'].apri).hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=proj_gns100x100, xlim=xlim_gns100x100, ylim=ylim_gns100x100,)
+            )
+            title = f"# emssions maps (posterior, prior, posterior-prior) ({get_exp_label(self.experiment)})"
+            p = pn.Column(pn.pane.Markdown(title), prow)
+        elif mode=='row_merged':
+            prow = pn.Row(
+                self.emissions['glb600x400'].apos.hvplot.quadmesh(rasterize=True, geo=True, cmap=cmap, clim=clim, projection=proj_glb600x400, xlim=xlim_glb600x400, ylim=ylim_glb600x400) *
+                self.emissions['eur300x200'].apos.hvplot.quadmesh(rasterize=True, geo=True, cmap=cmap, clim=clim, projection=proj_glb600x400, xlim=xlim_glb600x400, ylim=ylim_glb600x400) *
+                self.emissions['gns100x100'].apos.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=proj_glb600x400, xlim=xlim_glb600x400, ylim=ylim_glb600x400,),
+                self.emissions['glb600x400'].apri.hvplot.quadmesh(rasterize=True, geo=True, cmap=cmap, clim=clim, projection=proj_glb600x400, xlim=xlim_glb600x400, ylim=ylim_glb600x400) *
+                self.emissions['eur300x200'].apri.hvplot.quadmesh(rasterize=True, geo=True, cmap=cmap, clim=clim, projection=proj_glb600x400, xlim=xlim_glb600x400, ylim=ylim_glb600x400) *
+                self.emissions['gns100x100'].apri.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=proj_glb600x400, xlim=xlim_glb600x400, ylim=ylim_glb600x400,),
+                (self.emissions['glb600x400'].apos - self.emissions['glb600x400'].apri).hvplot.quadmesh(rasterize=True, geo=True, cmap=cmap, clim=clim, projection=proj_glb600x400, xlim=xlim_glb600x400, ylim=ylim_glb600x400) *
+                (self.emissions['eur300x200'].apos-self.emissions['eur300x200'].apri).hvplot.quadmesh(rasterize=True, geo=True, cmap=cmap, clim=clim, projection=proj_glb600x400, xlim=xlim_glb600x400, ylim=ylim_glb600x400) *
+                (self.emissions['gns100x100'].apos-self.emissions['gns100x100'].apri).hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=proj_glb600x400, xlim=xlim_glb600x400, ylim=ylim_glb600x400,)
+            )
+            title = f"# emssions maps (posterior, prior, posterior-prior) ({get_exp_label(self.experiment)})"
+            p = pn.Column(pn.pane.Markdown(title), prow)
+        elif mode=='guillaume':
+            ppost = (
+                self.emissions['glb600x400'].apos.hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
+                self.emissions['eur300x200'].apos.hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
+                self.emissions['gns100x100'].apos.hvplot.quadmesh(cmap=cmap, clim=clim, coastline=True, xlim=xlim, ylim=ylim, projection=projection)
+            )
+            plotcfg = opts.Overlay(title=f'posterior emissions ({get_exp_label(self.experiment)})', ylabel=f"[{emis_units}]" )
+            ppost.opts(plotcfg)
+            pprior = (
+                self.emissions['glb600x400'].apri.hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
+                self.emissions['eur300x200'].apri.hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
+                self.emissions['gns100x100'].apri.hvplot.quadmesh(cmap=cmap, clim=clim, coastline=True, xlim=xlim, ylim=ylim, projection=projection)
+                )
+            plotcfg = opts.Overlay(title=f'prior emissions ({get_exp_label(self.experiment)})' )
+            pprior.opts(plotcfg)
+            pdiff = (
+                (self.emissions['glb600x400'].apos - self.emissions['glb600x400'].apri).hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
+                (self.emissions['eur300x200'].apos - self.emissions['eur300x200'].apri).hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
+                (self.emissions['gns100x100'].apos - self.emissions['gns100x100'].apri).hvplot.quadmesh(cmap=cmap, clim=clim, coastline=True, xlim=xlim, ylim=ylim, projection=projection)
+                )
+            plotcfg = opts.Overlay(title=f'posterior-prior emissions ({get_exp_label(self.experiment)})')
+            pdiff.opts(plotcfg)
+            
+            prow = (
+                ppost + pprior + pdiff
+            )
+            p = prow
+        ##
+ 
+        # logger.debug(f"...returning p ({type(p)})")
+        return p
+    
+        # return (
+        #     self.emissions['glb600x400'].apri.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim) +
+        #     self.emissions['glb600x400'].apos.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim)
+        #     )
+        # return (
+        #     self.emissions['glb600x400'].apri.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim) *
+        #     self.emissions['eur300x200'].apri.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim) *
+        #     self.emissions['gns100x100'].apri.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim)#  *
+        #     # self.widgets['borders']
+        #     )
+        # return (
+        #     self.emissions['glb600x400'].apri.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim) *
+        #     self.emissions['eur300x200'].apri.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim) *
+        #     self.emissions['gns100x100'].apri.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim) *
+        #     self.widgets['borders'] +
+        #     (self.emissions['glb600x400'].apos - self.emissions['glb600x400'].apri).hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim) *
+        #     (self.emissions['eur300x200'].apos - self.emissions['eur300x200'].apri).hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim) *
+        #     (self.emissions['gns100x100'].apos - self.emissions['gns100x100'].apri).hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim) *
+        #     self.widgets['borders']
+        # )
 
 # class PreconfExperimentGUI_(pn.viewable.Viewer):
 #     experiment = param.FileSelector(doc='Prior emission dataset')
