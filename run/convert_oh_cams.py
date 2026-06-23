@@ -1,8 +1,21 @@
+import sys
 import xesmf
 import xarray as xr
 from numpy import arange, append
+import netCDF4 as nc4
 
-ds = xr.open_dataset('data_byhour_plev.nc')
+filepath = '/lunarc/nobackup/projects/ghg_inv/michael/TM5/input/OH/cams-oh_2020-monthly-day1_plev.nc'
+outname = '/lunarc/nobackup/projects/ghg_inv/michael/TM5/input/OH/oh_cams_2020_monthly.nc'
+
+# fp = nc4.Dataset(filepath)
+# nctime = fp['/valid_time']
+# dates = nc4.num2date(nctime[:], nctime.units)
+# for i,d  in enumerate(dates):
+#     print(f"{i:>3d}: {d}")
+# fp.close()
+# sys.exit(0)
+
+ds = xr.open_dataset(filepath)
 
 # Convert from g[OH]/g[air] to molec[OH] / cm3:
 # V_air (cm3) = nRT/P * 1.e-6       # V{air]: volume of air (m3); n: moles of air; T: temperature; P: pressure, R: gas constant
@@ -61,4 +74,9 @@ oh.OH.values[:, :, :, 179] = (oh.OH.values[:, :, :, 178] + oh.OH.values[:, :, :,
 
 #oh['OH'].values = oh.OH.values[:, ::-1, :, :]
 #oh.to_netcdf('oh_cams_2021_v5.nc')
-oh.to_netcdf('oh_cams_2021_monthly.nc')
+encoding_dict = {
+    'OH': {"zlib": True, "complevel": 6},
+    'oh': {"zlib": True, "complevel": 6},
+    't':  {"zlib": True, "complevel": 6}
+}
+oh.to_netcdf(outname, format="NETCDF4", encoding=encoding_dict)
