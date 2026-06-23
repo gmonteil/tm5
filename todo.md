@@ -1,13 +1,9 @@
 # Tasks (by order of priority)
 - GUI (setup)
-    - [ ] GM to update in "preconfigured simulations": add station map; the task you tried the other day: Add multiple simulated concentrations, when user performs multiple forward runs (first for forward runs and then we can still see whether we extend to inversions); allow to download target table
-    - [ ] MV so send name of routine that show how the 1D emission vector is extracted
-    - [ ] MV to send to GM the command to run the flask server
-    - [ ] GM to do the emission plots (either write new or reuse: "Reactivate "Emission Explorer" in the "master GUI")
+    - [ ] (1) GM to remove halos from the Jacobian and emission files
+    - [ ] GM to finish the emission plots (either write new or reuse: "Reactivate "Emission Explorer" in the "master GUI")
     - [ ] GM to "combine the two tabs "setup simulation" and "preconfigured simulation"
 - GUI (analysis)
-    - [ ] (7) GM: check domain size on plot after change of region
-    - [x] (2) GM+MV: extract TM5 output and obspack for selected stations averaged over a pre-specified period of the day (as in inversions), e.g. above 1000 m height take nighttime data (midnight to 4am local solar time) and below afternoon date (from 12 to 4 local solar time) (there is a flag in obspack for filtering, but don't take it as an absolute reference, just for a sanity check) at highest level
     - [x partly] Add Chi2 with sigma = sqrt (sigma_obs**2 + sigma_model **2), and sigma model from a crude approximation derived from short scale variability of the obs, or the variability of the meteo (representation error approximation from slopes may also be there ...
     - [ ] (8) GM: Integrate some visualisation of the emission budget in configuration part of the GUI (to allow perform a quick sanity check)
     - [ ] GM: Add plot or table that indicates relative contribution of each sector to total signal at each site (only if we run sectors separately), this is not urgent, can be added later ...
@@ -31,10 +27,10 @@
 - Inversion
     - [ ] TXK/MV: draft a kind of tutorial guiding the user through one of the experiments
     - [ ] MV (1) to check whether this has worked now: "Compute Jacobians for the 34 (?) sites in the zoom domain using the zoom setup.Jacobian should be computed for the average of the available over the preferred time of the day (afternoon for low alt and morning for heigh alt). So, for each observation day, we have a single sensitivity." 
-    - [x] GM (3) to check compute Jacobiains for global network of ~20 sites using the global 6x4 setup for monthly mean obs. Jacobian should be computed for the instantaneous concentrations at the points in the time, when flasks are filled. So for each flask pair we have one sensitivity.
-    - [ ] MV to look into integraton of flask Jacobian
-    - [ ] GM to revise global footprint calculation (back to Oct and network identifier ... see below)
+    - [ ] GM (2) to revise global footprint calculation (back to Oct and network identifier ... see below)
+    - [ ] postprocessing of the global flask Jacobian such that the sensitivity with respect to the grid cells over the zoom domain is distributed to sensitivities on the zoom grid according to the fraction of each zoom domain grid cell area in the global resolution's grid cell. Like this the emission dimension of the global and zoom domain contributions to the overall Jacobian are the same 
     - [ ] MV to revise zoom domain footprint calculation (back to Oct ... see below)
+  
             
 # Task ideas / discussion
 - avoid misuse through implementation of "accepted ranges" => *That's essentially built-in the GUI*
