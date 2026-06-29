@@ -32,6 +32,8 @@ region_table = OrderedDict()
 
 def _init_region_table():
     global region_table
+    if len(region_table)>0:
+        return #-- should be already initialised
     #
     #-- create grid instances
     #
@@ -491,65 +493,6 @@ def tm5rundir_iniconc_1obs( outpath : str | Path, obs_info : Series ) -> SimpleN
     return SimpleNamespace(point_output=sta_outp, conc=sta_outp.mixing_ratio, nsamples=sta_outp.nsamples, averaging_time=sta_outp.averaging_time)
 
 
-def tm5rundir_emissions1D( outpath : str | Path, trange : date_range = None, host : str = 'cosmos') -> SimpleNamespace:
-    """
-    """
-    yamlfile = Path(outpath) / 'tm5.yaml'
-    if not yamlfile.exists():
-        msg = f"yaml configuration file ***{str(yamlfile)}*** not found on system."
-        raise FileNotFoundError(msg)
-    dconf = OmegaConf.load(yamlfile)
-    if not 'host' in dconf:
-        dconf.host = dconf[host]
-    emisdir = dconf.run.paths.emissions
-    # print(f"@{outpath}, *****{emisdir}*****")
-    # sys.exit(0)
-    regions = dconf.run.regions
-    if trange is None:
-        tstart = Timestamp(dconf.run.start)
-        tend   = Timestamp(dconf.run.end)
-        trange = date_range(tstart, tend, freq='1d')
-    # msg = f"emission directory ***{emisdir}***, regions -->{regions}<-- " \
-    #     f"trange first/last = {trange[0]}/{trange[-1]}"
-    # print(msg)
-    #
-    #-- reformat collected emissions values to 1D array
-    #   ordering:
-    #   - emisday1
-    #     - grid-cells glb600x400 (flattened)
-    #     - grid-cells eur300x200 (flattened)
-    #     - grid-cells gns100x100 (flattened)
-    #   - emisday2
-    #     - grid-cells glb600x400 (flattened)
-    #   .
-    #   .
-    #   .
-    emissions_list = []
-    iday_list = []
-    region_list = []
-    for iday,day in enumerate(trange):
-        for reg in regions:
-            #-- TODO:: 'CH4' is hard-coded here!
-            fpath = Path(day.strftime(f'{dconf.emissions.CH4.prefix}.CH4.{reg}.%Y%m%d.nc'))
-            if not fpath.exists():
-                msg = f"expected emissions file ***{str(fpath)}*** not found on system."
-                raise FileNotFoundError(msg)
-            em = xr.open_dataset(fpath)
-            #-- sum-up total emissions
-            emtot = em.to_array().sum('variable').values
-            #-- turn 2D spatial part into 1D
-            emtot = emtot.ravel()
-            nemis = len(emtot)
-            emissions_list.append(emtot)
-            iday_list.append(np.full((nemis,), iday, dtype='i4'))
-            region_list.append(np.array([reg,]*nemis))
-    #-- stack into single 1D array
-    emissions1D = np.hstack(emissions_list)
-    iday1D = np.hstack(iday_list)
-    region1D = np.hstack(region_list)
-    return SimpleNamespace(emis1D=emissions1D, iday1D=iday1D, region1D=region1D, emisdir=emisdir)
-
-
 def tm5rundir_emissions2D( outpath : str | Path, trange : date_range = None, emis_prefix : str = None, host : str = 'cosmos', clip_child : bool = False ) -> SimpleNamespace:
     """
     """
@@ -577,99 +520,6 @@ def tm5rundir_emissions2D( outpath : str | Path, trange : date_range = None, emi
         emis_prefix = emis_prefix_rundir
 
     return tm5emisdir_load_emissions2D(emisdir, emis_prefix, trange, regions, clip_child=clip_child)
-
-
-def tm5rundir_jacobian2D( outpath : str | Path, trange : date_range = None, obsid : str|None = None ) -> NDArray:
-    """
-    Reads in the sensitivity (or Jacobian) for one observational day.
-    
-    will yield an array of shape jac(nobs,nemis)
-    nemis comprises emissionday and emission location into a single 1D array of order
-    - day1
-      - reg1 (flattened)
-      - reg2 (flattened)
-      - reg3 (flattened)
-    - day2
-      - reg1 (flattened)
-      .
-      .
-      .
-    """
-    #
-    #-- load footprints into dataframe, plus ancillary information
-    #
-    fpinfo = tm5_fitic_adjoint_corrected_halos(outpath, trange)
-    footp_df = fpinfo.data
-    obsids   = fpinfo.obsids
-    days     = fpinfo.days
-    regions  = fpinfo.regions
-    nobs = len(obsids)
-    nday = len(days)
-    msg = f"...footprint data read, nfootp={len(footp_df)} for nobs/nday = {nobs}/{nday}"
-    logger.debug(msg)
-    if obsid!=None:
-        msg = f"...extract only for observation -->{obsid}<--"
-        logger.info(msg)
-        itrac = obsids.index(obsid) #-- position of obs. in list of tracers/obs
-        cnd_obs = footp_df.loc[:,'itrac']==itrac
-        footp_df = footp_df.loc[cnd_obs,:]
-        msg = f"......{len(footp_df)} remaining footprints."
-        logger.info(msg)
-        itrac_list = [ obsids.index(obsid), ]
-        # for iday in range(nday):
-        #     for reg in region_table.keys():
-        #         cnd = (footp_df.loc[:,'itime']==iday)&(footp_df.loc[:,'region']==reg)
-        #         dd = footp_df.loc[cnd,:]
-        #         sens = dd.loc[:,'value'].values
-        #         msg = f"@{obsid}, {days[iday].strftime('%Y%m%d')}, {reg}: " \
-        #             f"sens_values min/mean/max = {sens.min()}/{sens.mean()}/{sens.max()}"
-        #         print(msg)
-    else:
-        itrac_list = np.arange(nobs)
-    #
-    #--
-    #
-    if len(region_table)==0:
-        msg = f"...initialise region table"
-        logger.info(msg)
-        _init_region_table()
-    #
-    jacobian2D = None
-    for itrac in itrac_list:
-        cur_obsid = obsids[itrac]
-        cnd_obs = footp_df.loc[:,'itrac']==itrac
-        df = footp_df.loc[cnd_obs,:]
-        # msg = f"...restricted to {cur_obsid} yields {len(df)} entries"
-        # logger.debug(msg)
-        jac_list = []
-        for iday in range(nday):
-            cnd_day = df.loc[:,'itime']==iday
-            df_day = df.loc[cnd_day,:]
-            # msg = f"...restricted to {days[iday].strftime('%Y%m%d')} yields {len(df_day)} entries"
-            # logger.debug(msg)
-            for reg in regions:
-                # print(f"@{reg}\n", df.head())
-                cnd_reg = df_day.loc[:,'region']==reg
-                df_reg = df_day.loc[cnd_reg,:]
-                # msg = f"...restricted to {reg} yields {len(df_reg)} entries"
-                # logger.debug(msg)
-                grid = region_table[reg].grid
-                # print(f"@{reg}, nlat/nlon = {grid.nlat}/{grid.nlon}")
-                sens = zeros((grid.nlat, grid.nlon))
-                sens[df_reg.ilat, df_reg.ilon] = df_reg.value
-                #
-                sens = sens.ravel()
-                msg = f"@itrac={itrac}/iday={iday}/{reg}, sens min/mean/max = " \
-                    f"{sens.min()}/{sens.mean()}/{sens.max()}"
-                print(msg)
-                jac_list.append(sens)
-        jac_obs = np.hstack(jac_list)
-        if jacobian2D is None:
-            jacobian2D = jac_obs.reshape(1,len(jac_obs))
-        else:
-            jacobian2D = np.vstack(jacobian2D, jac_obs)
-    #
-    return SimpleNamespace(jac2D=jacobian2D, days=days, obsids=obsids, regions=regions)
 
 
 def tm5rundir_jacobian3D( outpath : str | Path, trange : date_range = None, obsid : str|list|None = None, clip_child : bool = False ) -> NDArray:
@@ -787,85 +637,6 @@ def tm5rundir_jacobian3D( outpath : str | Path, trange : date_range = None, obsi
     #
     return SimpleNamespace(jac3D=jacobian3D, days=days, obsids=obsids,
                            reg1D=reg1D, lonc1D=lonc1D, latc1D=latc1D)
-
-
-def tm5_fitic_footprint4jacobian_v1( outpath : str|Path, trange : date_range = None, obsid : str|None = None ) -> SimpleNamespace:
-    """Routine to collect footprint data from TM5 adjoint run for a series of observations
-    for one or multiple sites at dedicated periods on the same day.
-    """
-    #
-    #-- load footprints into dataframe, plus ancillary information
-    #
-    fpinfo = tm5_fitic_adjoint_corrected_halos(outpath, trange)
-    footp_df = fpinfo.data
-    obsids   = fpinfo.obsids
-    days     = fpinfo.days
-    regions  = fpinfo.regions
-    nobs = len(obsids)
-    nday = len(days)
-    msg = f"...footprint data read, nfootp={len(footp_df)} for nobs/nday = {nobs}/{nday}"
-    logger.debug(msg)
-    if obsid!=None:
-        msg = f"...extract only for observation -->{obsid}<--"
-        logger.info(msg)
-        itrac = obsids.index(obsid) #-- position of obs. in list of tracers/obs
-        cnd_obs = footp_df.loc[:,'itrac']==itrac
-        footp_df = footp_df.loc[cnd_obs,:]
-        msg = f"......{len(footp_df)} remaining footprints."
-        logger.info(msg)
-        nobs = 1
-        # for iday in range(nday):
-        #     for reg in region_table.keys():
-        #         cnd = (footp_df.loc[:,'itime']==iday)&(footp_df.loc[:,'region']==reg)
-        #         dd = footp_df.loc[cnd,:]
-        #         sens = dd.loc[:,'value'].values
-        #         msg = f"@{obsid}, {days[iday].strftime('%Y%m%d')}, {reg}: " \
-        #             f"sens_values min/mean/max = {sens.min()}/{sens.mean()}/{sens.max()}"
-        #         print(msg)
-    #
-    #--
-    #
-    jac_table = OrderedDict()
-    for region in region_table.keys():
-        cnd_reg = footp_df.loc[:,'region']==region
-        footp_reg = footp_df.loc[cnd_reg, :]
-        grid = region_table[region].grid
-        west,east,south,north = grid.domain
-        dlon,dlat = grid.dlon, grid.dlat
-        if nobs>1:
-            fpfield = zeros((nday, grid.nlat, grid.nlon, nobs))
-            fpfield[footp_reg.itime, footp_reg.ilat, footp_reg.ilon, footp_reg.itrac] = footp_reg.value
-            fpda = xr.DataArray(
-                fpfield,
-                dims=('iday','lat','lon','iobs'),
-                coords = {
-                    'iday': np.arange(nday),
-                    'lat': grid.latc,
-                    'lon': grid.lonc,
-                    'iobs': np.arange(nobs)
-                    },
-                attrs = {
-                    'units' : "ppb/kgCH4/cell/s"
-                    }
-                )
-        else:
-            fpfield = zeros((nday, grid.nlat, grid.nlon))
-            fpfield[footp_reg.itime, footp_reg.ilat, footp_reg.ilon] = footp_reg.value
-            fpda = xr.DataArray(
-                fpfield,
-                name='jac',
-                dims=('iday','lat','lon'),
-                coords = {
-                    'iday': np.arange(nday),
-                    'lat': grid.latc,
-                    'lon': grid.lonc
-                    },
-                attrs = {
-                    'units' : "ppb/kgCH4/cell/s"
-                    }
-                )
-        jac_table[region] = fpda
-    return SimpleNamespace(jac_table=jac_table, days=days, obsids=obsids)
 
 
 def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, trange : date_range = None) -> SimpleNamespace:
@@ -1039,6 +810,164 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, trange : date_range =
     # logger.info(msg)
     return SimpleNamespace(data=footprints, days=trange, regions=region_list, obsids=tracer)
 
+
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+#
+#          d e p r e c e a t e d   m e t h o d s
+#
+#--  to be removed soone
+#
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+def tm5rundir_emissions1D( outpath : str | Path, trange : date_range = None, host : str = 'cosmos') -> SimpleNamespace:
+    """
+    """
+    yamlfile = Path(outpath) / 'tm5.yaml'
+    if not yamlfile.exists():
+        msg = f"yaml configuration file ***{str(yamlfile)}*** not found on system."
+        raise FileNotFoundError(msg)
+    dconf = OmegaConf.load(yamlfile)
+    if not 'host' in dconf:
+        dconf.host = dconf[host]
+    emisdir = dconf.run.paths.emissions
+    # print(f"@{outpath}, *****{emisdir}*****")
+    # sys.exit(0)
+    regions = dconf.run.regions
+    if trange is None:
+        tstart = Timestamp(dconf.run.start)
+        tend   = Timestamp(dconf.run.end)
+        trange = date_range(tstart, tend, freq='1d')
+    # msg = f"emission directory ***{emisdir}***, regions -->{regions}<-- " \
+    #     f"trange first/last = {trange[0]}/{trange[-1]}"
+    # print(msg)
+    #
+    #-- reformat collected emissions values to 1D array
+    #   ordering:
+    #   - emisday1
+    #     - grid-cells glb600x400 (flattened)
+    #     - grid-cells eur300x200 (flattened)
+    #     - grid-cells gns100x100 (flattened)
+    #   - emisday2
+    #     - grid-cells glb600x400 (flattened)
+    #   .
+    #   .
+    #   .
+    emissions_list = []
+    iday_list = []
+    region_list = []
+    for iday,day in enumerate(trange):
+        for reg in regions:
+            #-- TODO:: 'CH4' is hard-coded here!
+            fpath = Path(day.strftime(f'{dconf.emissions.CH4.prefix}.CH4.{reg}.%Y%m%d.nc'))
+            if not fpath.exists():
+                msg = f"expected emissions file ***{str(fpath)}*** not found on system."
+                raise FileNotFoundError(msg)
+            em = xr.open_dataset(fpath)
+            #-- sum-up total emissions
+            emtot = em.to_array().sum('variable').values
+            #-- turn 2D spatial part into 1D
+            emtot = emtot.ravel()
+            nemis = len(emtot)
+            emissions_list.append(emtot)
+            iday_list.append(np.full((nemis,), iday, dtype='i4'))
+            region_list.append(np.array([reg,]*nemis))
+    #-- stack into single 1D array
+    emissions1D = np.hstack(emissions_list)
+    iday1D = np.hstack(iday_list)
+    region1D = np.hstack(region_list)
+    return SimpleNamespace(emis1D=emissions1D, iday1D=iday1D, region1D=region1D, emisdir=emisdir)
+
+
+def tm5rundir_jacobian2D( outpath : str | Path, trange : date_range = None, obsid : str|None = None ) -> NDArray:
+    """
+    Reads in the sensitivity (or Jacobian) for one observational day.
+    
+    will yield an array of shape jac(nobs,nemis)
+    nemis comprises emissionday and emission location into a single 1D array of order
+    - day1
+      - reg1 (flattened)
+      - reg2 (flattened)
+      - reg3 (flattened)
+    - day2
+      - reg1 (flattened)
+      .
+      .
+      .
+    """
+    #
+    #-- load footprints into dataframe, plus ancillary information
+    #
+    fpinfo = tm5_fitic_adjoint_corrected_halos(outpath, trange)
+    footp_df = fpinfo.data
+    obsids   = fpinfo.obsids
+    days     = fpinfo.days
+    regions  = fpinfo.regions
+    nobs = len(obsids)
+    nday = len(days)
+    msg = f"...footprint data read, nfootp={len(footp_df)} for nobs/nday = {nobs}/{nday}"
+    logger.debug(msg)
+    if obsid!=None:
+        msg = f"...extract only for observation -->{obsid}<--"
+        logger.info(msg)
+        itrac = obsids.index(obsid) #-- position of obs. in list of tracers/obs
+        cnd_obs = footp_df.loc[:,'itrac']==itrac
+        footp_df = footp_df.loc[cnd_obs,:]
+        msg = f"......{len(footp_df)} remaining footprints."
+        logger.info(msg)
+        itrac_list = [ obsids.index(obsid), ]
+        # for iday in range(nday):
+        #     for reg in region_table.keys():
+        #         cnd = (footp_df.loc[:,'itime']==iday)&(footp_df.loc[:,'region']==reg)
+        #         dd = footp_df.loc[cnd,:]
+        #         sens = dd.loc[:,'value'].values
+        #         msg = f"@{obsid}, {days[iday].strftime('%Y%m%d')}, {reg}: " \
+        #             f"sens_values min/mean/max = {sens.min()}/{sens.mean()}/{sens.max()}"
+        #         print(msg)
+    else:
+        itrac_list = np.arange(nobs)
+    #
+    #--
+    #
+    if len(region_table)==0:
+        msg = f"...initialise region table"
+        logger.info(msg)
+        _init_region_table()
+    #
+    jacobian2D = None
+    for itrac in itrac_list:
+        cur_obsid = obsids[itrac]
+        cnd_obs = footp_df.loc[:,'itrac']==itrac
+        df = footp_df.loc[cnd_obs,:]
+        # msg = f"...restricted to {cur_obsid} yields {len(df)} entries"
+        # logger.debug(msg)
+        jac_list = []
+        for iday in range(nday):
+            cnd_day = df.loc[:,'itime']==iday
+            df_day = df.loc[cnd_day,:]
+            # msg = f"...restricted to {days[iday].strftime('%Y%m%d')} yields {len(df_day)} entries"
+            # logger.debug(msg)
+            for reg in regions:
+                # print(f"@{reg}\n", df.head())
+                cnd_reg = df_day.loc[:,'region']==reg
+                df_reg = df_day.loc[cnd_reg,:]
+                # msg = f"...restricted to {reg} yields {len(df_reg)} entries"
+                # logger.debug(msg)
+                grid = region_table[reg].grid
+                # print(f"@{reg}, nlat/nlon = {grid.nlat}/{grid.nlon}")
+                sens = zeros((grid.nlat, grid.nlon))
+                sens[df_reg.ilat, df_reg.ilon] = df_reg.value
+                #
+                sens = sens.ravel()
+                msg = f"@itrac={itrac}/iday={iday}/{reg}, sens min/mean/max = " \
+                    f"{sens.min()}/{sens.mean()}/{sens.max()}"
+                print(msg)
+                jac_list.append(sens)
+        jac_obs = np.hstack(jac_list)
+        if jacobian2D is None:
+            jacobian2D = jac_obs.reshape(1,len(jac_obs))
+        else:
+            jacobian2D = np.vstack(jacobian2D, jac_obs)
+    #
+    return SimpleNamespace(jac2D=jacobian2D, days=days, obsids=obsids, regions=regions)
 
 def load_adjoint_fitic_footprint(conf : DictConfig) -> SimpleNamespace:
     """Function to extract footprints from single TM5 adjoint run
