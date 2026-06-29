@@ -1013,11 +1013,11 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, trange : date_range =
             lonc = lonc[idxs_halo]
             latc = latc[idxs_halo]
             nfootp = len(ilat)
-            #
-            #-- cbw_207 at second position
-            #
-            icbw = np.where(itrac==1)
-            vcbw = values[icbw]
+            # #
+            # #-- cbw_207 at second position
+            # #
+            # icbw = np.where(itrac==1)
+            # vcbw = values[icbw]
             # msg = f"DEBUG@cbw_207, {day.strftime('%Y-%m-%d')}, {region}: " \
             #     f"values min/mean/max = {vcbw.min()}/{vcbw.mean()}/{vcbw.max()}"
             # print(msg)
