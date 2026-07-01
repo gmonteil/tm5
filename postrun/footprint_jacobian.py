@@ -14,6 +14,7 @@ import xarray as xr
 import numpy as np
 from numpy import zeros, tile
 from netCDF4 import Dataset
+import xesmf
 from types import SimpleNamespace
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -24,13 +25,15 @@ from tm5.fitic import read_obs_table
 from tm5.gridtools import TM5Grids
 from tm5.observations import read_obspack_file
 from tm5.post.footprint_io import load_adjoint_fwd #-- this was for earlier diagnostics
+from tm5.post.footprint_io import region_table, _init_region_table
 from tm5.post.footprint_io import tm5rundir_obstable, tm5rundir_iniconc_1obs
-from tm5.post.footprint_io import regions1D_info
-from tm5.post.footprint_io import tm5rundir_jacobian2D, tm5rundir_emissions1D
-from tm5.post.footprint_io import tm5rundir_jacobian3D, tm5rundir_emissions2D
-from tm5.post.footprint_io import tm5emisdir_load_emissions2D
+from tm5.post.footprint_io import regions1D_info, regiondomain_halo
+from tm5.post.footprint_io import tm5rundir_jacobian3D
+from tm5.post.footprint_io import tm5rundir_emissions2D, tm5emisdir_load_emissions2D
 from tm5.post.plot_util import cnorm_set
 from tm5.post.utilities import lonstr,latstr,set_outname,create_sha512
+#-- initial/older/depreceated methods
+from tm5.post.footprint_io import tm5rundir_jacobian2D, tm5rundir_emissions1D
 
 
 def tm5refdir_load_stationconc( refdir : str | Path, obsid : str ) -> xr.DataArray:
@@ -193,7 +196,8 @@ def collect_input4inversion( args : ArgumentNamespace ) -> SimpleNamespace:
     
 
     #
-    #-- load Jacobians and assemble Jacobian
+    #-- load footprint sensivivities (one observational day per file/directory)
+    #   nd assemble Jacobian
     #   - NOTE: dimensions are obsday,obsloc,emisday,emisgrid
     #
     ojac4D = None
@@ -1877,20 +1881,135 @@ def subcmd_merge_ojac_obs1D(args):
     stations_flask = args.stations_flask
     complevel = args.__dict__.get('complevel',4)
 
+    #
+    #-- create grid instances
+    #
+    glb_6x4 = TM5Grids.from_corners(west=-180, east=180, south=-90, north=90, dlon=6, dlat=4)
+    glb_3x2 = TM5Grids.from_corners(west=-180, east=180, south=-90, north=90, dlon=3, dlat=2)
+    eur_3x2 = TM5Grids.from_corners(west=-36, east=54, south=22, north=74, dlon=3, dlat=2)
+    gns_1x1 = TM5Grids.from_corners(west=0, east=18, south=42, north=58, dlon=1, dlat=1)
+    glb_1x1 = TM5Grids.global1x1()
+
+    #
+    #-- continuous obs Jacobian
+    #
     ds_ojac_cont = xr.open_dataset(filepath_ojac_cont)
+    ###
+    for region in ['glb600x400','eur300x200','gns100x100',]:
+        #-- extent of halo corrected domain
+        _domain = regiondomain_halo(region)
+        msg = f"@{region}, halo-corrected domain -->{_domain}<--"
+        print(msg)
+    ###
     ds_ojac_flask = xr.open_dataset(filepath_ojac_flask)
-    print(ds_ojac_flask)
+#    print(ds_ojac_flask)
     uniq_station_ids = ds_ojac_flask['station_id'].values
-    print(f"-->{uniq_station_ids}<--")
+    msg = f"flask station  identifiers -->{uniq_station_ids}<-- " \
+        f"obs_jacobian shape={ds_ojac_flask.obs_jacobian.shape}"
+    logger.debug(msg)
     idxs_uniq_station_ids = np.where(np.isin(uniq_station_ids, stations_flask))
     idxs_uniq_station_ids = idxs_uniq_station_ids[0]
     obs_station_ids = ds_ojac_flask['station'].values
     idxs_stations_flask = np.where(np.isin(obs_station_ids, stations_flask))
     idxs_stations_flask = idxs_stations_flask[0]
     ds_ojac_flask = ds_ojac_flask.sel(nsta=idxs_uniq_station_ids, nobs=idxs_stations_flask)
-    print(ds_ojac_flask)
-    print(f"-->{ds_ojac_flask['station_id'].values}<--")
-
+    # print(ds_ojac_flask)
+    msg = f"station_id values after filtering selected stations " \
+          f"-->{ds_ojac_flask['station_id'].values}<--, " \
+          f"yields shape {ds_ojac_flask.obs_jacobian.shape}"
+    logger.debug(msg)
+    ojac_flask = ds_ojac_flask.obs_jacobian
+    assert ojac_flask.units=="ppb/(kgCH4/cell)"
+    assert ojac_flask.dims==('nobs','ng')
+    nobs_flask,ng = ojac_flask.shape
+    msg = f"ojac_flask, shape={ojac_flask.shape}"
+    logger.debug(msg)
+    flaskojac_6x4 = xr.DataArray(
+        ojac_flask.values.reshape(nobs_flask,glb_6x4.nlat,glb_6x4.nlon),
+        dims = ('nobs_flask','lat','lon'),
+        coords = {
+            'lat': glb_6x4.latc,
+            'lon': glb_6x4.lonc
+            },
+        attrs = {
+            'units': ojac_flask.units
+            }
+        )
+    #
+    msg = f"flaskojac_6x4, sum={flaskojac_6x4.sum()}"
+    logger.debug(msg)
+    flaskojac_6x4_m2 = flaskojac_6x4 / glb_6x4.area
+    #
+    #
+    #
+    ds_glb1x1 = xr.Dataset(coords=dict(lon=glb_1x1.lonc, lat=glb_1x1.latc))
+    regridder = xesmf.Regridder(flaskojac_6x4_m2, ds_glb1x1, method='nearest_s2d')
+    flaskojac_1x1_m2 = regridder(flaskojac_6x4_m2)
+    flaskojac_1x1 = flaskojac_1x1_m2*glb_1x1.area
+    msg = f"flaskojac_1x1, sum={flaskojac_1x1.sum()}"
+    logger.debug(msg)
+    #
+    #
+    #
+    ds_glb3x2 = xr.Dataset(coords=dict(lon=glb_3x2.lonc, lat=glb_3x2.latc))
+    regridder = xesmf.Regridder(flaskojac_6x4_m2, ds_glb3x2, method='nearest_s2d')
+    flaskojac_3x2_m2 = regridder(flaskojac_6x4_m2)
+    flaskojac_3x2 = flaskojac_3x2_m2*glb_3x2.area
+    msg = f"flaskojac_3x2, sum={flaskojac_3x2.sum()}"
+    logger.debug(msg)
+    #
+    #-- start propper merging
+    #
+    # -> glb6x4, zero-out eur3x2 zoom domain with taking into account halo band    #
+    flaskojac_glb6x4 = flaskojac_6x4
+    _lonmin = eur_3x2.west + 6
+    _lonmax = eur_3x2.east - 6
+    _latmin = eur_3x2.south + 4
+    _latmax = eur_3x2.north - 4
+    _lonslice = slice(_lonmin,_lonmax)
+    _latslice = slice(_latmin,_latmax)
+    flaskojac_glb6x4.loc[dict(lat=_latslice,lon=_lonslice)] = 0
+    flaskojac_glb6x4_out = flaskojac_glb6x4.values.reshape(nobs_flask,glb_6x4.nlat*glb_6x4.nlon)
+    #
+    # -> eur3x2 part
+    #
+    _lonmin = eur_3x2.west
+    _lonmax = eur_3x2.east
+    _latmin = eur_3x2.south
+    _latmax = eur_3x2.north
+    _lonslice = slice(_lonmin,_lonmax)
+    _latslice = slice(_latmin,_latmax)
+    flaskojac_eur3x2 = flaskojac_3x2.sel(lat=_latslice, lon=_lonslice)
+    _lonmin = eur_3x2.west + 6
+    _lonmax = eur_3x2.east - 6
+    _latmin = eur_3x2.south + 4
+    _latmax = eur_3x2.north - 4
+    _lonslice = slice(_lonmin,_lonmax)
+    _latslice = slice(_latmin,_latmax)
+    flaskojac_eur3x2.loc[dict(lat=_latslice,lon=_lonslice)] = 0
+    flaskojac_eur3x2_out = flaskojac_eur3x2.values.reshape(nobs_flask,eur_3x2.nlat*eur_3x2.nlon)
+    #
+    # -> gnx1x1 part
+    _lonmin = gns_1x1.west
+    _lonmax = gns_1x1.east
+    _latmin = gns_1x1.south
+    _latmax = gns_1x1.north
+    _lonslice = slice(_lonmin,_lonmax)
+    _latslice = slice(_latmin,_latmax)
+    flaskojac_gns1x1 = flaskojac_1x1.sel(lat=_latslice, lon=_lonslice)
+    _lonmin = gns_1x1.west + 3
+    _lonmax = gns_1x1.east - 3
+    _latmin = gns_1x1.south + 2
+    _latmax = gns_1x1.north - 2
+    _lonslice = slice(_lonmin,_lonmax)
+    _latslice = slice(_latmin,_latmax)
+    flaskojac_gns1x1.loc[dict(lat=_latslice,lon=_lonslice)] = 0
+    flaskojac_gns1x1_out = flaskojac_gns1x1.values.reshape(nobs_flask,gns_1x1.nlat*gns_1x1.nlon)
+    ojac_flask = np.hstack((flaskojac_glb6x4_out,
+                            flaskojac_eur3x2_out,
+                            flaskojac_gns1x1_out))
+    msg = f"...merged flask obs jac (yields shape={ojac_flask.shape})"
+    logger.info(msg)
     dsmerged_table = OrderedDict()
     for v in ds_ojac_cont.variables:
         dims = ds_ojac_cont[v].dims
@@ -1907,26 +2026,24 @@ def subcmd_merge_ojac_obs1D(args):
         elif dims==('ng',):
             print(f"-->{v}<-- depdends on ng only")
             dsmerged_table[v] = (ds_cont,dims) #-- 1D grid vector taken from
-        elif dims==('nobs','ng'):
-            print(f"-->{v}<-- depdends on ==>{dims}<==")
-            nobs_cont,ng_cont = ds_cont.shape
-            nobs_flask,ng_flask = ds_flask.shape
-            ojac_flask = zeros((nobs_flask,ng_cont))
-            ojac_flask[:,:ng_flask] = ds_flask
+        elif v=='obs_jacobian':
+            #-- stack Jacobians along first ('nobs') axis
             ojac_out = np.concat((ds_cont,ojac_flask), axis=0)
-            print(f"ojac_out.shape = {ojac_out.shape}")
             dsmerged_table[v] = (ojac_out, dims)
         else:
-            raise RuntimeError(f"-->{v}<-- unexpected dimensions ==>{dims}<==")
+            raise RuntimeError(f"-->{v}<-- unexpected dimensions ==>{dims}<== or variable ==>{v}<==")
     #
     #--
     #
     nobsout, ngout = dsmerged_table['obs_jacobian'][0].shape
-    nstaout     = dsmerged_table['station_id'][0].size
+    nstaout        = dsmerged_table['station_id'][0].size
     #
     #--
     #
-    flask_station_tag = 'flask-stations-' + '--'.join(stations_flask)
+    if len(stations_flask)<=4:
+        flask_station_tag = 'flask-stations-' + '--'.join(stations_flask)
+    else:
+        flask_station_tag = f'{len(stations_flask)}-flask-stations'
     outname_tokens = [filepath_ojac_cont.stem, '---merged---', filepath_ojac_flask.stem, flask_station_tag]
     outname = '_'.join(outname_tokens) + '.nc'
     outname = set_outname(args, outname)
@@ -1963,6 +2080,103 @@ def subcmd_merge_ojac_obs1D(args):
     fp.close()
     msg = f"generated file ***{outname}***"
     logger.info(msg)
+
+
+def subcmd_inspect_ojac_obs1D(args):
+    """
+    """
+    filepath_ojac =  args.filepath_ojac
+
+    #-- initialise region table
+    _init_region_table()
+    ds_ojac = xr.open_dataset(filepath_ojac)
+    #-- determine regions
+    region_uniq = np.unique(ds_ojac.region.values)
+    msg = f"detected regions -->{region_uniq}<--"
+    logger.info(msg)
+    for region,region_info in region_table.items():
+        if not region in region_uniq:
+            msg = f"expected region -->{region}<-- not present in NetCDF file?"
+            raise RuntimeError(msg)
+        match region:
+            case 'glb600x400':
+                #-- check that contribution is zero within child taking into account halo band
+                child_info = region_table[region_info.child]
+                dlon = region_info.grid.dlon
+                dlat = region_info.grid.dlat
+                lonmin = child_info.grid.west + dlon
+                lonmax = child_info.grid.east - dlon
+                latmin = child_info.grid.south + dlat
+                latmax = child_info.grid.north - dlat
+                xtag = f"{lonstr(lonmin)}-{lonstr(lonmax)}x{latstr(latmin)}-{latstr(latmax)}"
+                xcnd = (ds_ojac.region==region) & \
+                    (ds_ojac.lon>=lonmin)&(ds_ojac.lon<=lonmax) & \
+                    (ds_ojac.lat>=latmin)&(ds_ojac.lat<=latmax)
+                xds = ds_ojac.sel(ng=xcnd)
+                xojac = xds.obs_jacobian.values
+                msg = f"ojac@{region}, restricted to {xtag} yields min/mean/max = " \
+                    f"{xojac.min()}/{xojac.mean()}/{xojac.max()}"
+                logger.info(msg)
+            case 'eur300x200':
+                #
+                child_info = region_table[region_info.child]
+                dlon = region_info.grid.dlon
+                dlat = region_info.grid.dlat
+                lonmin = child_info.grid.west + dlon
+                lonmax = child_info.grid.east - dlon
+                latmin = child_info.grid.south + dlat
+                latmax = child_info.grid.north - dlat
+                xtag = f"{lonstr(lonmin)}-{lonstr(lonmax)}x{latstr(latmin)}-{latstr(latmax)}"
+                xcnd = (ds_ojac.region==region) & \
+                    (ds_ojac.lon>=lonmin)&(ds_ojac.lon<=lonmax) & \
+                    (ds_ojac.lat>=latmin)&(ds_ojac.lat<=latmax)
+                xds = ds_ojac.sel(ng=xcnd)
+                xojac = xds.obs_jacobian.values
+                msg = f"ojac@{region}, restricted to {xtag} yields min/mean/max = " \
+                    f"{xojac.min()}/{xojac.mean()}/{xojac.max()}"
+                logger.info(msg)
+                #-- check that senstivities in halo band are zero
+                parent_info = region_table[region_info.parent]
+                dlon = parent_info.grid.dlon
+                dlat = parent_info.grid.dlat
+                lonmin = region_info.grid.west + dlon
+                lonmax = region_info.grid.east - dlon
+                latmin = region_info.grid.south + dlat
+                latmax = region_info.grid.north - dlat
+                halo_tag = f"lon<={lonstr(lonmin)} or lon>={lonstr(lonmax)} " \
+                    f"or lat<={latstr(latmin)} or lat>={latstr(latmax)}"
+                xcnd = (ds_ojac.region==region) & \
+                    ( \
+                      (ds_ojac.lon<=lonmin) | (ds_ojac.lon>=lonmax) \
+                      | (ds_ojac.lat<=latmin) | (ds_ojac.lat>=latmax) \
+                      )
+                xds = ds_ojac.sel(ng=xcnd)
+                xojac = xds.obs_jacobian.values
+                msg = f"ojac@{region}, restricted to HALO band ({halo_tag}) yields min/mean/max = " \
+                    f"{xojac.min()}/{xojac.mean()}/{xojac.max()}"
+                logger.info(msg)
+            case 'gns100x100':
+                #-- check that senstivities in halo band are zero
+                parent_info = region_table[region_info.parent]
+                dlon = parent_info.grid.dlon
+                dlat = parent_info.grid.dlat
+                lonmin = region_info.grid.west + dlon
+                lonmax = region_info.grid.east - dlon
+                latmin = region_info.grid.south + dlat
+                latmax = region_info.grid.north - dlat
+                halo_tag = f"lon<={lonstr(lonmin)} or lon>={lonstr(lonmax)} " \
+                    f"or lat<={latstr(latmin)} or lat>={latstr(latmax)}"
+                xcnd = (ds_ojac.region==region) & \
+                    ( \
+                      (ds_ojac.lon<=lonmin) | (ds_ojac.lon>=lonmax) \
+                      | (ds_ojac.lat<=latmin) | (ds_ojac.lat>=latmax) \
+                      )
+                xds = ds_ojac.sel(ng=xcnd)
+                xojac = xds.obs_jacobian.values
+                msg = f"ojac@{region}, restricted to HALO band ({halo_tag}) yields min/mean/max = " \
+                    f"{xojac.min()}/{xojac.mean()}/{xojac.max()}"
+                logger.info(msg)
+
 
 ################################################################################
 #
@@ -2161,6 +2375,19 @@ sparser.add_argument('--outname',
                     help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
 
 #
+#--       inspect_ojac_obs1D
+#
+sparser = subparsers.add_parser('inspect_ojac_obs1D',
+                                help="""some inspection and consistency check on generated observational Jacobian (should be applicable to both, "global/flask" and "zoomed/continuous)""")
+sparser.add_argument('filepath_ojac',
+                     type=Path,
+                     help="""NetCDF file prepared for observational Jacobian""")
+sparser.add_argument('--outdir',
+                    help="""top-level directory for any generated outputs..""")
+sparser.add_argument('--outname',
+                    help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
+
+#
 #--       monthly_emissions_for_inversion
 #
 sparser = subparsers.add_parser('monthly_emissions_for_inversion',
@@ -2253,6 +2480,11 @@ def main(args):
 
     if args.subcmds=='merge_ojac_obs1D':
         subcmd_merge_ojac_obs1D(args)
+
+    if args.subcmds=='inspect_ojac_obs1D':
+        subcmd_inspect_ojac_obs1D(args)
+
+#
 if __name__ == '__main__':
     import datetime as dtm
 
