@@ -1,7 +1,8 @@
 # Tasks (by order of priority)
 - GUI (setup)
-    - [ ] (1) GM to remove halos from the Jacobian and emission files
-    - [ ] GM to finish the emission plots (either write new or reuse: "Reactivate "Emission Explorer" in the "master GUI")
+    - [ ] (1) GM to apply script (to remove halos from the Jacobian and emission files) to the files we are using on the VM
+    - [ ] (1) MV to integrate script into environment that creates the Jacobian
+    - [ ] (3) GM to improve performance on emission plots, potentially also seasonal cycles, or bar plot ... 
     - [ ] GM to "combine the two tabs "setup simulation" and "preconfigured simulation"
 - GUI (analysis)
     - [x partly] Add Chi2 with sigma = sqrt (sigma_obs**2 + sigma_model **2), and sigma model from a crude approximation derived from short scale variability of the obs, or the variability of the meteo (representation error approximation from slopes may also be there ...
@@ -26,8 +27,9 @@
     - [ ] properly setup github pages with mkdocs
 - Inversion
     - [ ] TXK/MV: draft a kind of tutorial guiding the user through one of the experiments
-    - [ ] MV (1) to check whether this has worked now: "Compute Jacobians for the 34 (?) sites in the zoom domain using the zoom setup.Jacobian should be computed for the average of the available over the preferred time of the day (afternoon for low alt and morning for heigh alt). So, for each observation day, we have a single sensitivity." 
     - [ ] GM (2) to revise global footprint calculation (back to Oct and network identifier ... see below)
+    - [ ] MV (1) does the local footprints
+    - [ ] TK (1) prepare an example of a switch in the fortran (that the user should then be able to control via the GUI)
     - [ ] postprocessing of the global flask Jacobian such that the sensitivity with respect to the grid cells over the zoom domain is distributed to sensitivities on the zoom grid according to the fraction of each zoom domain grid cell area in the global resolution's grid cell. Like this the emission dimension of the global and zoom domain contributions to the overall Jacobian are the same 
     - [ ] MV to revise zoom domain footprint calculation (back to Oct ... see below)
   
