@@ -35,6 +35,7 @@ from tm5.post.utilities import lonstr,latstr,set_outname,create_sha512
 #-- initial/older/depreceated methods
 from tm5.post.footprint_io import tm5rundir_jacobian2D, tm5rundir_emissions1D
 
+nsecday = 86400
 
 def tm5refdir_load_stationconc( refdir : str | Path, obsid : str ) -> xr.DataArray:
     station_file = Path(refdir) / 'stations' / 'stations.nc4'
@@ -323,13 +324,13 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
     dayf = dayl - Timedelta(days=args.days-1) #-- #args.days overall, selected day is last
     day_range = date_range(dayf, dayl, freq='1d')
     nday = len(day_range)
-    msg = f"...assembling for temporal range {dayf.strftime('%Y%m%d')} - {dayl.strftime('%Y%m%d')}"
+    msg = f"...collecting footprint information for (daily) observations " \
+        f"in temporal range {dayf.strftime('%Y%m%d')} - {dayl.strftime('%Y%m%d')}"
     logger.info(msg)
 
     #
     #-- loop over (obs) days
     #
-    emis_info = None
     obsfile_info_cache = OrderedDict()
     stationlist_1D = []
     obstimelist_1D = []
@@ -339,6 +340,9 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
     obsmix_1D = np.empty(0)
     inic_array1D = np.empty(0)
     jac_array = None
+    emis_lonc1D = None
+    emis_latc1D = None
+    emis_reg1D  = None
     rundir_list = []
     for iday,obsday in enumerate(day_range):
         #
@@ -350,29 +354,17 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
         #
         dirday = obsday + Timedelta(days=1)
         dirpattern = dirday.strftime(f"footprints_{domain_tag}_*%Y%m%d")
-        rundir_list = sorted(topdir.glob(dirpattern))
-        if len(rundir_list)!=1:
+        cur_rundir_list = sorted(topdir.glob(dirpattern))
+        if len(cur_rundir_list)!=1:
             msg = f"@obsday={obsday}, expected single TM5 run directory only, but " \
-                f"found ==>{rundir_list}<=="
+                f"found ==>{cur_rundir_list}<=="
             raise RuntimeError(msg)
-        rundir = rundir_list[0]
+        rundir = cur_rundir_list[0]
         msg = f"@obsday={obsday.strftime('%Y-%m-%d')}, reading from directory -->{rundir}<--"
         logger.info(msg)
         rundir_list.append(rundir)
         #
-        #-- emission information
-        #
-        cur_emis_info = tm5rundir_emissions2D(rundir, trange=day_range,
-                                              nohalo=nohalo, clip_child=False)
-        #-- store from first directory only
-        if emis_info is None:
-            emis_info = cur_emis_info
-        else: #-- consistency check
-            if not np.all(cur_emis_info.emis2D==emis_info.emis2D):
-                msg = f"...detected differing emissions on {obsday}"
-                raise RuntimeError(msg)
-        #
-        #--
+        #-- load observations
         #
         obs_table = tm5rundir_obstable(rundir)
         if obsid==None:
@@ -587,12 +579,20 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
         jac_info = tm5rundir_jacobian3D(rundir, emis_trange=day_range,
                                         obsid=list(obsinfo_curday.index),
                                         nohalo=nohalo, clip_child=False)
-        jac3D = jac_info.jac3D #-- nobs/nemisday/ng
+        #-- Jacobian shape: [nobs,nemisday,ng]
+        jac3D = jac_info.jac3D
         # print(f"@{dirday}, jac3D.shape={jac3D.shape}")
         if jac_array is None:
             jac_array = np.copy(jac3D)
         else:
             jac_array = np.concatenate((jac_array,jac3D), axis=0)
+        #
+        #-- emission location (required only once)
+        #
+        if emis_lonc1D is None:
+            emis_lonc1D = jac_info.lonc1D
+            emis_latc1D = jac_info.latc1D
+            emis_reg1D  = jac_info.reg1D
     #
     nobs = len(obsmix_1D)
     msg = f"...collected {nobs} observations overall."
@@ -610,7 +610,6 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
     input4inv = SimpleNamespace(
         day_range=day_range,
         rundir_list=rundir_list,
-        emis_info=emis_info,
         stationlist_1D=np.array(stationlist_1D),
         obstimelist_1D=obstimelist_1D,
         obslon_1D=obslon_1D,
@@ -618,6 +617,9 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
         obsalt_1D=obsalt_1D,
         obsmix_1D=obsmix_1D,
         inic_array1D=inic_array1D,
+        emis_lonc1D=emis_lonc1D,
+        emis_latc1D=emis_latc1D,
+        emis_reg1D=emis_reg1D,
         jac_array=jac_array)
     return input4inv
 
@@ -1337,14 +1339,13 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     dayf = day_range[0]
     dayl = day_range[-1]
     nday = len(day_range)
-    nemisday,ng = input4inv.emis_info.emis2D.shape
     stationlist_1D = input4inv.stationlist_1D
     obstimelist_1D = input4inv.obstimelist_1D
     #--
     obsmix_1D = input4inv.obsmix_1D
-    nobs = len(obsmix_1D)
     inic_array1D = input4inv.inic_array1D
     jac_array = input4inv.jac_array #-- nobs/nemisday/ng
+    nobs, nemisday, ng = jac_array.shape
     #
     #-- so far
     #   - Jacobian quantifies deltac [ppb] w.r.t. daily emission rates [kgCH4/cell/s]
@@ -1355,17 +1356,25 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     #   - need to scale and average entries in Jacobian accordingly
     #
     if args.jac4totemis:
-        emis2D = input4inv.emis_info.emis2D
-        nsecday = 86400
         ojac_tot = jac_array.sum(axis=1)/(nday*nsecday)
+        
+        #
+        #-- verification of monthly total aggregation
+        #
+        #-- select emissions from from first rundir
+        rundir_first = input4inv.rundir_list[0]
+        emis_info = tm5rundir_emissions2D(rundir_first, trange=day_range, nohalo=args.nohalo)
+        emis2D = emis_info.emis2D
         emis_tot = np.sum(emis2D*nsecday, axis=0) #-- overall emissions in temporal range
+        msg = f"emis_tot min/mean/max = {emis_tot.min()}/{emis_tot.mean()}/{emis_tot.max()}"
+        logger.debug(msg)
         #
         for iobs in range(nobs):
             _staid  = stationlist_1D[iobs]
             _obsday = obstimelist_1D[iobs].strftime('%Y%m%d')
             dc_tot = np.dot(ojac_tot[iobs,:], emis_tot)
             dc     = np.dot(jac_array[iobs,:].ravel(), emis2D.ravel())
-            msg = f"@{_obsday},{_staid}: deltac derived by daily-rate/temporal-total = " \
+            msg = f"@{_obsday},{_staid}: deltacconc derived by daily-rate/temporal-total = " \
                 f"{dc}/{dc_tot}"
             logger.info(msg)
 
@@ -1445,7 +1454,7 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     fp.createDimension('ng', ng)
     fp.createDimension('nobs', nobs)
     if not args.jac4totemis:
-        fp.createDimension('nemisday', nday)
+        fp.createDimension('nemisday', nemisday)
     fp.createDimension('nsta', nsta)
     #
     #-- unique list of stations
@@ -1454,7 +1463,7 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     ncvar[:] = station_list[:]
     ncvar.long_name = f"station_identifier_list"
     ncvar.units = ''
-    ncvar.comment = f"comprises the list of unique stations. Note, that there may be no observations for a station on certain day(s)."
+    ncvar.comment = f"Comprises the overall list of stations. Note, that there may be no observations for a station on certain day(s)."
     if stacoords_per_sta:
         #-- longitude
         ncvar = fp.createVariable('station_lon', 'f8', ('nsta',))
@@ -1478,19 +1487,19 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     ncvar.long_name = 'longitude'
     ncvar.units = 'degrees_east'
     ncvar.comment = 'references center of grid-cell in related zoom domain'
-    ncvar[:] = input4inv.emis_info.lonc1D
+    ncvar[:] = input4inv.emis_lonc1D
     #
     ncvar = fp.createVariable('lat', 'f8', ('ng',),
                               compression='zlib', complevel=complevel)
     ncvar.long_name = 'latitude'
     ncvar.units = 'degrees_north'
     ncvar.comment = 'references center of grid-cell in related zoom domain'
-    ncvar[:] = input4inv.emis_info.latc1D
+    ncvar[:] = input4inv.emis_latc1D
     #
-    ncvar = fp.createVariable('region', input4inv.emis_info.reg1D.dtype, ('ng',))
+    ncvar = fp.createVariable('region', input4inv.emis_reg1D.dtype, ('ng',))
     ncvar.long_name = f"emission_region_identifier"
     ncvar.units = ''
-    ncvar[:] = input4inv.emis_info.reg1D[:]
+    ncvar[:] = input4inv.emis_reg1D[:]
     #
     ncvar = fp.createVariable('obs', 'f8', ('nobs',),
                               compression='zlib', complevel=complevel)
@@ -1554,8 +1563,14 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     #
     #-- global attributes
     #
-    fp.description = f"Inputs for FIT-IC inversion environment."
+    fp.description = f"Inputs for FIT-IC inversion environment comprising the observational" \
+        f"Jacobian, the initial concentrations, and the observed concentrations " \
+        f"at the selected stations and for the selected days."
     fp.footprint_directory = str(topdir.absolute())
+    try:
+        fp.processing_platform = f"{os.environ['USER']}@{os.environ['HOSTNAME']}"
+    except KeyError:
+        pass
     fp.history = f"{' '.join(sys.argv)}"
     fp.date_created = Timestamp.utcnow().isoformat()
     #
@@ -1731,44 +1746,29 @@ def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
 def subcmd_create_target_jacobian(args : ArgumentNamespace) -> None:
     """
     """
-    topdir = Path(args.outpath_tm5)
     complevel = args.__dict__.get('complevel',4)
-
-    input4inv = collect_input4inversion(args)
-    day_range = input4inv.day_range
-    station_list = input4inv.station_list
-    ojac4D = input4inv.ojac4D
-    outemis_info = input4inv.emis_info
-    nemisday,ng = outemis_info.emis2D.shape
-    nobsday = len(day_range)
-    dayf = day_range[0]
-    dayl = day_range[-1]
-    reg1D = outemis_info.reg1D #-- 1D vector of region ids
-    region_list = np.unique(reg1D)
-    msg = f"detected region identifiers -->{region_list}<--"
+    regions = ['glb600x400', 'eur300x200', 'gns100x100',]
+    reginfo = regions1D_info(regions, nohalo=args.nohalo)
+    ng = reginfo.ng
+    region_table = reginfo.table
+    area1D = reginfo.area1D
+    msg = f"-->{regions}<-- yield overall {ng} grid-cells"
     logger.info(msg)
-    #
-    #-- create an area vector
-    #
-    area1D = np.full((ng,), -1.)
-    for reg in region_list:
-        ngc_reg = np.count_nonzero(reg1D==reg)
-        msg = f"reg={reg} ngc={ngc_reg}"
-        logger.info(msg)
-        if reg=='glb600x400':
-            reg_area = TM5Grids.global6x4().area
-        elif reg=='eur300x200':
-            reg_area = TM5Grids.eur3x2().area
-        elif reg=='gns100x100':
-            reg_area = TM5Grids.gns1x1().area
-        #
-        cnd_reg = reg1D==reg
-        area1D[cnd_reg] = reg_area.ravel()
+
+
     #
     #-- country shape
     #
-    gns_grid = TM5Grids.gns1x1()
+    gns_grid = region_table['gns100x100'].grid
     gns_w,gns_e,gns_s,gns_n = gns_grid.domain
+    if args.nohalo:
+        gns_w += 3
+        gns_e -= 3
+        gns_s += 2
+        gns_n -= 2
+        gns_grid = TM5Grids.from_corners(west=gns_w,east=gns_e,south=gns_s,north=gns_n,
+                                         dlon=gns_grid.dlon,dlat=gns_grid.dlat)
+
     tgt_country_table = OrderedDict()
     if args.countryfrct_filepath!=None:
         cfrctfile = args.countryfrct_filepath
@@ -1795,7 +1795,7 @@ def subcmd_create_target_jacobian(args : ArgumentNamespace) -> None:
         country_frct_gns = frctds_gns.country_fraction.values
         country_area_gns = country_frct_gns*gns_grid.area[np.newaxis,:,:]
         for ic,cid in enumerate(country_id):
-            _area = country_area_gns[ic,:].sum()/1e6 #[km2]
+            _area    = country_area_gns[ic,:].sum()/1e6 #[km2]
             _areatot = country_area[ic,:].sum()/1e6  #[km2]
             if _area>0:
                 print(f"{cid}: area_gns={_area:.2f}[km2] (area={_areatot:.2f}[km2]")
@@ -1829,10 +1829,10 @@ def subcmd_create_target_jacobian(args : ArgumentNamespace) -> None:
         if tgt=='global':
             tjac2D[itgt,:] = 1.
         elif tgt=='zoom_domain':
-            cnd_gns = outemis_info.reg1D=='gns100x100'
+            cnd_gns = reginfo.reg1D=='gns100x100'
             tjac2D[itgt,cnd_gns] = 1.
         elif tgt in tgt_country_table:
-            cnd_tgt = outemis_info.reg1D=='gns100x100'
+            cnd_tgt = reginfo.reg1D=='gns100x100'
             tgt_frct = tgt_country_table[tgt]
             #-- just one more consistency check
             tgt_area = np.sum(tgt_frct*area1D[cnd_gns])/1e6
@@ -1842,7 +1842,7 @@ def subcmd_create_target_jacobian(args : ArgumentNamespace) -> None:
     #
     #-- prepare output
     #
-    outname_tokens = [f"fitic-inversion_target-jacobian-ntgt{ntgt}",]
+    outname_tokens = [f"fitic-tarjac_ntgt{ntgt}",]
     if len(tgt_country_table)>0:
         country_tag = 'with-' + '-'.join(list(tgt_country_table.keys()))
         outname_tokens.append(country_tag)
@@ -1862,19 +1862,19 @@ def subcmd_create_target_jacobian(args : ArgumentNamespace) -> None:
     ncvar.long_name = 'longitude'
     ncvar.units = 'degrees_east'
     ncvar.comment = 'references center of grid-cell in related zoom domain'
-    ncvar[:] = outemis_info.lonc1D
+    ncvar[:] = reginfo.lonc1D
     #
     ncvar = fp.createVariable('lat', 'f8', ('ng',),
                               compression='zlib', complevel=complevel)
     ncvar.long_name = 'latitude'
     ncvar.units = 'degrees_north'
     ncvar.comment = 'references center of grid-cell in related zoom domain'
-    ncvar[:] = outemis_info.latc1D
+    ncvar[:] = reginfo.latc1D
     #
-    ncvar = fp.createVariable('region', outemis_info.reg1D.dtype, ('ng',))
+    ncvar = fp.createVariable('region', reginfo.reg1D.dtype, ('ng',))
     ncvar.long_name = f"emission_region_identifier"
     ncvar.units = ''
-    ncvar[:] = outemis_info.reg1D[:]
+    ncvar[:] = reginfo.reg1D[:]
     #
     ncvar = fp.createVariable('area', 'f8', ('ng',),
                               compression='zlib', complevel=complevel)
@@ -1896,6 +1896,10 @@ def subcmd_create_target_jacobian(args : ArgumentNamespace) -> None:
     #-- global attributes
     #
     fp.description = f"Target Jacobian for Fortran inversion environment within FIT-IC"
+    try:
+        fp.processing_platform = f"{os.environ['USER']}@{os.environ['HOSTNAME']}"
+    except KeyError:
+        pass
     fp.history = f"{' '.join(sys.argv)}"
     fp.date_created = Timestamp.utcnow().isoformat()
     #
@@ -2459,28 +2463,16 @@ sparser.add_argument('--outname',
 #
 sparser = subparsers.add_parser('create_target_jacobian',
                                 help="""preparation of dedicated target Jacobian for Fortran inversion system.""")
-sparser.add_argument('outpath_tm5',
-                     help="""top-level directory of series of TM5 adjoint runs for footprint creation each of those for one observation day.""")
+sparser.add_argument('--no-halo_correction',
+                     action='store_false',
+                     dest='nohalo',
+                     help="""meanwhile, by default the HALO part in zoom domains with parent are being removed. Use this option to activate the old behaviour.""")
 sparser.add_argument('--countryfrct_filepath',
                      type=Path,
                      help="""provide 1degree gridded NetCDF file with country fractions.""")
 sparser.add_argument('--countries',
                      nargs='+',
                      help="""select list of countries (ISO3 identifier) which must be fully covered within the FIT-IC innermost zoom domain.""")
-sparser.add_argument('--obsdir',
-                     default="/lunarc/nobackup/projects/ghg_inv/michael/FIT-IC/observations_fitic-gui",
-                     help="""directory providing obspack NetCDF data files with CH4 observations for selected station/site (default: %(default)s).""")
-sparser.add_argument('--obsid',
-                     nargs='+',
-                     default=['cbw_207',],
-                     help="""select one single observational location (default: %(default)s).""")
-sparser.add_argument('--selday',
-                     default="20210103",
-                     help="""last observational day of accumulation period (default: %(default)s).""")
-sparser.add_argument('--days',
-                     type=int,
-                     default=1,
-                     help="""number of days backwards of accumulation period (default: %(default)s).""")
 sparser.add_argument('--outdir',
                     help="""top-level directory for any generated outputs..""")
 sparser.add_argument('--outname',

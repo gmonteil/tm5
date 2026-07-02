@@ -451,7 +451,7 @@ def tm5rundir_obstable( outpath : str | Path ) -> DataFrame:
         raise FileNotFoundError(msg)
     conf = OmegaConf.load(yamlfile)
 
-    # Load the observations tabled
+    # Load the observations table
     obs_table = read_obs_table(conf.observations.file).set_index('obsid')
     return obs_table
 
