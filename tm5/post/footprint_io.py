@@ -89,9 +89,45 @@ def _init_region_table():
             region_table[reg].lonc1D_clipped = lonmesh.ravel()[usemask]
             region_table[reg].latc1D_clipped = latmesh.ravel()[usemask]
             region_table[reg].area1D_clipped = area1D[usemask]
+        #
+        #-- HALO corrected 1D vectors
+        #   - at all edges discarding the width of one parent grid-cell
+        #
+        if reg_info.parent==None: #-- glb600x400 [nothing to change]
+            nohalo_mask = np.full((grid.nlat, grid.nlon), True)
+            region_table[reg].ng1D_nohalo = region_table[reg].ng1D
+            region_table[reg].lonc1D_nohalo = region_table[reg].lonc1D
+            region_table[reg].latc1D_nohalo = region_table[reg].latc1D
+            region_table[reg].area1D_nohalo = region_table[reg].area1D
+            region_table[reg].nohalo_mask = nohalo_mask.ravel()
+        else:
+            grid_parent = region_table[reg_info.parent].grid
+            dlon_parent = grid_parent.dlon
+            dlat_parent = grid_parent.dlat
+            nlon_halo = grid_parent.dlon//grid.dlon
+            nlat_halo = grid_parent.dlat//grid.dlat
+            msg = f"@{reg}, nlon/nlat = {grid.nlon}/{grid.nlat} " \
+                f"nlon_halo/nlat_halo = {nlon_halo}/{nlat_halo}"
+            logger.debug(msg)
+            #-- create mask (value=False for grid-cells within HALO)
+            nohalo_mask = np.full((grid.nlat, grid.nlon), False)
+            nohalo_mask[nlat_halo:-nlat_halo,nlon_halo:-nlon_halo] = True
+            msg = f"@{reg}, nohalo_mask.shape={nohalo_mask.shape}, np.count_nonzero(nohalo_mask)={np.count_nonzero(nohalo_mask)}"
+            logger.debug(msg)
+            lonmesh_nohalo = lonmesh[nlat_halo:-nlat_halo,nlon_halo:-nlon_halo]
+            latmesh_nohalo = latmesh[nlat_halo:-nlat_halo,nlon_halo:-nlon_halo]
+            area_nohalo = grid.area[nlat_halo:-nlat_halo,nlon_halo:-nlon_halo]
+            region_table[reg].ng1D_nohalo = len(lonmesh_nohalo.ravel())
+            region_table[reg].lonc1D_nohalo = lonmesh_nohalo.ravel()
+            region_table[reg].latc1D_nohalo = latmesh_nohalo.ravel()
+            region_table[reg].area1D_nohalo = area_nohalo.ravel()
+            region_table[reg].nohalo_mask = nohalo_mask.ravel()
 
 
-def regions1D_info( regions : list, clip_child : bool = False ) -> SimpleNamespace:
+def regions1D_info( regions : list, nohalo : bool = False, clip_child : bool = False ) -> SimpleNamespace:
+    if nohalo and clip_child:
+        msg = f"options nohalo and clip_child cannot be active at the same time"
+        raise NotImplementedError(msg)
     if len(region_table)==0:
         msg = f"...initialise region table"
         logger.info(msg)
@@ -107,7 +143,13 @@ def regions1D_info( regions : list, clip_child : bool = False ) -> SimpleNamespa
     for reg in regions:
         reg_info = region_table[reg]
         grid = reg_info.grid
-        if clip_child:
+        if nohalo:
+            ng += reg_info.ng1D_nohalo
+            region_list = region_list + [reg,]*reg_info.ng1D_nohalo
+            lonc_list.append(reg_info.lonc1D_nohalo)
+            latc_list.append(reg_info.latc1D_nohalo)
+            area_list.append(reg_info.area1D_nohalo)
+        elif clip_child:
             if reg=='gns100x100':
                 ng += reg_info.ng1D
                 region_list = region_list + [reg,]*reg_info.ng1D
@@ -155,28 +197,29 @@ def regiondomain_halo( region : str ) -> list:
     return [lonmin,lonmax,latmin,latmax,]
 
 
-def tm5emisdir_load_emissions2D( emisdir : str | Path, emis_prefix : str, day_range : date_range, regions : list, zeroout_child : bool = False, clip_child : bool = False ) -> SimpleNamespace:
+def tm5emisdir_load_emissions2D( emisdir : str | Path, emis_prefix : str, day_range : date_range, regions : list, nohalo : bool = True, clip_child : bool = False ) -> SimpleNamespace:
     """Read in daily emissions as prepared for TM5 for the selected temporal range
     and regions.
     The emissions array will be 2D with only one single dimension in the spatial domain,
     and concatenating the contributions from each region in the spatial domain as well.
     """
-    #
-    #-- make sure region table is set-up
-    #
-    if len(region_table)==0:
-        msg = f"...initialise region table"
-        logger.info(msg)
-        _init_region_table()
+    # #
+    # #-- make sure region table is set-up
+    # #
+    # if len(region_table)==0:
+    #     msg = f"...initialise region table"
+    #     logger.info(msg)
+    #     _init_region_table()
     nday = len(day_range)
     #
     #-- get spatial information as 1D vector
     #
-    domain1D_info = regions1D_info(regions, clip_child=clip_child)
+    domain1D_info = regions1D_info(regions, nohalo=nohalo, clip_child=clip_child)
     ng = domain1D_info.ng
     lonc1D = domain1D_info.lonc1D
     latc1D = domain1D_info.latc1D
     reg1D  = domain1D_info.reg1D
+    region_table = domain1D_info.table
     msg = f"...preparing emissions for nday={nday} and ng={ng}"
     logger.info(msg)
     #
@@ -192,18 +235,30 @@ def tm5emisdir_load_emissions2D( emisdir : str | Path, emis_prefix : str, day_ra
             if not fpath.exists():
                 msg = f"expected emissions file ***{str(fpath)}*** not found on system."
                 raise FileNotFoundError(msg)
+            #
+            #-- open emissions file for current region
+            #
             em = xr.open_dataset(fpath)
+            #
             #-- sum-up total emissions
+            #
             emtot = em.to_array().sum('variable').values
-            #-- turn 2D spatial part into 1D
+            #
+            #-- turn lat/lon into 1D vector (lat major ordering)
+            #
             emtot = emtot.ravel()
+            ngtot = len(emtot)
             #
             #-- potentially set emissions to zero for grid-cells within child domain
             #
-            if zeroout_child and region_table[reg].child!=None:
-                msk = region_table[reg].usemask
-                emtot[~msk] = 0.
-            if clip_child:
+            if nohalo:
+                msk = region_table[reg].nohalo_mask
+                emtot = emtot[msk]
+                if iday==0:
+                    msg = f"@{reg}/{day}: applied nohalo mask reduces #gridcells from " \
+                        f"{ngtot} to {len(emtot)}"
+                    logger.debug(msg)
+            elif clip_child:
                 #--
                 if reg=='gns100x100':
                     #-- *all* emissions from innermost domain
@@ -493,9 +548,14 @@ def tm5rundir_iniconc_1obs( outpath : str | Path, obs_info : Series ) -> SimpleN
     return SimpleNamespace(point_output=sta_outp, conc=sta_outp.mixing_ratio, nsamples=sta_outp.nsamples, averaging_time=sta_outp.averaging_time)
 
 
-def tm5rundir_emissions2D( outpath : str | Path, trange : date_range = None, emis_prefix : str = None, host : str = 'cosmos', clip_child : bool = False ) -> SimpleNamespace:
+def tm5rundir_emissions2D( outpath : str | Path, trange : date_range = None,
+                           emis_prefix : str = None,
+                           nohalo : bool = True, clip_child : bool = False, host : str = 'cosmos' ) -> SimpleNamespace:
     """
     """
+    if nohalo and clip_child:
+        msg = f"options nohalo and clip_child cannot be active at the same time"
+        raise NotImplementedError(msg)
     yamlfile = Path(outpath) / 'tm5.yaml'
     if not yamlfile.exists():
         msg = f"yaml configuration file ***{str(yamlfile)}*** not found on system."
@@ -519,16 +579,21 @@ def tm5rundir_emissions2D( outpath : str | Path, trange : date_range = None, emi
     else:
         emis_prefix = emis_prefix_rundir
 
-    return tm5emisdir_load_emissions2D(emisdir, emis_prefix, trange, regions, clip_child=clip_child)
+    return tm5emisdir_load_emissions2D(emisdir, emis_prefix, trange, regions, nohalo=nohalo, clip_child=clip_child)
 
 
-def tm5rundir_jacobian3D( outpath : str | Path, trange : date_range = None, obsid : str|list|None = None, clip_child : bool = False ) -> NDArray:
+def tm5rundir_jacobian3D( outpath : str | Path, emis_trange : date_range = None,
+                          obsid : str|list|None = None,
+                          nohalo : bool = True, clip_child : bool = False ) -> NDArray:
     """
     Reads in the sensitivity (or Jacobian) from ***one single TM5 adjoint run***,
-    meaning it should be for one observational day.
+    which provides the sensitivities of CH4 concentrations (at multiple stations) with respect
+    to all daily emissions from simulation start to the observational day.
     
-    will yield an array of shape jac(nobs,nemis)
-    nemis comprises emissionday and emission location into a single 1D array of order
+    We store these sensitivities conceptionally in an array (nobs,nemis),
+    where nobs quantifies the number of stations, while emission days *and* emission grid-cells
+    are combined into a single 1D vector of 'nemis' elements.
+    Ordering of emission time and location in this 1D vector is as follows
     - day1
       - reg1 (flattened)
       - reg2 (flattened)
@@ -539,17 +604,20 @@ def tm5rundir_jacobian3D( outpath : str | Path, trange : date_range = None, obsi
       .
       .
     """
+    if nohalo and clip_child:
+        msg = f"options nohalo and clip_child cannot be active at the same time"
+        raise NotImplementedError(msg)
     #
     #-- load footprints into dataframe, plus ancillary information
     #
-    fpinfo = tm5_fitic_adjoint_corrected_halos(outpath, trange)
+    fpinfo = tm5_fitic_adjoint_corrected_halos(outpath, emis_trange)
     footp_df = fpinfo.data
     obsids   = fpinfo.obsids
     days     = fpinfo.days
     regions  = fpinfo.regions
     nobs = len(obsids)
-    nday = len(days)
-    msg = f"...origin footprint data read, nfootp={len(footp_df)} for nobs/nday = {nobs}/{nday}"
+    nemisday = len(days)
+    msg = f"...origin footprint data read, nfootp={len(footp_df)} for nobs/nemisday = {nobs}/{nemisday}"
     logger.debug(msg)
     if type(obsid)==str:
         obsid = [obsid,]
@@ -563,7 +631,7 @@ def tm5rundir_jacobian3D( outpath : str | Path, trange : date_range = None, obsi
         footp_df = footp_df.loc[cnd_obs,:]
         msg = f"......{len(footp_df)} selected footprints."
         logger.info(msg)
-        # for iday in range(nday):
+        # for iday in range(nemisday):
         #     for reg in region_table.keys():
         #         cnd = (footp_df.loc[:,'itime']==iday)&(footp_df.loc[:,'region']==reg)
         #         dd = footp_df.loc[cnd,:]
@@ -577,25 +645,28 @@ def tm5rundir_jacobian3D( outpath : str | Path, trange : date_range = None, obsi
     #
     #-- get spatial information as 1D vector
     #
-    domain1D_info = regions1D_info(regions, clip_child=clip_child)
+    domain1D_info = regions1D_info(regions, nohalo=nohalo, clip_child=clip_child)
     ng = domain1D_info.ng
     lonc1D = domain1D_info.lonc1D
     latc1D = domain1D_info.latc1D
     reg1D  = domain1D_info.reg1D
     msg = f"...preparing Jacobian for emissions for {nobs} observation locations, " \
-        f" {nday} emission days and ng={ng} emission grid-cells (per day)."
+        f" {nemisday} emission days and ng={ng} emission grid-cells (per day)."
     logger.info(msg)
     #
-    #-- assemble Jacobian
+    #-- initialise Jacobian to zero
     #
-    jacobian3D = zeros((nobsout,nday,ng))
+    jacobian3D = zeros((nobsout,nemisday,ng))
+    #
+    #-- fill
+    #
     for iobs,itrac in enumerate(itrac_list):
         cur_obsid = obsids[itrac]
         cnd_obs = footp_df.loc[:,'itrac']==itrac
         df = footp_df.loc[cnd_obs,:]
         # msg = f"...restricted to {cur_obsid} yields {len(df)} entries"
         # logger.debug(msg)
-        for iday in range(nday):
+        for iday in range(nemisday):
             #-- collect sensitivity contributions from all regions
             jac_list = []
             cnd_day = df.loc[:,'itime']==iday
@@ -617,20 +688,15 @@ def tm5rundir_jacobian3D( outpath : str | Path, trange : date_range = None, obsi
                 # msg = f"@itrac={itrac}/iday={iday}/{reg}, sens min/mean/max = " \
                 #     f"{sens.min()}/{sens.mean()}/{sens.max()}"
                 # print(msg)
-                if clip_child:
-                    if reg=='gns100x100':
-                        #-- *all* sensitivities from innermost domain
-                        assert len(sens)==region_table[reg].ng1D
-                    else:
-                        #-- contributions from child domain excluded
-                        #   (those should be zero anyhow)
-                        msk = region_table[reg].usemask
-                        sens = sens[msk]
-                        #-- consistency check
-                        assert len(sens)==region_table[reg].ng1D_clipped
-                    # msg = f"@itrac={itrac}/iday={iday}/{reg}, *AFTER MASKING* sens min/mean/max = " \
-                    #     f"{sens.min()}/{sens.mean()}/{sens.max()}"
-                    # print(msg)
+                msk = None
+                if nohalo and clip_child:
+                    msk = region_table[reg].nohalo_mask & region_table[reg].usemask
+                elif nohalo:
+                    msk = region_table[reg].nohalo_mask
+                elif clip_child:
+                    msk = region_table[reg].usemask
+                if not msk is None:
+                    sens = sens[msk]
                 jac_list.append(sens)
             #
             jacobian3D[iobs,iday,:] = np.hstack(jac_list)
@@ -639,7 +705,7 @@ def tm5rundir_jacobian3D( outpath : str | Path, trange : date_range = None, obsi
                            reg1D=reg1D, lonc1D=lonc1D, latc1D=latc1D)
 
 
-def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, trange : date_range = None) -> SimpleNamespace:
+def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, emis_trange : date_range = None) -> SimpleNamespace:
     """Function to read and collect footprint information from one TM5 adjoint run
     for selected period of time into a pandas dataframe for further processing.
     outpath must be the toplevel output directory of the TM5 forward and adjoint run,
@@ -678,7 +744,7 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, trange : date_range =
     region_list = dconf.run.regions
     #
     #-- for now we handle
-    #   - ['glb600x400', 'eur300x200', 'gns100x100']
+    #   - ['glb600x400', 'eur300x200', 'gns100x100']  --> 
     #   - ['glb600x400',]
     #
     expected_region_list = [ list(region_table.keys()), ['glb600x400',] ]
@@ -687,8 +753,8 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, trange : date_range =
     #
     #-- set temporal domain
     #
-    if trange is None:
-        trange = date_range(dconf.run.start, dconf.run.end, freq='1d')
+    if emis_trange is None:
+        emis_trange = date_range(dconf.run.start, dconf.run.end, freq='1d')
     #
     #-- dictionary for collecting footprint results
     #
@@ -705,7 +771,7 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, trange : date_range =
     #   - dataasets in adjoint emissions files are written as long 1D arrays (dimension: point),
     #     variable 'int itrac(point)' provides index of associated tracer
     #   - Thus, there should be *no* need to loop along the tracer !?
-    for iday, day in enumerate(trange):
+    for iday, day in enumerate(emis_trange):
         for ireg, region in enumerate(region_list):
             fname = adjemis_dir / day.strftime(f'adjemis.{region}.%Y%m%d.nc')
             # Adjoint files are written only if needed, so it may not exist for a given day/region
@@ -737,9 +803,9 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, trange : date_range =
                 lonmin,lonmax,latmin,latmax = regiondomain_halo(region)
                 cnd_lon = (lonc>=lonmin)&(lonc<=lonmax)
                 cnd_lat = (latc>=latmin)&(latc<=latmax)
-                cnd_halo = cnd_lon&cnd_lat
+                cnd_nohalo = cnd_lon&cnd_lat
                 # print(f"@{region},{day.strftime('%Y-%m-%d')}, nfootp prior/post filtering = " \
-                #       f"{nfootp}/{np.count_nonzero(cnd_halo)}")
+                #       f"{nfootp}/{np.count_nonzero(cnd_nohalo)}")
             elif region=='eur300x200':
                 #-- initial approach:
                 #   (1) restrict to halo corrected domain of region
@@ -749,15 +815,15 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, trange : date_range =
                 # lonmax1,lonmin2,latmax1,latmin2 = regiondomain_halo(region_table[region].child)
                 # cnd_lon = ((lonc>=lonmin1)&(lonc<=lonmax1))|((lonc>=lonmin2)&(lonc<=lonmax2))
                 # cnd_lat = ((latc>=latmin1)&(latc<=latmax1))|((latc>=latmin2)&(latc<=latmax2))
-                # cnd_halo = cnd_lon&cnd_lat
+                # cnd_nohalo = cnd_lon&cnd_lat
                 # MVO: 2026-04-29, Guillaume confirmed that removal of "inner" part
                 #                  is handled within TM5
                 lonmin,lonmax,latmin,latmax = regiondomain_halo(region)
                 cnd_lon = (lonc>=lonmin)&(lonc<=lonmax)
                 cnd_lat = (latc>=latmin)&(latc<=latmax)
-                cnd_halo = cnd_lon&cnd_lat
+                cnd_nohalo = cnd_lon&cnd_lat
                 # print(f"@{region},{day.strftime('%Y-%m-%d')}, nfootp prior/post filtering = " \
-                #       f"{nfootp}/{np.count_nonzero(cnd_halo)}")
+                #       f"{nfootp}/{np.count_nonzero(cnd_nohalo)}")
             elif region=='glb600x400':
                 #-- initial approach:
                 #   (1) restrict to halo corrected domain of region
@@ -767,22 +833,22 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, trange : date_range =
                 # lonmax1,lonmin2,latmax1,latmin2 = regiondomain_halo(region_table[region].child)
                 # cnd_lon = ((lonc>=lonmin1)&(lonc<=lonmax1))|((lonc>=lonmin2)&(lonc<=lonmax2))
                 # cnd_lat = ((latc>=latmin1)&(latc<=latmax1))|((latc>=latmin2)&(latc<=latmax2))
-                # cnd_halo = cnd_lon&cnd_lat
+                # cnd_nohalo = cnd_lon&cnd_lat
                 # print(f"@{region},{day.strftime('%Y-%m-%d')}, nfootp prior/post filtering = " \
-                #       f"{nfootp}/{np.count_nonzero(cnd_halo)}")
+                #       f"{nfootp}/{np.count_nonzero(cnd_nohalo)}")
                 # MVO: 2026-04-29, Guillaume confirmed that removal of "inner" part
                 #                  is handled within TM5
                 # => for the global domain there are no halos to correct!
                 # => all collected footprints are taken
-                cnd_halo = np.full(len(ilat), True)
+                cnd_nohalo = np.full(len(ilat), True)
             ##
-            idxs_halo = np.where(cnd_halo)
-            ilat = ilat[idxs_halo]
-            ilon = ilon[idxs_halo]
-            itrac = itrac[idxs_halo]
-            values = values[idxs_halo]
-            lonc = lonc[idxs_halo]
-            latc = latc[idxs_halo]
+            idxs_nohalo = np.where(cnd_nohalo)
+            ilat = ilat[idxs_nohalo]
+            ilon = ilon[idxs_nohalo]
+            itrac = itrac[idxs_nohalo]
+            values = values[idxs_nohalo]
+            lonc = lonc[idxs_nohalo]
+            latc = latc[idxs_nohalo]
             nfootp = len(ilat)
             # #
             # #-- cbw_207 at second position
@@ -794,7 +860,7 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, trange : date_range =
             # print(msg)
             # if iday==0:
             #     msg = f"@{region},{day.strftime('%Y-%m-%d')}: after halo-correction " \
-            #         f"remaining footprints={len(idxs_halo[0])}"
+            #         f"remaining footprints={len(idxs_nohalo[0])}"
             #     print(msg)
 
             footprints['ilat'].extend(ilat)
@@ -808,7 +874,7 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, trange : date_range =
     footprints = DataFrame.from_dict(footprints)
     # msg = f"...overall #footprints={len(footprints)}"
     # logger.info(msg)
-    return SimpleNamespace(data=footprints, days=trange, regions=region_list, obsids=tracer)
+    return SimpleNamespace(data=footprints, days=emis_trange, regions=region_list, obsids=tracer)
 
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

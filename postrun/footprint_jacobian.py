@@ -217,8 +217,8 @@ def collect_input4inversion( args : ArgumentNamespace ) -> SimpleNamespace:
         #
         #-- 
         #
-        jac_info = tm5rundir_jacobian3D(rundir, trange=day_range, obsid=station_list,
-                                        clip_child=False)
+        jac_info = tm5rundir_jacobian3D(rundir, emis_trange=day_range,
+                                        obsid=station_list, clip_child=False)
         jac3D = jac_info.jac3D
         #-- dimensional consistency with emissions
         if not np.all(emis_info.reg1D==jac_info.reg1D):
@@ -299,7 +299,8 @@ def collect_input4inversion( args : ArgumentNamespace ) -> SimpleNamespace:
 def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) -> SimpleNamespace:
     """Routine to collect results from (a series of) TM5 adjoint footprint simulations
     that were run for observations within a dedicated domain.
-    Expected directory naming is
+
+    Expected directory naming in the toplevel directory is
     - footprints_gns100x100_yyyymmdd (for continuous measurements at stations in the innermost zoom)
     - footprints_glb600x400_yyyymmdd (for flask measurements)
 
@@ -315,6 +316,7 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
     topdir = Path(args.outpath_tm5)
     dayl = args.selday
     host = args.__dict__.get('host', 'cosmos')
+    nohalo = args.nohalo
     obsid = args.obsid
     #-- turn dates into timestamp
     dayl = Timestamp(dayl)
@@ -338,7 +340,7 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
     inic_array1D = np.empty(0)
     jac_array = None
     rundir_list = []
-    for iday,day in enumerate(day_range):
+    for iday,obsday in enumerate(day_range):
         #
         #-- naming pattern used by Guillaume: footprints_<domain_tag>_%Y%m%d
         #   -  where '%Y%m%d' refers to last day of simulation at 0:00 !
@@ -346,29 +348,28 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
         #      the footprint directory names are ranging from
         #      footprints_<domain_tag>_20210202, ..., footprints_<domain_tag>_20210301
         #
-        dirday = day + Timedelta(days=1)
-        tstdir = topdir / dirday.strftime(f"footprints_{domain_tag}_%Y%m%d")
-        if not tstdir.is_dir():
-            tstdir_v2 = topdir / dirday.strftime(f"footprints_{domain_tag}_20210101--%Y%m%d")
-            if not tstdir_v2.is_dir():
-                msg = f"...neither ***{str(tstdir)}*** nor ***{str(tstdir_v2)}*** found on system"
-                raise RuntimeError(msg)
-            else:
-                rundir = tstdir_v2
-        else:
-            rundir = tstdir
-        msg = f"@day={day.strftime('%Y-%m-%d')}, reading from directory -->{rundir}<--"
+        dirday = obsday + Timedelta(days=1)
+        dirpattern = dirday.strftime(f"footprints_{domain_tag}_*%Y%m%d")
+        rundir_list = sorted(topdir.glob(dirpattern))
+        if len(rundir_list)!=1:
+            msg = f"@obsday={obsday}, expected single TM5 run directory only, but " \
+                f"found ==>{rundir_list}<=="
+            raise RuntimeError(msg)
+        rundir = rundir_list[0]
+        msg = f"@obsday={obsday.strftime('%Y-%m-%d')}, reading from directory -->{rundir}<--"
         logger.info(msg)
         rundir_list.append(rundir)
         #
-        #-- emission information (!!! only from first directory !!! )
+        #-- emission information
         #
-        cur_emis_info = tm5rundir_emissions2D(rundir, trange=day_range, clip_child=False)
+        cur_emis_info = tm5rundir_emissions2D(rundir, trange=day_range,
+                                              nohalo=nohalo, clip_child=False)
+        #-- store from first directory only
         if emis_info is None:
             emis_info = cur_emis_info
-        else:
+        else: #-- consistency check
             if not np.all(cur_emis_info.emis2D==emis_info.emis2D):
-                msg = f"...detected differing emissions on {day}"
+                msg = f"...detected differing emissions on {obsday}"
                 raise RuntimeError(msg)
         #
         #--
@@ -440,73 +441,81 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
                 obstimelist_1D.append(_obsid_data.time)
             else:
                 if args.obsdir==None:
-                    msg = f"...no observation directory provided for continuous measurements " \
-                        f"(domain {domain_tag})"
-                    raise RuntimeError(msg)
-                #
-                #-- cumbersome case: extract averaged observation from original observation file
-                #
-                _obstime = obsinfo_curday.loc[_obsid,'time']
-                obs_hr = _obstime.hour
-                obs_tw = obsinfo_curday.loc[_obsid,'time_window_length'] #-- time-window length [s]
-                if not _obsid in obsfile_info_cache:
-                    #
-                    #-- extract station identifier (e.g. from 'cbw_207' or xxx)
-                    #
-                    _obsid_tokens = _obsid.split('_')
-                    if len(_obsid_tokens)==2:
-                        staid,sta_alt = _obsid_tokens
-                    elif len(_obsid_tokens)==3:
-                        staid,sta_alt,obs_time = _obsid_tokens
-                    else:
-                        msg = f"unexpected obsid -->{_obsid}<--"
-                        raise RuntimeError(msg)
-                    #
-                    #-- gns100x100: should be the continuous measurements
-                    #
-                    if domain_tag=='gns100x100':
-                        ptn = f"ch4_{staid}_*.nc"
-                    elif domain_tag=='glb600x400':
-                        ptn = f"ch4_{staid.lower()}_surface-flask_*_representative.nc"
-                    obspack_list = list(Path(args.obsdir).glob(ptn))
-                    if len(obspack_list)==0:
-                        msg = f"no matching observation file found for staid -->{staid}<--"
-                        raise RuntimeError(msg)
-                    elif len(obspack_list)>1:
-                        msg = f"staid -->{staid}<-- yields multiple observation files " \
-                            f"==>{obspack_list}<==. This cannot be handled yet and station is " \
-                            f"ignored."
-                        logger.warning(msg)
-                        continue
-                    else:
-                        obsfile = obspack_list[0]
-                    msg = f"...reading observed concentrations from file ***{str(obsfile)}***..."
-                    logger.info(msg)
-                    tstart = dayf
-                    tend   = dayl+Timedelta(seconds=86399)
-                    obspack_info = read_obspack_file(obsfile, start=tstart, end=tend)
-                    obs_df = obspack_info.data
-                    obsfile_info_cache[_obsid] = obspack_info
-                else:
-                    obs_df = obsfile_info_cache[_obsid].data
-                #
-                #--
-                #
-                _ostart = day + Timedelta(hours=obs_hr) - Timedelta(seconds=obs_tw)
-                _oend   = day + Timedelta(hours=obs_hr) + Timedelta(seconds=obs_tw)
-                cnd_time = (obs_df['time']>=_ostart)&(obs_df['time']<=_oend)
-                if np.count_nonzero(cnd_time)>0:
-                    mix_day = obs_df.loc[cnd_time,'value'].mean()
-                    mix_day *= 1.e9 #-- [mol/mol] to [ppb]
-                    obslist_curday.append(mix_day)
+                    # msg = f"...no observation directory provided for continuous measurements " \
+                    #     f"(domain {domain_tag})"
+                    # raise RuntimeError(msg)
+                    _obsid_data = obsinfo_curday.loc[_obsid,:]
                     stalist_curday.append(_obsid)
-                    obstimelist_1D.append(_obstime)
-                    obslonlist_curday.append(obs_df.loc[cnd_time,'longitude'].mean())
-                    obslatlist_curday.append(obs_df.loc[cnd_time,'latitude'].mean())
-                    obsaltlist_curday.append(obs_df.loc[cnd_time,'altitude'].mean())
+                    obslist_curday.append(_obsid_data.mixing_ratio)
+                    obslonlist_curday.append(_obsid_data.lon)
+                    obslatlist_curday.append(_obsid_data.lat)
+                    obsaltlist_curday.append(_obsid_data.alt)
+                    obstimelist_1D.append(_obsid_data.time)
                 else:
-                    msg = f"...@{staid}, no observations found in time window {_ostart}==>{_oend}"
-                    logger.info(msg)
+                    #
+                    #-- cumbersome case: extract averaged observation from original observation file
+                    #
+                    _obstime = obsinfo_curday.loc[_obsid,'time']
+                    obs_hr = _obstime.hour
+                    obs_tw = obsinfo_curday.loc[_obsid,'time_window_length'] #-- time-window length [s]
+                    if not _obsid in obsfile_info_cache:
+                        #
+                        #-- extract station identifier (e.g. from 'cbw_207' or xxx)
+                        #
+                        _obsid_tokens = _obsid.split('_')
+                        if len(_obsid_tokens)==2:
+                            staid,sta_alt = _obsid_tokens
+                        elif len(_obsid_tokens)==3:
+                            staid,sta_alt,obs_time = _obsid_tokens
+                        else:
+                            msg = f"unexpected obsid -->{_obsid}<--"
+                            raise RuntimeError(msg)
+                        #
+                        #-- gns100x100: should be the continuous measurements
+                        #
+                        if domain_tag=='gns100x100':
+                            ptn = f"ch4_{staid}_*.nc"
+                        elif domain_tag=='glb600x400':
+                            ptn = f"ch4_{staid.lower()}_surface-flask_*_representative.nc"
+                        obspack_list = list(Path(args.obsdir).glob(ptn))
+                        if len(obspack_list)==0:
+                            msg = f"no matching observation file found for staid -->{staid}<--"
+                            raise RuntimeError(msg)
+                        elif len(obspack_list)>1:
+                            msg = f"staid -->{staid}<-- yields multiple observation files " \
+                                f"==>{obspack_list}<==. This cannot be handled yet and station is " \
+                                f"ignored."
+                            logger.warning(msg)
+                            continue
+                        else:
+                            obsfile = obspack_list[0]
+                        msg = f"...reading observed concentrations from file ***{str(obsfile)}***..."
+                        logger.info(msg)
+                        tstart = dayf
+                        tend   = dayl+Timedelta(seconds=86399)
+                        obspack_info = read_obspack_file(obsfile, start=tstart, end=tend)
+                        obs_df = obspack_info.data
+                        obsfile_info_cache[_obsid] = obspack_info
+                    else:
+                        obs_df = obsfile_info_cache[_obsid].data
+                    #
+                    #--
+                    #
+                    _ostart = obsday + Timedelta(hours=obs_hr) - Timedelta(seconds=obs_tw)
+                    _oend   = obsday + Timedelta(hours=obs_hr) + Timedelta(seconds=obs_tw)
+                    cnd_time = (obs_df['time']>=_ostart)&(obs_df['time']<=_oend)
+                    if np.count_nonzero(cnd_time)>0:
+                        mix_day = obs_df.loc[cnd_time,'value'].mean()
+                        mix_day *= 1.e9 #-- [mol/mol] to [ppb]
+                        obslist_curday.append(mix_day)
+                        stalist_curday.append(_obsid)
+                        obstimelist_1D.append(_obstime)
+                        obslonlist_curday.append(obs_df.loc[cnd_time,'longitude'].mean())
+                        obslatlist_curday.append(obs_df.loc[cnd_time,'latitude'].mean())
+                        obsaltlist_curday.append(obs_df.loc[cnd_time,'altitude'].mean())
+                    else:
+                        msg = f"...@{staid}, no observations found in time window {_ostart}==>{_oend}"
+                        logger.info(msg)
         #
         #-- restrict obsdata frame of this day to those stations without missing obs.
         #
@@ -517,7 +526,7 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
         #-- observations done
         #
         nobs = len(obslist_curday)
-        msg = f"...@day={day.strftime('%Y-%m-%d')}, nobs={nobs}"
+        msg = f"...@obsday={obsday.strftime('%Y-%m-%d')}, nobs={nobs}"
         logger.info(msg)
         if nobs==0:
             continue
@@ -575,8 +584,9 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
         #
         #--
         #
-        jac_info = tm5rundir_jacobian3D(rundir, trange=day_range, obsid=list(obsinfo_curday.index),
-                                        clip_child=False)
+        jac_info = tm5rundir_jacobian3D(rundir, emis_trange=day_range,
+                                        obsid=list(obsinfo_curday.index),
+                                        nohalo=nohalo, clip_child=False)
         jac3D = jac_info.jac3D #-- nobs/nemisday/ng
         # print(f"@{dirday}, jac3D.shape={jac3D.shape}")
         if jac_array is None:
@@ -1563,14 +1573,25 @@ def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
     """
     tm5emisdir = args.tm5emisdir
     year = args.year
-    month = args.month
+    month = args.month #-- processing single month only (!!for testing only!!)
     regions = args.regions
     complevel = args.__dict__.get('complevel',4)
 
-    reginfo = regions1D_info(regions)
+    reginfo = regions1D_info(regions, nohalo=args.nohalo)
     ng = reginfo.ng
     msg = f"-->{regions}<-- yield overall {ng} grid-cells"
     logger.info(msg)
+
+    #
+    #-- debugging / control
+    #
+    reg_table = reginfo.table
+    for reg,reg_data in reg_table.items():
+        _ng = reg_data.ng1D
+        _ng_nohalo = reg_data.ng1D_nohalo
+        msg = f"@{reg}, ng/ng_nohalo/difference = {_ng}/{_ng_nohalo}/{_ng-_ng_nohalo}"
+        logger.info(msg)
+
     #
     #-- determine list of months
     #
@@ -1582,13 +1603,15 @@ def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
         if nday is None:
             nday = len(file_list)
         else:
+            #-- make sure number of files is consistent for all regions
             assert nday==len(file_list)
+    #--
     day_list = [ Timestamp(str(_).split('.')[3]) for _ in region_file_table[regions[0]] ]
     mon_first = day_list[0].month
     mon_last  = day_list[-1].month
     mon_list = list(range(mon_first,mon_last+1))
     nmon = len(mon_list)
-    ntc = 3 #-- record year/month/day
+    ntc = 3 #-- recording year/month/day
     time_data = np.full((nmon,ntc), -1)
     for imon,mon in enumerate(mon_list):
         time_data[imon,:] = [year, mon, 1] #-- deliberately take first day
@@ -1605,10 +1628,11 @@ def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
         day_range = date_range(dayf,dayl)
         msg = f"...loading emissions for {dayf.strftime('%Y%m%d')} to {dayl.strftime('%Y%m%d')}"
         logger.info(msg)
-        #-- load emissions for days in month
-        emis_info = tm5emisdir_load_emissions2D(tm5emisdir, tm5emisdir+'/ch4emis', day_range, regions, zeroout_child=args.zeroout_child)
+        #-- load daily emissions for every day in month
+        emis_info = tm5emisdir_load_emissions2D(tm5emisdir, tm5emisdir+'/ch4emis', day_range, regions, nohalo=args.nohalo)
         #-- convert daily emission rates [kgCH4/cell/s] to [kgCH4/cell/month]
         emis_mm =  np.sum(emis_info.emis2D*nsecday, axis=0)
+        #-- insert current month into buffer[mon,grid]
         emis_data[imon,:] = emis_mm[:]
     msg = f"...monthly emission data ready."
     logger.info(msg)
@@ -1649,14 +1673,14 @@ def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
                               compression='zlib', complevel=complevel)
     ncvar.long_name = 'longitude'
     ncvar.units = 'degrees_east'
-    ncvar.comment = 'references center of grid-cell in related zoom domain'
+    ncvar.comment = 'references center of grid-cell in underlying domain'
     ncvar[:] = reginfo.lonc1D
     #-- latitude
     ncvar = fp.createVariable('lat', 'f8', ('ng',),
                               compression='zlib', complevel=complevel)
     ncvar.long_name = 'latitude'
     ncvar.units = 'degrees_north'
-    ncvar.comment = 'references center of grid-cell in related zoom domain'
+    ncvar.comment = 'references center of grid-cell in underlying domain'
     ncvar[:] = reginfo.latc1D
     #-- area
     ncvar = fp.createVariable('area', 'f8', ('ng',),
@@ -1685,6 +1709,15 @@ def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
     #-- global attributes
     #
     fp.emission_directory = str(tm5emisdir)
+    fp.halos_removed = np.int32(args.nohalo)
+    if month==None:
+        fp.time_coverage_start = day_list[0].strftime('%Y-%m-%d')
+        fp.time_coverage_end   = day_list[-1].strftime('%Y-%m-%d')
+        fp.time_coverage_resolution = "P1M"
+    try:
+        fp.processing_platform = f"{os.environ['USER']}@{os.environ['HOSTNAME']}"
+    except KeyError:
+        pass
     fp.history = f"{' '.join(sys.argv)}"
     fp.date_created = Timestamp.utcnow().isoformat()
     #
@@ -2321,7 +2354,7 @@ sparser.add_argument('outpath_tm5',
                      help="""top-level directory of series of TM5 adjoint runs for footprint creation each of those for one observation day.""")
 sparser.add_argument('domain',
                      choices=['gns100x100','glb600x400',],
-                     help="""observational domain.""")
+                     help="""observational domain, gns100x100 indicates footprints calculated with the zoom setup (for continuous measurements), glb600x400 is for footprints calculated globally at this resolution (to be used for flask measurements).""")
 sparser.add_argument('--obsid',
                      nargs='+',
                      help="""select one single observational location (default: %(default)s).""")
@@ -2335,6 +2368,10 @@ sparser.add_argument('--days',
 sparser.add_argument('--jac4totemis',
                      action='store_true',
                      help="""whether to condense the Jacobian such that it reflects the sensitivity w.r.t. to the total emissions within the temporal domain.""")
+sparser.add_argument('--no-halo_correction',
+                     action='store_false',
+                     dest='nohalo',
+                     help="""meanwhile, by default the HALO part in zoom domains with parent are being removed. Use this option to activate the old behaviour.""")
 sparser.add_argument('--obsdir',
                      type=Path,
                      # default="/lunarc/nobackup/projects/ghg_inv/michael/FIT-IC/observations_fitic-gui",
@@ -2350,9 +2387,10 @@ sparser.add_argument('--difalt_max',
 sparser.add_argument('--refdir',
                      help="""TM5 forward simulation, can be used to verify the Jacobian approach.""") 
 sparser.add_argument('--outdir',
-                    help="""top-level directory for any generated outputs..""")
+                     type=Path,
+                     help="""top-level directory for any generated outputs..""")
 sparser.add_argument('--outname',
-                    help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
+                     help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
 
 #
 #--       merge_ojac_obs1D
@@ -2407,9 +2445,10 @@ sparser.add_argument('--regions',
                      choices=['glb600x400','eur300x200','gns100x100',],
                      default=['glb600x400','eur300x200','gns100x100',],
                      help="""selected regions (default: %(default)s), better only change for test purposes.""")
-sparser.add_argument('--zeroout_child',
-                     action='store_true',
-                     help="""whether to set emissions to zero when grid-cells are within child domain.""")
+sparser.add_argument('--no-halo_correction',
+                     action='store_false',
+                     dest='nohalo',
+                     help="""meanwhile, by default the HALO part in zoom domains with parent are being removed. Use this option to activate the old behaviour.""")
 sparser.add_argument('--outdir',
                     help="""top-level directory for any generated outputs..""")
 sparser.add_argument('--outname',
