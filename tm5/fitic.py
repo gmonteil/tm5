@@ -9,7 +9,33 @@ from loguru import logger
 
 
 def read_obs_table(filename: Path | str) -> DataFrame:
-    obs_table = xr.open_dataset(filename).to_dataframe()
+    """
+    """
+    obs_ds = xr.open_dataset(filename)
+    #-- 'mixing_ratio' is the variable providing the observed concentrations
+    obs_missval = None
+    try:
+        if obs_ds.mixing_ratio.comment.startswith('missing value set to'):
+            obs_missval = float(obs_ds.mixing_ratio.comment.split()[-1])
+            # print(f"detected observation missing-value -->{obs_missval}<--")
+    except AttributeError:
+        pass
+    #
+    #-- prefer dataframe upstream
+    #
+    obs_table = obs_ds.to_dataframe()
+    obs_ds.close()
+    #
+    #-- remove missing values (if any)
+    #
+    if not obs_missval is None:
+        #-- detect number of missing values
+        nmiss = obs_table['mixing_ratio'].value_counts().get(obs_missval, 0)
+        if nmiss>0:
+            msg = f"...detected {nmiss} missing values in observations file -->{filename}<--"
+            logger.debug(msg)
+            cnd_nomiss = obs_table['mixing_ratio']!=obs_missval
+            obs_table = obs_table.loc[cnd_nomiss,:]
     #
     #-- adjust type sampling_strategy/time_window_length
     #
@@ -26,6 +52,7 @@ def read_obs_table(filename: Path | str) -> DataFrame:
             df = obs_table[obs_table.tracer == tracer].reset_index()
             obsid = df.tracer + '_' + df.index.astype(str)
             obs_table.loc[obs_table.tracer == tracer, 'obsid'] = obsid.values
+    #
     return obs_table
 
     
@@ -80,4 +107,3 @@ def create_departure_files(dconf: DictConfig):
                 # This can happen when there is no obs in that region. In this case, just cycle to the next ...
                 logger.info(f"No observations found for region {region} in point_output file")
                 pass
-                
