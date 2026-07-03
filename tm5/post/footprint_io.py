@@ -444,7 +444,7 @@ def emisvector_to_global1x1( filepath_emis : str | Path, varname : str = 'emissi
     return emis_results
 
 
-def tm5rundir_obstable( outpath : str | Path ) -> DataFrame:
+def tm5rundir_obstable( outpath : str | Path, drop_missing_value : bool = False ) -> DataFrame:
     yamlfile = Path(outpath) / 'tm5.yaml'
     if not yamlfile.exists():
         msg = f"yaml configuration file ***{str(yamlfile)}*** not found on system."
@@ -452,7 +452,7 @@ def tm5rundir_obstable( outpath : str | Path ) -> DataFrame:
     conf = OmegaConf.load(yamlfile)
 
     # Load the observations table
-    obs_table = read_obs_table(conf.observations.file).set_index('obsid')
+    obs_table = read_obs_table(conf.observations.file, drop_missing_value).set_index('obsid')
     return obs_table
 
 
@@ -618,7 +618,10 @@ def tm5rundir_jacobian3D( outpath : str | Path, emis_trange : date_range = None,
     nobs = len(obsids)
     nemisday = len(days)
     msg = f"...origin footprint data read, nfootp={len(footp_df)} for nobs/nemisday = {nobs}/{nemisday}"
-    logger.debug(msg)
+    # msg = f"...after tm5_fitic_adjoint_corrected_halos obsids -->{obsids}<--"
+    # logger.debug(msg)
+    # ### DEBUGGING
+    # footp_df.to_csv("footprint_dataframe.csv")
     if type(obsid)==str:
         obsid = [obsid,]
     if obsid!=None:
@@ -631,6 +634,9 @@ def tm5rundir_jacobian3D( outpath : str | Path, emis_trange : date_range = None,
         footp_df = footp_df.loc[cnd_obs,:]
         msg = f"......{len(footp_df)} selected footprints."
         logger.info(msg)
+        # footp_df.to_csv(f"footprint_dataframe_selected-obsids.csv")
+        # msg = f"......itrac_list -->{itrac_list}<--"
+        # logger.debug(msg)
         # for iday in range(nemisday):
         #     for reg in region_table.keys():
         #         cnd = (footp_df.loc[:,'itime']==iday)&(footp_df.loc[:,'region']==reg)
@@ -698,6 +704,9 @@ def tm5rundir_jacobian3D( outpath : str | Path, emis_trange : date_range = None,
                 if not msk is None:
                     sens = sens[msk]
                 jac_list.append(sens)
+                # msg = f"@{cur_obsid}/iday={iday}/{reg}: sens min/mean/max = " \
+                #     f"{sens.min()}/{sens.mean()}/{sens.max()}"
+                # logger.info(msg)
             #
             jacobian3D[iobs,iday,:] = np.hstack(jac_list)
     #
@@ -725,7 +734,14 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, emis_trange : date_ra
     #
     #-- get name of tracer/obsids
     #
-    obs_table = tm5rundir_obstable(outpath)
+    # MVO-ATTENTION::
+    # - for the zoom footprint simulations the the ingoing obs file
+    #   contained always *all* stations - also in case if no actual observation
+    #   was available for a particular day.
+    # - Thus, for the proper indexing below, we *MUST NOT* drop
+    #   those here!
+    #   
+    obs_table = tm5rundir_obstable(outpath, drop_missing_value=False)
     tracer = list(obs_table.index)
     
     #

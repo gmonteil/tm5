@@ -107,8 +107,7 @@ def collect_input4inversion( args : ArgumentNamespace ) -> SimpleNamespace:
     #
     #
     #-- load observation table
-    #   -> we expect ethedeliberately select from the rundir of the first day of the selected
-    #      period
+    #   -> deliberately select from the rundir of the first day of the selected  period
     #
     obs_table = tm5rundir_obstable(fdir)
     #-> make sure the identifiers are unique
@@ -365,8 +364,13 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
         rundir_list.append(rundir)
         #
         #-- load observations
+        #   MVO-NOTE: the footprint observation files for the zoom domain
+        #             were prepared with all stations on every day
+        #             (also if an actual observation was missing).
+        #             But here we extract only those stations with
+        #             observations on the current observational day.
         #
-        obs_table = tm5rundir_obstable(rundir)
+        obs_table = tm5rundir_obstable(rundir, drop_missing_value=True)
         if obsid==None:
             obsinfo_curday = obs_table.copy()
         else:
@@ -574,7 +578,9 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
         cur_inic_array = np.array(iniclist_curday)
         inic_array1D = np.concat((inic_array1D,cur_inic_array))
         #
-        #--
+        #-- read Jacobian for
+        #   - current obsday, but possibly restricted to selected stations
+        #   - w.r.t. to emissions in the selected range
         #
         jac_info = tm5rundir_jacobian3D(rundir, emis_trange=day_range,
                                         obsid=list(obsinfo_curday.index),
@@ -1796,7 +1802,7 @@ def subcmd_create_target_jacobian(args : ArgumentNamespace) -> None:
         country_area_gns = country_frct_gns*gns_grid.area[np.newaxis,:,:]
         for ic,cid in enumerate(country_id):
             _area    = country_area_gns[ic,:].sum()/1e6 #[km2]
-            _areatot = country_area[ic,:].sum()/1e6  #[km2]
+            _areatot = country_area[ic,:].sum()/1e6     #[km2]
             if _area>0:
                 print(f"{cid}: area_gns={_area:.2f}[km2] (area={_areatot:.2f}[km2]")
         #
@@ -2215,6 +2221,26 @@ def subcmd_inspect_ojac_obs1D(args):
                 logger.info(msg)
 
 
+def subcmd_compare_ojac_obs1D(args):
+    filepath1, filepath2 = args.filepath_ojac
+    ds1 = xr.open_dataset(filepath1)
+    ds2 = xr.open_dataset(filepath2)
+    #
+    #-- compare global part
+    #
+    ds1_glb = ds1.sel(ng=(ds1.region=='glb600x400'))
+    ds2_glb = ds2.sel(ng=(ds2.region=='glb600x400'))
+    ojac1_glb = ds1_glb.obs_jacobian
+    ojac2_glb = ds2_glb.obs_jacobian
+    msg = f"shapes of global part of Jacobian ojac1/ojac2 = {ojac1_glb.shape}/{ojac2_glb.shape}"
+    logger.info(msg)
+    print(np.all(ojac1_glb.values==ojac2_glb.values))
+    ojacdif_glb = ojac1_glb.values - ojac2_glb.values
+    msg = f"ojac differences (1 minus 2), min/mean/max = " \
+        f"{ojacdif_glb.min()}/{ojacdif_glb.mean()}/{ojacdif_glb.max()}"
+    logger.info(msg)
+
+    #
 ################################################################################
 #
 #                   p a r s e r
@@ -2417,19 +2443,6 @@ sparser.add_argument('--outname',
                     help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
 
 #
-#--       inspect_ojac_obs1D
-#
-sparser = subparsers.add_parser('inspect_ojac_obs1D',
-                                help="""some inspection and consistency check on generated observational Jacobian (should be applicable to both, "global/flask" and "zoomed/continuous)""")
-sparser.add_argument('filepath_ojac',
-                     type=Path,
-                     help="""NetCDF file prepared for observational Jacobian""")
-sparser.add_argument('--outdir',
-                    help="""top-level directory for any generated outputs..""")
-sparser.add_argument('--outname',
-                    help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
-
-#
 #--       monthly_emissions_for_inversion
 #
 sparser = subparsers.add_parser('monthly_emissions_for_inversion',
@@ -2478,6 +2491,33 @@ sparser.add_argument('--outdir',
 sparser.add_argument('--outname',
                     help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
 
+#
+#--       inspect_ojac_obs1D
+#
+sparser = subparsers.add_parser('inspect_ojac_obs1D',
+                                help="""some inspection and consistency check on generated observational Jacobian (should be applicable to both, "global/flask" and "zoomed/continuous)""")
+sparser.add_argument('filepath_ojac',
+                     type=Path,
+                     help="""NetCDF file prepared for observational Jacobian""")
+sparser.add_argument('--outdir',
+                    help="""top-level directory for any generated outputs..""")
+sparser.add_argument('--outname',
+                    help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
+
+#
+#--       compare_ojac_obs1D
+#
+sparser = subparsers.add_parser('compare_ojac_obs1D',
+                                help="""some comparison of generated observational Jacobian (primarily to trace potential issues with the nohalo Jacobians).""")
+sparser.add_argument('filepath_ojac',
+                     nargs=2,
+                     type=Path,
+                     help="""NetCDF file prepared for observational Jacobian""")
+sparser.add_argument('--outdir',
+                    help="""top-level directory for any generated outputs..""")
+sparser.add_argument('--outname',
+                    help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
+
 
 ################################################################################
 #
@@ -2514,6 +2554,9 @@ def main(args):
 
     if args.subcmds=='inspect_ojac_obs1D':
         subcmd_inspect_ojac_obs1D(args)
+
+    if args.subcmds=='compare_ojac_obs1D':
+        subcmd_compare_ojac_obs1D(args)
 
 #
 if __name__ == '__main__':
