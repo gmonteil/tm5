@@ -8,7 +8,7 @@ import numpy as np
 from loguru import logger
 
 
-def read_obs_table(filename: Path | str) -> DataFrame:
+def read_obs_table(filename: Path | str, drop_missing_value : bool = False) -> DataFrame:
     """
     """
     obs_ds = xr.open_dataset(filename)
@@ -28,7 +28,7 @@ def read_obs_table(filename: Path | str) -> DataFrame:
     #
     #-- remove missing values (if any)
     #
-    if not obs_missval is None:
+    if drop_missing_value and (not obs_missval is None):
         #-- detect number of missing values
         nmiss = obs_table['mixing_ratio'].value_counts().get(obs_missval, 0)
         if nmiss>0:
