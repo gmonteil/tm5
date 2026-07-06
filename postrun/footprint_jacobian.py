@@ -35,6 +35,37 @@ from tm5.post.utilities import lonstr,latstr,set_outname,create_sha512
 #-- initial/older/depreceated methods
 from tm5.post.footprint_io import tm5rundir_jacobian2D, tm5rundir_emissions1D
 
+
+#
+#-- mapping of station identifiers to obspack NetCDF file names
+#   (for identifiers where the mapping is not "generic")
+#
+obspack_lookup_table = OrderedDict()
+obspack_lookup_table['brm_45']   = 'ch4_brm_tower-insitu_49_allvalid-44magl.nc'
+obspack_lookup_table['cbw_35']   = 'ch4_cbw_surface-insitu_118_allvalid.nc'
+obspack_lookup_table['cmn_7']    = 'ch4_cmn_surface-insitu_106_allvalid.nc'
+obspack_lookup_table['cmn_8']    = 'ch4_cmn_surface-insitu_443_allvalid.nc'
+obspack_lookup_table['ers_40']   = 'ch4_ers_surface-insitu_11_allvalid.nc'
+obspack_lookup_table['hei_30']   = 'ch4_hei_surface-insitu_22_allvalid.nc'
+obspack_lookup_table['hel_110']  = 'ch4_hel_surface-insitu_147_allvalid.nc'
+obspack_lookup_table['hpb_5']    = 'ch4_hpb_surface-flask_1_representative.nc'
+obspack_lookup_table['hun_96']   = 'ch4_hun_surface-flask_1_representative.nc'
+obspack_lookup_table['jfj_0']    = 'ch4_jfj_surface-flask_45_representative.nc'
+obspack_lookup_table['jfj_10']   = 'ch4_jfj_surface-insitu_5_allvalid.nc'
+obspack_lookup_table['jfj_14']   = 'ch4_jfj_tower-insitu_49_allvalid-13magl.nc'
+obspack_lookup_table['lhw_32']   = 'ch4_lhw_surface-insitu_5_allvalid.nc'
+obspack_lookup_table['lin_2']    = 'ch4_lin_tower-insitu_147_allvalid-2.5magl.nc'
+obspack_lookup_table['lut_60']   = 'ch4_lut_surface-insitu_44_allvalid.nc'
+obspack_lookup_table['oxk_150']  = 'ch4_oxk_surface-flask_1_representative.nc'
+obspack_lookup_table['pdm_28']   = 'ch4_pdm_surface-insitu_11_allvalid.nc'
+obspack_lookup_table['prs_10']   = 'ch4_prs_surface-insitu_21_allvalid.nc'
+obspack_lookup_table['puy_10']   = 'ch4_puy_surface-insitu_11_allvalid.nc'
+obspack_lookup_table['tac_180']  = 'ch4_tac_surface-flask_1_representative.nc'
+obspack_lookup_table['wao_10']   = 'ch4_wao_surface-insitu_13_allvalid.nc'
+obspack_lookup_table['wes_14']   = 'ch4_wes_surface-insitu_25_allvalid.nc'
+obspack_lookup_table['zsf_3']    = 'ch4_zsf_surface-insitu_25_allvalid.nc'
+
+
 nsecday = 86400
 
 def tm5refdir_load_stationconc( refdir : str | Path, obsid : str ) -> xr.DataArray:
@@ -466,29 +497,39 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
                         else:
                             msg = f"unexpected obsid -->{_obsid}<--"
                             raise RuntimeError(msg)
-                        #
-                        #-- gns100x100: should be the continuous measurements
-                        #
-                        if domain_tag=='gns100x100':
-                            ptn = f"ch4_{staid}_*.nc"
-                        elif domain_tag=='glb600x400':
-                            ptn = f"ch4_{staid.lower()}_surface-flask_*_representative.nc"
-                        obspack_list = list(Path(args.obsdir).glob(ptn))
-                        if len(obspack_list)==0:
-                            msg = f"no matching observation file found for staid -->{staid}<--"
-                            raise RuntimeError(msg)
-                        elif len(obspack_list)>1:
-                            msg = f"staid -->{staid}<-- yields multiple observation files " \
-                                f"==>{obspack_list}<==. This cannot be handled yet and station is " \
-                                f"ignored."
-                            logger.warning(msg)
-                            continue
+                        if _obsid in obspack_lookup_table:
+                            obsfile = Path(args.obsdir) / obspack_lookup_table[_obsid]
                         else:
-                            obsfile = obspack_list[0]
+                            #
+                            #-- gns100x100: should be the continuous measurements
+                            #
+                            if domain_tag=='gns100x100':
+                                ptn = f"ch4_{staid}*-{sta_alt}magl*.nc"
+                            elif domain_tag=='glb600x400':
+                                ptn = f"ch4_{staid.lower()}_surface-flask_*_representative.nc"
+                            obspack_list = list(Path(args.obsdir).glob(ptn))
+                            if len(obspack_list)==0:
+                                msg = f"no matching observation file found for staid -->{staid}<--"
+                                raise RuntimeError(msg)
+                            elif len(obspack_list)>1:
+                                msg = f"staid -->{staid}<-- yields multiple observation files " \
+                                    f"==>{obspack_list}<==. This cannot be handled yet and station is " \
+                                    f"ignored."
+                                logger.error(msg)
+                                continue
+                            else:
+                                obsfile = obspack_list[0]
                         msg = f"...reading observed concentrations from file ***{str(obsfile)}***..."
                         logger.info(msg)
-                        tstart = dayf
+                        tstart = dayf 
                         tend   = dayl+Timedelta(seconds=86399)
+                        #-- ATTENTION:: restricting to the day is unsufficient,
+                        #               i.e. we have sites (at high altitude) where
+                        #               1am is in the mid of the time-window which
+                        #               thus exceeds to the day before.
+                        #               we thus extend the period that is extracted
+                        tstart -= Timedelta(days=1)
+                        tend   += Timedelta(days=1)
                         obspack_info = read_obspack_file(obsfile, start=tstart, end=tend)
                         obs_df = obspack_info.data
                         obsfile_info_cache[_obsid] = obspack_info
@@ -501,14 +542,18 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
                     _oend   = obsday + Timedelta(hours=obs_hr) + Timedelta(seconds=obs_tw)
                     cnd_time = (obs_df['time']>=_ostart)&(obs_df['time']<=_oend)
                     if np.count_nonzero(cnd_time)>0:
-                        mix_day = obs_df.loc[cnd_time,'value'].mean()
-                        mix_day *= 1.e9 #-- [mol/mol] to [ppb]
-                        obslist_curday.append(mix_day)
+                        mix_day = obs_df.loc[cnd_time,'value'].mean() * 1.e9
+                        ## mix_day *= 1.e9 #-- [mol/mol] to [ppb]
+                        # DEBUGGING (to check tiny differences in observed concentrations
+                        #            when prepared with the prepare_obs4footp.py utility)
+                        # msg = f"@{_obsid}/{obsday}: conc={mix_day}[ppb] (==>{obs_df.loc[cnd_time,'value'].values}<==)"
+                        # logger.debug(msg)
                         stalist_curday.append(_obsid)
-                        obstimelist_1D.append(_obstime)
+                        obslist_curday.append(mix_day)
                         obslonlist_curday.append(obs_df.loc[cnd_time,'longitude'].mean())
                         obslatlist_curday.append(obs_df.loc[cnd_time,'latitude'].mean())
                         obsaltlist_curday.append(obs_df.loc[cnd_time,'altitude'].mean())
+                        obstimelist_1D.append(_obstime)
                     else:
                         msg = f"...@{staid}, no observations found in time window {_ostart}==>{_oend}"
                         logger.info(msg)
@@ -1573,6 +1618,7 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
         f"Jacobian, the initial concentrations, and the observed concentrations " \
         f"at the selected stations and for the selected days."
     fp.footprint_directory = str(topdir.absolute())
+    fp.halos_removed = np.int32(args.nohalo)
     try:
         fp.processing_platform = f"{os.environ['USER']}@{os.environ['HOSTNAME']}"
     except KeyError:
@@ -1753,6 +1799,9 @@ def subcmd_create_target_jacobian(args : ArgumentNamespace) -> None:
     """
     """
     complevel = args.__dict__.get('complevel',4)
+    #
+    #--
+    #
     regions = ['glb600x400', 'eur300x200', 'gns100x100',]
     reginfo = regions1D_info(regions, nohalo=args.nohalo)
     ng = reginfo.ng
@@ -1761,20 +1810,32 @@ def subcmd_create_target_jacobian(args : ArgumentNamespace) -> None:
     msg = f"-->{regions}<-- yield overall {ng} grid-cells"
     logger.info(msg)
 
+    eur_nohalo_w = region_table['eur300x200'].grid.west + region_table['glb600x400'].grid.dlon
+    eur_nohalo_e = region_table['eur300x200'].grid.east - region_table['glb600x400'].grid.dlon
+    eur_nohalo_s = region_table['eur300x200'].grid.south + region_table['glb600x400'].grid.dlat
+    eur_nohalo_n = region_table['eur300x200'].grid.north - region_table['glb600x400'].grid.dlat
 
     #
-    #-- country shape
+    #-- dedicated country targets processed
+    #   *only* in the 1x1 innermost zoom domain with HALO parts removed
     #
     gns_grid = region_table['gns100x100'].grid
     gns_w,gns_e,gns_s,gns_n = gns_grid.domain
-    if args.nohalo:
-        gns_w += 3
-        gns_e -= 3
-        gns_s += 2
-        gns_n -= 2
-        gns_grid = TM5Grids.from_corners(west=gns_w,east=gns_e,south=gns_s,north=gns_n,
-                                         dlon=gns_grid.dlon,dlat=gns_grid.dlat)
-
+    gns_nohalo_w = gns_w + region_table['eur300x200'].grid.dlon
+    gns_nohalo_e = gns_e - region_table['eur300x200'].grid.dlon
+    gns_nohalo_s = gns_s + region_table['eur300x200'].grid.dlat
+    gns_nohalo_n = gns_n - region_table['eur300x200'].grid.dlat
+    gns_nohalo_grid = TM5Grids.from_corners(west=gns_nohalo_w,east=gns_nohalo_e,
+                                            south=gns_nohalo_s,north=gns_nohalo_n,
+                                            dlon=gns_grid.dlon,dlat=gns_grid.dlat)
+    #
+    cnd_gns_nohalo = (reginfo.reg1D=='gns100x100') & \
+        (reginfo.lonc1D>=gns_nohalo_grid.west)&(reginfo.lonc1D<=gns_nohalo_grid.east) & \
+        (reginfo.latc1D>=gns_nohalo_grid.south)&(reginfo.latc1D<=gns_nohalo_grid.north)
+    #
+    #-- dedicated country targets *only* in the 1x1 innermost zoom domain
+    #   with HALO parts removed
+    #
     tgt_country_table = OrderedDict()
     if args.countryfrct_filepath!=None:
         cfrctfile = args.countryfrct_filepath
@@ -1797,14 +1858,15 @@ def subcmd_create_target_jacobian(args : ArgumentNamespace) -> None:
         #
         #-- restrict to innermost zoom domain
         #
-        frctds_gns = frctds.sel(lon=(frctds.lon>=gns_w)&(frctds.lon<=gns_e),lat=(frctds.lat>=gns_s)&(frctds.lat<=gns_n))
-        country_frct_gns = frctds_gns.country_fraction.values
-        country_area_gns = country_frct_gns*gns_grid.area[np.newaxis,:,:]
+        frctds_inner = frctds.sel(lon=(frctds.lon>=gns_nohalo_w)&(frctds.lon<=gns_nohalo_e),lat=(frctds.lat>=gns_nohalo_s)&(frctds.lat<=gns_nohalo_n))
+        country_frct_inner = frctds_inner.country_fraction.values
+        country_area_inner = country_frct_inner*gns_nohalo_grid.area[np.newaxis,:,:]
         for ic,cid in enumerate(country_id):
-            _area    = country_area_gns[ic,:].sum()/1e6 #[km2]
+            _area    = country_area_inner[ic,:].sum()/1e6 #[km2]
             _areatot = country_area[ic,:].sum()/1e6     #[km2]
             if _area>0:
-                print(f"{cid}: area_gns={_area:.2f}[km2] (area={_areatot:.2f}[km2]")
+                msg = f"{cid}: area_gns-nohalo={_area:.2f}[km2] (area={_areatot:.2f}[km2])"
+                print(msg)
         #
         #--
         #
@@ -1817,14 +1879,17 @@ def subcmd_create_target_jacobian(args : ArgumentNamespace) -> None:
                     msg = f"country identifier -->{cid}<-- not found"
                     raise RuntimeError(msg)
                 else:
-                    if country_frct_gns[ic,:].sum()!=country_frct[ic,:].sum():
+                    if country_frct_inner[ic,:].sum()!=country_frct[ic,:].sum():
                         msg = f"country -->{cid}<-- not fully covered by innermost zoom domain, " \
                             f"needs to be ignored!"
                         logger.warning(msg)
                         continue
                     else:
-                        tgt_country_table[cid] = country_frct_gns[ic,:].ravel()
+                        tgt_country_table[cid] = country_frct_inner[ic,:].ravel()
     #
+    #--
+    #
+    
     #
     #-- target jacobian
     #
@@ -1833,18 +1898,80 @@ def subcmd_create_target_jacobian(args : ArgumentNamespace) -> None:
     tjac2D = zeros((ntgt,ng), dtype='f8')
     for itgt,tgt in enumerate(target_list):
         if tgt=='global':
-            tjac2D[itgt,:] = 1.
+            #-- ATTENTION:: avoid double counting of grid-cells,
+            #               setting all entries to 1. is !WRONG!
+            # tjac2D[itgt,:] = 1.
+            #
+            #-- from coarse to finer
+            #
+            # (1) global domain  --> remove inner part (except for HALO)
+            cnd = (reginfo.reg1D=='glb600x400') & \
+                ( (reginfo.lonc1D<=eur_nohalo_w) | (reginfo.lonc1D>=eur_nohalo_e) | \
+                  (reginfo.latc1D<=eur_nohalo_s) | (reginfo.latc1D>=eur_nohalo_n) )
+            ncnd = np.count_nonzero(cnd)
+            msg = f"...glb600x400 part contributing with {ncnd} grid-cells to global target Jacobian"
+            logger.info(msg)
+            tjac2D[itgt,cnd] = 1.
+            #
+            # (2) european domain --> remove inner part covered by zoom (except for HALO)
+            cnd = (reginfo.reg1D=='eur300x200') & \
+                ( (reginfo.lonc1D<=gns_nohalo_w) | (reginfo.lonc1D>=gns_nohalo_e) | \
+                  (reginfo.latc1D<=gns_nohalo_s) | (reginfo.latc1D>=gns_nohalo_n) )
+            #-- but also remove the HALO part in the domain itself
+            cnd &= (reginfo.reg1D=='eur300x200') & \
+                ( (reginfo.lonc1D>=eur_nohalo_w)&(reginfo.lonc1D<=eur_nohalo_e) & \
+                  (reginfo.latc1D>=eur_nohalo_s)&(reginfo.latc1D<=eur_nohalo_n) )
+            ncnd = np.count_nonzero(cnd)
+            msg = f"...eur300x200 part contributing with {ncnd} grid-cells to global target Jacobian"
+            logger.info(msg)
+            tjac2D[itgt,cnd] = 1.
+            # (3) inner-most domain
+            ncnd = np.count_nonzero(cnd_gns_nohalo)
+            msg = f"...gns100x100 part contributing with {ncnd} grid-cells to global target Jacobian"
+            logger.info(msg)
+            tjac2D[itgt, cnd_gns_nohalo] = 1.
         elif tgt=='zoom_domain':
-            cnd_gns = reginfo.reg1D=='gns100x100'
-            tjac2D[itgt,cnd_gns] = 1.
+            #
+            #-- part1: grid-cells in inner-most zoom domain with HALO removed
+            #
+            tjac2D[itgt,cnd_gns_nohalo] = 1.
+            #
+            #-- part2: grid-cells from eur300x200 for the HALO part of inner zoom domain
+            #          -> this is done in two steps
+            cnd_1 = (reginfo.reg1D=='eur300x200') & \
+                ( (reginfo.lonc1D>=gns_w) & (reginfo.lonc1D<=gns_e) ) & \
+                ( (reginfo.latc1D>=gns_s) & (reginfo.latc1D<=gns_n) )
+            tjac2D[itgt, cnd_1] = 1.
+            cnd_2 = (reginfo.reg1D=='eur300x200') & \
+                ( (reginfo.lonc1D>=gns_nohalo_w) & (reginfo.lonc1D<=gns_nohalo_e) ) & \
+                ( (reginfo.latc1D>=gns_nohalo_s) & (reginfo.latc1D<=gns_nohalo_n) )
+            tjac2D[itgt, cnd_2] = 0.
         elif tgt in tgt_country_table:
-            cnd_tgt = reginfo.reg1D=='gns100x100'
             tgt_frct = tgt_country_table[tgt]
             #-- just one more consistency check
-            tgt_area = np.sum(tgt_frct*area1D[cnd_gns])/1e6
+            tgt_area = np.sum(tgt_frct*area1D[cnd_gns_nohalo])/1e6
             msg = f"inserting grid cell fractions for target -->{tgt}<-- (area: {tgt_area:.2f}[km2])"
             logger.info(msg)
-            tjac2D[itgt,cnd_gns] = tgt_frct
+            tjac2D[itgt,cnd_gns_nohalo] = tgt_frct
+    if args.emission_filepath!=None:
+        emis_ds = xr.open_dataset(args.emission_filepath)
+        units = "kgCH4/cell/month"
+        assert emis_ds.emission.units==units
+        target_unit = "kgCH4"
+        emisvec = emis_ds.emission.sel(nmon=0).values
+        if len(emisvec)!=ng:
+            msg = f"emissions from file ***{str(args.emission_filepath)}*** are not compliant " \
+                f"with target Jacobian ng={len(emisvec)} instead of expected ng={ng}"
+            raise RuntimeError(msg)
+        for itgt,tgt in enumerate(target_list):
+            tjac_vec = tjac2D[itgt,:]
+            msg = f"@itgt={itgt}/{tgt}, sum(tjac)={np.sum(tjac_vec)}"
+            logger.info(msg)
+            tgt_emis = np.dot(tjac_vec, emisvec)
+            msg = f"{tgt}, target_emissions={tgt_emis:.0f}[{target_unit}]"
+            logger.info(msg)
+        sys.exit(0)
+        
     #
     #-- prepare output
     #
@@ -1902,6 +2029,7 @@ def subcmd_create_target_jacobian(args : ArgumentNamespace) -> None:
     #-- global attributes
     #
     fp.description = f"Target Jacobian for Fortran inversion environment within FIT-IC"
+    fp.halos_removed = np.int32(args.nohalo)
     try:
         fp.processing_platform = f"{os.environ['USER']}@{os.environ['HOSTNAME']}"
     except KeyError:
@@ -2486,6 +2614,9 @@ sparser.add_argument('--countryfrct_filepath',
 sparser.add_argument('--countries',
                      nargs='+',
                      help="""select list of countries (ISO3 identifier) which must be fully covered within the FIT-IC innermost zoom domain.""")
+sparser.add_argument('--emission_filepath',
+                     type=Path,
+                     help="""for debugging: provide a compliant emissions NetCDF file to check the target values.""")
 sparser.add_argument('--outdir',
                     help="""top-level directory for any generated outputs..""")
 sparser.add_argument('--outname',
