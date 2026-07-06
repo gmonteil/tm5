@@ -456,48 +456,6 @@ def tm5rundir_obstable( outpath : str | Path, drop_missing_value : bool = False 
     return obs_table
 
 
-def tm5rundir_obsids_extra( outpath : str | Path) -> OrderedDict:
-    """
-    """
-    #-- extract information from point departure file
-    pdepfile = Path(outpath) / 'point' / 'point_departures.nc4'
-    if not pdepfile.exists():
-        msg = f"point departure file ***{str(pdepfile)}*** not found on system."
-        raise FileNotFoundError(msg)
-    fp = Dataset(str(pdepfile))
-    #-- for now restrict to FIT-IC domain setup
-    if len(region_table)==0:
-        msg = f"...initialise region table"
-        logger.info(msg)
-        _init_region_table()
-    obs_table = OrderedDict()
-    for reg in region_table.keys():
-        if reg in fp.groups:
-            reg_grp = fp.groups[reg]
-            #-- each tracer/obsid defines a separate group
-            for obsid in reg_grp.groups:
-                obs_grp = reg_grp.groups[obsid]
-                #-- should be single sample here
-                assert obs_grp.dimensions['samples'].size==1
-                assert obs_grp['/obsid'][0]==obsid #-- just consistency
-                lon = obs_grp['/lon'][:].data[0]
-                lat = obs_grp['/lat'][:].data[0]
-                alt = obs_grp['/alt'][:].data[0]
-                date_components = obs_grp['/date_components'][0]
-                assert np.all(date_components[4:]==0)
-                yr,mn,dy,hr = date_components[:4]
-                time_window_length = obs_grp['/time_window_length'][:].data[0] # [s]
-                tmid = Timestamp(f"{yr:04d}-{mn:02d}-{dy:02d}T{hr:02d}")
-                tstart = tmid - Timedelta(seconds=time_window_length)
-                tend   = tmid + Timedelta(seconds=time_window_length)
-                obs_table[obsid] = SimpleNamespace(
-                    lon=lon, lat=lat, alt=alt, tstart=tstart, tend=tend)
-                    
-    fp.close()
-
-    return obs_table
-
-
 def tm5rundir_iniconc_1obs( outpath : str | Path, obs_info : Series ) -> SimpleNamespace:
     """
     """
