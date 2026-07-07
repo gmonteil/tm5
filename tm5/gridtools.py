@@ -75,6 +75,10 @@ class RectiLinearGrid:
     @property
     def nlat(self) -> int:
         return len(self.latc)
+
+    @property
+    def ng(self) -> int:
+        return self.nlat*self.nlon
     
     @property
     def area(self) -> NDArray:
