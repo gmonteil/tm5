@@ -125,9 +125,9 @@ def _init_region_table():
             region_table[reg].nohalo_mask = nohalo_mask.ravel()
 
 
-def regions1D_info( regions : list, nohalo : bool = False, clip_child : bool = False ) -> SimpleNamespace:
-    if nohalo and clip_child:
-        msg = f"options nohalo and clip_child cannot be active at the same time"
+def regions1D_info( regions : list, remove_halo : bool = False, clip_child : bool = False ) -> SimpleNamespace:
+    if remove_halo and clip_child:
+        msg = f"options remove_halo and clip_child cannot be active at the same time"
         raise NotImplementedError(msg)
     if len(region_table)==0:
         msg = f"...initialise region table"
@@ -144,7 +144,7 @@ def regions1D_info( regions : list, nohalo : bool = False, clip_child : bool = F
     for reg in regions:
         reg_info = region_table[reg]
         grid = reg_info.grid
-        if nohalo:
+        if remove_halo:
             ng += reg_info.ng1D_nohalo
             region_list = region_list + [reg,]*reg_info.ng1D_nohalo
             lonc_list.append(reg_info.lonc1D_nohalo)
@@ -198,7 +198,7 @@ def regiondomain_halo( region : str ) -> list:
     return [lonmin,lonmax,latmin,latmax,]
 
 
-def tm5emisdir_load_emissions2D( emisdir : str | Path, emis_prefix : str, day_range : date_range, regions : list, nohalo : bool = True, clip_child : bool = False ) -> SimpleNamespace:
+def tm5emisdir_load_emissions2D( emisdir : str | Path, emis_prefix : str, day_range : date_range, regions : list, remove_halo : bool = True, clip_child : bool = False ) -> SimpleNamespace:
     """Read in daily emissions as prepared for TM5 for the selected temporal range
     and regions.
     The emissions array will be 2D with only one single dimension in the spatial domain,
@@ -215,7 +215,7 @@ def tm5emisdir_load_emissions2D( emisdir : str | Path, emis_prefix : str, day_ra
     #
     #-- get spatial information as 1D vector
     #
-    domain1D_info = regions1D_info(regions, nohalo=nohalo, clip_child=clip_child)
+    domain1D_info = regions1D_info(regions, remove_halo=remove_halo, clip_child=clip_child)
     ng = domain1D_info.ng
     lonc1D = domain1D_info.lonc1D
     latc1D = domain1D_info.latc1D
@@ -252,11 +252,11 @@ def tm5emisdir_load_emissions2D( emisdir : str | Path, emis_prefix : str, day_ra
             #
             #-- potentially set emissions to zero for grid-cells within child domain
             #
-            if nohalo:
+            if remove_halo:
                 msk = region_table[reg].nohalo_mask
                 emtot = emtot[msk]
                 if iday==0:
-                    msg = f"@{reg}/{day}: applied nohalo mask reduces #gridcells from " \
+                    msg = f"@{reg}/{day}: applied remove_halo mask reduces #gridcells from " \
                         f"{ngtot} to {len(emtot)}"
                     logger.debug(msg)
             elif clip_child:
@@ -509,11 +509,11 @@ def tm5rundir_iniconc_1obs( outpath : str | Path, obs_info : Series ) -> SimpleN
 
 def tm5rundir_emissions2D( outpath : str | Path, trange : date_range = None,
                            emis_prefix : str = None,
-                           nohalo : bool = True, clip_child : bool = False, host : str = 'cosmos' ) -> SimpleNamespace:
+                           remove_halo : bool = True, clip_child : bool = False, host : str = 'cosmos' ) -> SimpleNamespace:
     """
     """
-    if nohalo and clip_child:
-        msg = f"options nohalo and clip_child cannot be active at the same time"
+    if remove_halo and clip_child:
+        msg = f"options remove_halo and clip_child cannot be active at the same time"
         raise NotImplementedError(msg)
     yamlfile = Path(outpath) / 'tm5.yaml'
     if not yamlfile.exists():
@@ -538,12 +538,12 @@ def tm5rundir_emissions2D( outpath : str | Path, trange : date_range = None,
     else:
         emis_prefix = emis_prefix_rundir
 
-    return tm5emisdir_load_emissions2D(emisdir, emis_prefix, trange, regions, nohalo=nohalo, clip_child=clip_child)
+    return tm5emisdir_load_emissions2D(emisdir, emis_prefix, trange, regions, remove_halo=remove_halo, clip_child=clip_child)
 
 
 def tm5rundir_jacobian3D( outpath : str | Path, emis_trange : date_range = None,
                           obsid : str|list|None = None,
-                          nohalo : bool = True, clip_child : bool = False ) -> NDArray:
+                          remove_halo : bool = True, clip_child : bool = False ) -> NDArray:
     """
     Reads in the sensitivity (or Jacobian) from ***one single TM5 adjoint run***,
     which provides the sensitivities of CH4 concentrations (at multiple stations) with respect
@@ -563,8 +563,8 @@ def tm5rundir_jacobian3D( outpath : str | Path, emis_trange : date_range = None,
       .
       .
     """
-    if nohalo and clip_child:
-        msg = f"options nohalo and clip_child cannot be active at the same time"
+    if remove_halo and clip_child:
+        msg = f"options remove_halo and clip_child cannot be active at the same time"
         raise NotImplementedError(msg)
     #
     #-- load footprints into dataframe, plus ancillary information
@@ -610,7 +610,7 @@ def tm5rundir_jacobian3D( outpath : str | Path, emis_trange : date_range = None,
     #
     #-- get spatial information as 1D vector
     #
-    domain1D_info = regions1D_info(regions, nohalo=nohalo, clip_child=clip_child)
+    domain1D_info = regions1D_info(regions, remove_halo=remove_halo, clip_child=clip_child)
     ng = domain1D_info.ng
     lonc1D = domain1D_info.lonc1D
     latc1D = domain1D_info.latc1D
@@ -654,9 +654,9 @@ def tm5rundir_jacobian3D( outpath : str | Path, emis_trange : date_range = None,
                 #     f"{sens.min()}/{sens.mean()}/{sens.max()}"
                 # print(msg)
                 msk = None
-                if nohalo and clip_child:
+                if remove_halo and clip_child:
                     msk = region_table[reg].nohalo_mask & region_table[reg].usemask
-                elif nohalo:
+                elif remove_halo:
                     msk = region_table[reg].nohalo_mask
                 elif clip_child:
                     msk = region_table[reg].usemask
@@ -852,7 +852,7 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, emis_trange : date_ra
     return SimpleNamespace(data=footprints, days=emis_trange, regions=region_list, obsids=tracer)
 
 
-def jacobian_redistribute_glb6x4_to_avengers_zoom( ojac_6x4 : xr.DataArray, nohalo : bool = True ) -> SimpleNamespace:
+def jacobian_redistribute_glb6x4_to_avengers_zoom( ojac_6x4 : xr.DataArray, remove_halo : bool = True ) -> SimpleNamespace:
     """
     Re-distributing sensitivities (Jacobian) that were computed globally only at the
     coarse 6x4 degree resolution spatially to grid-cells as used in the AVENGERS
@@ -880,7 +880,7 @@ def jacobian_redistribute_glb6x4_to_avengers_zoom( ojac_6x4 : xr.DataArray, noha
     #
     #-- spatial information for the AVENGERS/FIT-IC zoom configuration
     #
-    reginfo_avengers = regions1D_info(['glb600x400','eur300x200','gns100x100',], nohalo=nohalo)
+    reginfo_avengers = regions1D_info(['glb600x400','eur300x200','gns100x100',], remove_halo=remove_halo)
     region_table = reginfo_avengers.table
     #
     #-- define global grids at the two finer resolutions
@@ -957,7 +957,7 @@ def jacobian_redistribute_glb6x4_to_avengers_zoom( ojac_6x4 : xr.DataArray, noha
     #          - or set HALO part to zero
     #
     nohalo_mask = region_table['eur300x200'].nohalo_mask
-    if nohalo:
+    if remove_halo:
         ojac_3x2 = ojac_3x2[:,nohalo_mask]
     else:
         ojac_3x2[:,~nohalo_mask] = 0.
@@ -978,7 +978,7 @@ def jacobian_redistribute_glb6x4_to_avengers_zoom( ojac_6x4 : xr.DataArray, noha
     #          - or set HALO part to zero
     #
     nohalo_mask = region_table['gns100x100'].nohalo_mask
-    if nohalo:
+    if remove_halo:
         ojac_1x1 = ojac_1x1[:,nohalo_mask]
     else:
         ojac_1x1[:,~nohalo_mask] = 0.

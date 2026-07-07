@@ -348,7 +348,7 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
     topdir = Path(args.outpath_tm5)
     dayl = args.selday
     host = args.__dict__.get('host', 'cosmos')
-    nohalo = args.nohalo
+    remove_halo = args.remove_halo
     obsid = args.obsid
     #-- turn dates into timestamp
     dayl = Timestamp(dayl)
@@ -630,7 +630,7 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
         #
         jac_info = tm5rundir_jacobian3D(rundir, emis_trange=day_range,
                                         obsid=list(obsinfo_curday.index),
-                                        nohalo=nohalo, clip_child=False)
+                                        remove_halo=remove_halo, clip_child=False)
         #-- Jacobian shape: [nobs,nemisday,ng]
         jac3D = jac_info.jac3D
         # print(f"@{dirday}, jac3D.shape={jac3D.shape}")
@@ -1416,7 +1416,7 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
         #
         #-- select emissions from from first rundir
         rundir_first = input4inv.rundir_list[0]
-        emis_info = tm5rundir_emissions2D(rundir_first, trange=day_range, nohalo=args.nohalo)
+        emis_info = tm5rundir_emissions2D(rundir_first, trange=day_range, remove_halo=args.remove_halo)
         emis2D = emis_info.emis2D
         emis_tot = np.sum(emis2D*nsecday, axis=0) #-- overall emissions in temporal range
         msg = f"emis_tot min/mean/max = {emis_tot.min()}/{emis_tot.mean()}/{emis_tot.max()}"
@@ -1539,8 +1539,8 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     outname_tokens = ["fitic-inversion-input-obs1D", obsid_tag, domain_tag, trange_tag,]
     if args.jac4totemis:
         outname_tokens.append('jac4totemis')
-    if args.nohalo:
-        outname_tokens.append('halos-removed')
+    if args.remove_halo:
+        outname_tokens.append('removed-halos')
     outname = '_'.join(outname_tokens) + '.nc'
     outname = set_outname(args, outname)
     msg = f"writing inversion inputs to file ***{outname}***..."
@@ -1666,7 +1666,7 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
         f"Jacobian, the initial concentrations, and the observed concentrations " \
         f"at the selected stations and for the selected days."
     fp.footprint_directory = str(topdir.absolute())
-    fp.halos_removed = np.int32(args.nohalo)
+    fp.removed_halos = np.int32(args.remove_halo)
     try:
         fp.processing_platform = f"{os.environ['USER']}@{os.environ['HOSTNAME']}"
     except KeyError:
@@ -1692,7 +1692,7 @@ def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
     regions = args.regions
     complevel = args.__dict__.get('complevel',4)
 
-    reginfo = regions1D_info(regions, nohalo=args.nohalo)
+    reginfo = regions1D_info(regions, remove_halo=args.remove_halo)
     ng = reginfo.ng
     msg = f"-->{regions}<-- yield overall {ng} grid-cells"
     logger.info(msg)
@@ -1744,7 +1744,7 @@ def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
         msg = f"...loading emissions for {dayf.strftime('%Y%m%d')} to {dayl.strftime('%Y%m%d')}"
         logger.info(msg)
         #-- load daily emissions for every day in month
-        emis_info = tm5emisdir_load_emissions2D(tm5emisdir, tm5emisdir+'/ch4emis', day_range, regions, nohalo=args.nohalo)
+        emis_info = tm5emisdir_load_emissions2D(tm5emisdir, tm5emisdir+'/ch4emis', day_range, regions, remove_halo=args.remove_halo)
         #-- convert daily emission rates [kgCH4/cell/s] to [kgCH4/cell/month]
         emis_mm =  np.sum(emis_info.emis2D*nsecday, axis=0)
         #-- insert current month into buffer[mon,grid]
@@ -1824,7 +1824,7 @@ def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
     #-- global attributes
     #
     fp.emission_directory = str(tm5emisdir)
-    fp.halos_removed = np.int32(args.nohalo)
+    fp.removed_halos = np.int32(args.remove_halo)
     if month==None:
         fp.time_coverage_start = day_list[0].strftime('%Y-%m-%d')
         fp.time_coverage_end   = day_list[-1].strftime('%Y-%m-%d')
@@ -1851,7 +1851,7 @@ def subcmd_create_target_jacobian(args : ArgumentNamespace) -> None:
     #--
     #
     regions = ['glb600x400', 'eur300x200', 'gns100x100',]
-    reginfo = regions1D_info(regions, nohalo=args.nohalo)
+    reginfo = regions1D_info(regions, remove_halo=args.remove_halo)
     ng = reginfo.ng
     region_table = reginfo.table
     area1D = reginfo.area1D
@@ -2077,7 +2077,7 @@ def subcmd_create_target_jacobian(args : ArgumentNamespace) -> None:
     #-- global attributes
     #
     fp.description = f"Target Jacobian for Fortran inversion environment within FIT-IC"
-    fp.halos_removed = np.int32(args.nohalo)
+    fp.removed_halos = np.int32(args.remove_halo)
     try:
         fp.processing_platform = f"{os.environ['USER']}@{os.environ['HOSTNAME']}"
     except KeyError:
@@ -2577,9 +2577,9 @@ sparser.add_argument('--jac4totemis',
 sparser.add_argument('--glb6x4_to_avengers-zoom',
                      action='store_true',
                      help="""Option to be used only in conjunction with domain=='glb600x400'! This will re-distribute the globally computed sensitivities at 6x4 degrees to sensitivities w.r.t. to the grid-cells used for the (gns1x1) zoom  domain.""")
-sparser.add_argument('--no-halo_correction',
+sparser.add_argument('--no-remove-halo','--no-halo_correction',
                      action='store_false',
-                     dest='nohalo',
+                     dest='remove_halo',
                      help="""meanwhile, by default the HALO part in zoom domains with parent are being removed. Use this option to activate the old behaviour.""")
 sparser.add_argument('--obsdir',
                      type=Path,
@@ -2641,9 +2641,9 @@ sparser.add_argument('--regions',
                      choices=['glb600x400','eur300x200','gns100x100',],
                      default=['glb600x400','eur300x200','gns100x100',],
                      help="""selected regions (default: %(default)s), better only change for test purposes.""")
-sparser.add_argument('--no-halo_correction',
+sparser.add_argument('--no-remove-halo','--no-halo_correction',
                      action='store_false',
-                     dest='nohalo',
+                     dest='remove_halo',
                      help="""meanwhile, by default the HALO part in zoom domains with parent are being removed. Use this option to activate the old behaviour.""")
 sparser.add_argument('--outdir',
                     help="""top-level directory for any generated outputs..""")
@@ -2655,9 +2655,9 @@ sparser.add_argument('--outname',
 #
 sparser = subparsers.add_parser('create_target_jacobian',
                                 help="""preparation of dedicated target Jacobian for Fortran inversion system.""")
-sparser.add_argument('--no-halo_correction',
+sparser.add_argument('--no-remove-halo','--no-halo_correction',
                      action='store_false',
-                     dest='nohalo',
+                     dest='remove_halo',
                      help="""meanwhile, by default the HALO part in zoom domains with parent are being removed. Use this option to activate the old behaviour.""")
 sparser.add_argument('--countryfrct_filepath',
                      type=Path,
@@ -2690,7 +2690,7 @@ sparser.add_argument('--outname',
 #--       compare_ojac_obs1D
 #
 sparser = subparsers.add_parser('compare_ojac_obs1D',
-                                help="""some comparison of generated observational Jacobian (primarily to trace potential issues with the nohalo Jacobians).""")
+                                help="""some comparison of generated observational Jacobian (primarily to trace potential issues with Jacobians when HALOs are removed).""")
 sparser.add_argument('filepath_ojac',
                      nargs=2,
                      type=Path,
