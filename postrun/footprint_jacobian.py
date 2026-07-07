@@ -8,7 +8,7 @@ from pathlib import Path
 from collections import OrderedDict
 import datetime as dtm
 from loguru import logger
-from pandas import date_range, DataFrame
+from pandas import date_range, DatetimeIndex,DataFrame
 from pandas import Timestamp, Timedelta, concat
 import xarray as xr
 import numpy as np
@@ -328,7 +328,12 @@ def collect_input4inversion( args : ArgumentNamespace ) -> SimpleNamespace:
     return input4inv
     
 
-def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) -> SimpleNamespace:
+def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
+                                   obsday_range : DatetimeIndex,
+                                   remove_halo : bool = True,
+                                   obsid : list|None = None,
+                                   observation_dir : Path|None = None) -> SimpleNamespace:
+
     """Routine to collect results from (a series of) TM5 adjoint footprint simulations
     that were run for observations within a dedicated domain.
 
@@ -345,16 +350,9 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
     Note, in particular for the flask measurements, the list of stations varies per day.
     """
     #-- arguments
-    topdir = Path(args.outpath_tm5)
-    dayl = args.selday
-    host = args.__dict__.get('host', 'cosmos')
-    remove_halo = args.remove_halo
-    obsid = args.obsid
-    #-- turn dates into timestamp
-    dayl = Timestamp(dayl)
-    dayf = dayl - Timedelta(days=args.days-1) #-- #args.days overall, selected day is last
-    day_range = date_range(dayf, dayl, freq='1d')
-    nday = len(day_range)
+    nday = len(obsday_range)
+    dayf = obsday_range[0]
+    dayl = obsday_range[-1]
     msg = f"...collecting footprint information for (daily) observations " \
         f"in temporal range {dayf.strftime('%Y%m%d')} - {dayl.strftime('%Y%m%d')}"
     logger.info(msg)
@@ -375,7 +373,7 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
     emis_latc1D = None
     emis_reg1D  = None
     rundir_list = []
-    for iday,obsday in enumerate(day_range):
+    for iday,obsday in enumerate(obsday_range):
         #
         #-- naming pattern used by Guillaume: footprints_<domain_tag>_%Y%m%d
         #   -  where '%Y%m%d' refers to last day of simulation at 0:00 !
@@ -508,7 +506,7 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
                                 ptn = f"ch4_{staid}*-{sta_alt}magl*.nc"
                             elif domain_tag=='glb600x400':
                                 ptn = f"ch4_{staid.lower()}_surface-flask_*_representative.nc"
-                            obspack_list = list(Path(args.obsdir).glob(ptn))
+                            obspack_list = list(obsdir.glob(ptn))
                             if len(obspack_list)==0:
                                 msg = f"no matching observation file found for staid -->{staid}<--"
                                 raise RuntimeError(msg)
@@ -628,7 +626,7 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
         #   - current obsday, but possibly restricted to selected stations
         #   - w.r.t. to emissions in the selected range
         #
-        jac_info = tm5rundir_jacobian3D(rundir, emis_trange=day_range,
+        jac_info = tm5rundir_jacobian3D(rundir, emis_trange=obsday_range,
                                         obsid=list(obsinfo_curday.index),
                                         remove_halo=remove_halo, clip_child=False)
         #-- Jacobian shape: [nobs,nemisday,ng]
@@ -660,7 +658,6 @@ def collect_input4inversion_obs1D( args : ArgumentNamespace, domain_tag : str ) 
     #-- instantiate namespace to be returned
     #
     input4inv = SimpleNamespace(
-        day_range=day_range,
         rundir_list=rundir_list,
         stationlist_1D=np.array(stationlist_1D),
         obstimelist_1D=obstimelist_1D,
@@ -1370,7 +1367,9 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     On invocation the user has the option to condense the Jacobian to
     reflect sensitivity of the total emission within the selected temporal range.
     """
-    topdir = Path(args.outpath_tm5)
+    topdir = args.outpath_tm5
+    domain = args.domain
+    obsday_firstlast = args.obsday_firstlast
     obsid = args.obsid
     difdeg_max = args.difdeg_max
     difalt_max = args.difalt_max
@@ -1381,16 +1380,19 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     #
     msg = f"START collecting sensitiy inputs..."
     logger.info(msg)
-    input4inv = collect_input4inversion_obs1D(args, args.domain)
+    dayf, dayl = obsday_firstlast
+    obsday_range = date_range(dayf, dayl, freq='1d')
+    nobsday = len(obsday_range)
+    # input4inv = collect_input4inversion_obs1D(args, args.domain)
+    input4inv = collect_input4inversion_obs1D(topdir, domain, obsday_range,
+                                              remove_halo=args.remove_halo,
+                                              obsid=args.obsid,
+                                              observation_dir=args.obsdir)
     msg = f"...input collection FINISHED."
     logger.info(msg)
     #
     #--
     #
-    day_range = input4inv.day_range
-    dayf = day_range[0]
-    dayl = day_range[-1]
-    nday = len(day_range)
     stationlist_1D = input4inv.stationlist_1D
     obstimelist_1D = input4inv.obstimelist_1D
     #--
@@ -1409,14 +1411,14 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     #
     sensitiviy_units = 'ppb/(kgCH4/cell/s)'
     if args.jac4totemis:
-        ojac_tot = jac_array.sum(axis=1)/(nday*nsecday)
+        ojac_tot = jac_array.sum(axis=1)/(nobsday*nsecday)
         sensitivity_units = 'ppb/(kgCH4/cell)'
         #
         #-- verification of monthly total aggregation
         #
         #-- select emissions from from first rundir
         rundir_first = input4inv.rundir_list[0]
-        emis_info = tm5rundir_emissions2D(rundir_first, trange=day_range, remove_halo=args.remove_halo)
+        emis_info = tm5rundir_emissions2D(rundir_first, trange=obsday_range, remove_halo=args.remove_halo)
         emis2D = emis_info.emis2D
         emis_tot = np.sum(emis2D*nsecday, axis=0) #-- overall emissions in temporal range
         msg = f"emis_tot min/mean/max = {emis_tot.min()}/{emis_tot.mean()}/{emis_tot.max()}"
@@ -2471,6 +2473,7 @@ sparser.add_argument('--outname',
 sparser = subparsers.add_parser('build_jacobian_period_obs1D',
                                 help="""test preparation of inputs for Fortran inversion system.""")
 sparser.add_argument('outpath_tm5',
+                     type=Path,
                      help="""top-level directory of series of TM5 adjoint runs for footprint creation each of those for one observation day.""")
 sparser.add_argument('domain',
                      choices=['gns100x100','glb600x400',],
@@ -2478,13 +2481,15 @@ sparser.add_argument('domain',
 sparser.add_argument('--obsid',
                      nargs='+',
                      help="""select one single observational location (default: %(default)s).""")
-sparser.add_argument('--selday',
-                     default="20210131",
+sparser.add_argument('--obsday_firstlast',
+                     nargs=2,
+                     type=Timestamp,
+                     default=[Timestamp("20210101"),Timestamp("20210102")],
                      help="""last observational day of accumulation period (default: %(default)s).""")
-sparser.add_argument('--days',
-                     type=int,
-                     default=2,
-                     help="""number of days backwards of accumulation period (default: %(default)s).""")
+# sparser.add_argument('--days',
+#                      type=int,
+#                      default=2,
+#                      help="""number of days backwards of accumulation period (default: %(default)s).""")
 sparser.add_argument('--jac4totemis',
                      action='store_true',
                      help="""whether to condense the Jacobian such that it reflects the sensitivity w.r.t. to the total emissions within the temporal domain.""")
