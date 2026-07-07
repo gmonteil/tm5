@@ -30,6 +30,7 @@ from tm5.post.footprint_io import tm5rundir_obstable, tm5rundir_iniconc_1obs
 from tm5.post.footprint_io import regions1D_info, regiondomain_halo
 from tm5.post.footprint_io import tm5rundir_jacobian3D
 from tm5.post.footprint_io import tm5rundir_emissions2D, tm5emisdir_load_emissions2D
+from tm5.post.footprint_io import jacobian_redistribute_glb6x4_to_avengers_zoom
 from tm5.post.plot_util import cnorm_set
 from tm5.post.utilities import lonstr,latstr,set_outname,create_sha512
 #-- initial/older/depreceated methods
@@ -1406,9 +1407,10 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     #   - total emissions (per grid-cell) for the complete period
     #   - need to scale and average entries in Jacobian accordingly
     #
+    sensitiviy_units = 'ppb/(kgCH4/cell/s)'
     if args.jac4totemis:
         ojac_tot = jac_array.sum(axis=1)/(nday*nsecday)
-        
+        sensitivity_units = 'ppb/(kgCH4/cell)'
         #
         #-- verification of monthly total aggregation
         #
@@ -1435,24 +1437,12 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     #
     #-- re-distribute global flask Jacobian (which has been computed *only* on global 6x4 grid)
     #
-    if args.domain=='glb600x400' and args.glb6x4_to_gns1x1:
+    if args.domain=='glb600x400' and args.glb6x4_to_avengers_zoom:
         #
-        #-- get spatial information for the AVENGERS/FIT-IC zoom configutation
-        #
-        reginfo_fitic = regions1D_info(['glb600x400','eur300x200','gns100x100',], nohalo=args.nohalo)
-        region_table = reginfo_fitic.table
-        #
-        #-- define global grids at the two finer resolutions
-        #
-        glb_6x4 = region_table['glb600x400'].grid
-        eur_3x2 = region_table['eur300x200'].grid
-        gns_1x1 = region_table['gns100x100'].grid
-        glb_3x2 = TM5Grids.from_corners(west=-180, east=180, south=-90, north=90, dlon=3, dlat=2)
-        glb_1x1 = TM5Grids.global1x1()
-        #
-        #-- global 6x4 sensitivites [ppb/(kgCH4/cell)]
+        #-- turn 1D spatial part of global 6x4 sensitivites to lat/lon
         #   (nobs,ng) --> (nobs,nlat,nlon)
         #
+        glb_6x4 = TM5Grids.from_corners(west=-180, east=180, south=-90, north=90, dlon=6, dlat=4)
         ojac_6x4 = xr.DataArray(
         ojac_out.reshape(nobs,glb_6x4.nlat,glb_6x4.nlon),
             dims = ('nobs','lat','lon'),
@@ -1460,109 +1450,22 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
                 'lat': glb_6x4.latc,
                 'lon': glb_6x4.lonc
             },
-            # attrs = {
-            #     'units': ojac_flask.units
-            # }
+            attrs = {
+                'units': sensitivity_units
+            }
         )
         #
-        #-- global 6x4 sensitivites [ppb/(kgCH4/cell)] --> [ppb/(kgCH4/m2)]
+        #-- spatially re-distribute sensitivities to the 1D avengers zoom vector
         #
-        ojac_6x4 = ojac_6x4 / glb_6x4.area
+        jacobian_redistributed = jacobian_redistribute_glb6x4_to_avengers_zoom(ojac_6x4)
         #
-        #-- conversion to global 1x1 (nearest neighbour)
+        #-- extract the relevant bits
         #
-        _ds_glb1x1 = xr.Dataset(coords=dict(lon=glb_1x1.lonc, lat=glb_1x1.latc))
-        regridder = xesmf.Regridder(ojac_6x4, _ds_glb1x1, method='nearest_s2d')
-        #-- global 1x1 sensitivites [ppb/(kgCH4/m2)]
-        ojac_1x1 = regridder(ojac_6x4)
-        #-- global 1x1 sensitivites [ppb/(kgCH4/cell)]
-        ojac_1x1 = ojac_1x1 * glb_1x1.area
-        #
-        #-- conversion to global 3x2 (nearest neighbour)
-        #
-        _ds_glb3x2 = xr.Dataset(coords=dict(lon=glb_3x2.lonc, lat=glb_3x2.latc))
-        regridder = xesmf.Regridder(ojac_6x4, _ds_glb3x2, method='nearest_s2d')
-        #-- global 3x2 sensitivites [ppb/(kgCH4/m2)]
-        ojac_3x2 = regridder(ojac_6x4)
-        #-- global 3x2 sensitivites [ppb/(kgCH4/cell)]
-        ojac_3x2 = ojac_3x2 * glb_3x2.area
-        #--
-        msg = f"domain={args.domain}, global sensitiviy sums over all observations and grid-cells for " \
-            f"glb6x4/glb3x2/glb1x1 = {(ojac_6x4*glb_6x4.area).sum().values}/{ojac_3x2.sum().values}/{ojac_1x1.sum().values} [ppb/kgCH4]"
-        logger.info(msg)
-        #
-        # (glb6x4) sensitivities within eur3x2 domain (excluding HALO) become zero
-        #
-        _lonmin = eur_3x2.west  + glb_6x4.dlon
-        _lonmax = eur_3x2.east  - glb_6x4.dlon
-        _latmin = eur_3x2.south + glb_6x4.dlat
-        _latmax = eur_3x2.north - glb_6x4.dlat
-        ojac_6x4.loc[dict(lat=slice(_latmin,_latmax), lon=slice(_lonmin,_lonmax))] = 0.
-        #--
-        ojac_6x4 = ojac_6x4.values.reshape(nobs,glb_6x4.ng)
-        #
-        # (eur3x2) - restrict global 3x2 to eur_3x2
-        #
-        _lon3x2 = (ojac_3x2.lon>=eur_3x2.west) & \
-            (ojac_3x2.lon<=eur_3x2.east)
-        _lat3x2 = (ojac_3x2.lat>=eur_3x2.south) & \
-            (ojac_3x2.lat<=eur_3x2.north)
-        ojac_3x2 = ojac_3x2.sel(lon=_lon3x2,lat=_lat3x2)
-        #
-        # (eur3x2) - zero out domain covered by innermost zoom (excluding HALO)
-        #
-        _lonmin = gns_1x1.west + glb_3x2.dlon
-        _lonmax = gns_1x1.east - glb_3x2.dlon
-        _latmin = gns_1x1.south + glb_3x2.dlat
-        _latmax = gns_1x1.north - glb_3x2.dlat
-        ojac_3x2.loc[dict(lat=slice(_latmin,_latmax), lon=slice(_lonmin,_lonmax))] = 0.
-        #
-        # (eur3x2) - turn lat/lon into 1D vector
-        #
-        ojac_3x2 = ojac_3x2.values.reshape(nobs,eur_3x2.ng)
-        #
-        # (eur3x2) - either restrict to nohalo part of domain
-        #          - or set HALO part to zero
-        #
-        nohalo_mask = region_table['eur300x200'].nohalo_mask
-        if args.nohalo:
-            ojac_3x2 = ojac_3x2[:,nohalo_mask]
-        else:
-            ojac_3x2[:,~nohalo_mask] = 0.
-        #
-        # (gns1x1) - restrict global 1x1 to gns1x1
-        #
-        _lon1x1 = (ojac_1x1.lon>=gns_1x1.west) & \
-            (ojac_1x1.lon<=gns_1x1.east)
-        _lat1x1 = (ojac_1x1.lat>=gns_1x1.south) & \
-            (ojac_1x1.lat<=gns_1x1.north)
-        ojac_1x1 = ojac_1x1.sel(lon=_lon1x1,lat=_lat1x1)
-        #
-        # (gns1x1) - turn lat/lon into 1D vector
-        #
-        ojac_1x1 = ojac_1x1.values.reshape(nobs,gns_1x1.ng)
-        #
-        # (gns1x1) - either restrict to nohalo part of domain
-        #          - or set HALO part to zero
-        #
-        nohalo_mask = region_table['gns100x100'].nohalo_mask
-        if args.nohalo:
-            ojac_1x1 = ojac_1x1[:,nohalo_mask]
-        else:
-            ojac_1x1[:,~nohalo_mask] = 0.
-        #
-        #-- concat domain contributions along rows
-        #
-        ojac_out = np.concatenate((ojac_6x4,ojac_3x2,ojac_1x1), axis=1)
-        #-- update ng (number of grid-cells now extended)
-        _nobs,ng = ojac_out.shape
-        if ng!=reginfo_fitic.ng:
-            msg = f"extended Jacobian has shape nobs/ng = {_nobs}/{ng}, " \
-                f"but ng={reginfo_fitic.ng} was expected."
-            raise RuntimeError(msg)
-        emis_lonc1D = reginfo_fitic.lonc1D
-        emis_latc1D = reginfo_fitic.latc1D
-        emis_reg1D  = reginfo_fitic.reg1D
+        ojac_out = jacobian_redistributed.jacobian
+        _, ng = ojac_out.shape #-- update number of grid-cells (!)
+        emis_lonc1D = jacobian_redistributed.lonc1D
+        emis_latc1D = jacobian_redistributed.latc1D
+        emis_reg1D = jacobian_redistributed.reg1D
     else: #-- spatial information (for emissions) can remain as they have been read
         emis_lonc1D = input4inv.emis_lonc1D
         emis_latc1D = input4inv.emis_latc1D
@@ -1629,7 +1532,7 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
         obsid_tag = '--' + '--'.join([_ for _ in station_list]) + '--'
     else:
         obsid_tag = f"{nsta}-obslocations"
-    if args.domain=='glb600x400' and args.glb6x4_to_gns1x1:
+    if args.domain=='glb600x400' and args.glb6x4_to_avengers_zoom:
         domain_tag = f"{args.domain}-to-gns100x100"
     else:
         domain_tag = args.domain
@@ -1744,7 +1647,7 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
         ncvar = fp.createVariable('obs_jacobian', 'f8', ('nobs','ng',),
                                   compression='zlib', complevel=complevel)
         ncvar[:] = ojac_out[:]
-        ncvar.units = 'ppb/(kgCH4/cell)'
+        ncvar.units = sensitivity_units
         ncvar.comment = f"Jacobian quantifies the sensitivity of concentration at " \
             f"observed times and locations w.r.t. to the total emission field in the " \
             f"temporal range from {dayf.strftime('%Y%m%d')} to {dayl.strftime('%Y%m%d')}"
@@ -1752,7 +1655,7 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
         ncvar = fp.createVariable('obs_jacobian', 'f8', ('nobs','nemisday','ng',),
                                   compression='zlib', complevel=complevel)
         ncvar[:] = ojac_out[:]
-        ncvar.units = 'ppb/(kgCH4/cell/s)'
+        ncvar.units = sensitivity_units
         ncvar.comment = f"Jacobian quantifies the sensitivity of concentration at " \
             f"observed times and locations w.r.t. to daily emission rates."
 
@@ -2671,7 +2574,7 @@ sparser.add_argument('--days',
 sparser.add_argument('--jac4totemis',
                      action='store_true',
                      help="""whether to condense the Jacobian such that it reflects the sensitivity w.r.t. to the total emissions within the temporal domain.""")
-sparser.add_argument('--glb6x4_to_gns1x1',
+sparser.add_argument('--glb6x4_to_avengers-zoom',
                      action='store_true',
                      help="""Option to be used only in conjunction with domain=='glb600x400'! This will re-distribute the globally computed sensitivities at 6x4 degrees to sensitivities w.r.t. to the grid-cells used for the (gns1x1) zoom  domain.""")
 sparser.add_argument('--no-halo_correction',

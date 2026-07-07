@@ -16,6 +16,7 @@ import numpy as np
 from numpy import zeros, tile
 from numpy.typing import NDArray
 from netCDF4 import Dataset, chartostring
+import xesmf
 from types import SimpleNamespace
 #-- library packages
 from tm5.gridtools import TM5Grids
@@ -851,11 +852,158 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, emis_trange : date_ra
     return SimpleNamespace(data=footprints, days=emis_trange, regions=region_list, obsids=tracer)
 
 
+def jacobian_redistribute_glb6x4_to_avengers_zoom( ojac_6x4 : xr.DataArray, nohalo : bool = True ) -> SimpleNamespace:
+    """
+    Re-distributing sensitivities (Jacobian) that were computed globally only at the
+    coarse 6x4 degree resolution spatially to grid-cells as used in the AVENGERS
+    3-level zoom configuration (glb6x4,eur3x2,gns1x1).
+    Depending on the flag the HALO parts of the two inner domains may be dropped in
+    the generated output Jacobian.
+    The output Jacobian numpy array will have shape (nobs,ng), where nobs is the
+    number of observational locations (where these include both, spatial and temporal
+    dimension) and ng quantifies the number of emission grid-cells of the AVENGERS
+    zoom configuration (where HALO parts of the inner domains have potentially been removed).
+    """
+    #
+    #-- some consistency checks
+    #
+    expected_dims  = ('nobs','lat','lon')
+    expected_units = ['ppb/(kgCH4/cell)', 'ppb/(kgCH4/cell/s)',]
+    if ojac_6x4.dims!=expected_dims:
+        msg = f"ojac_6x4 with unexpected dimensions -->{ojac_6x4.dims}<-- " \
+            f"(expected: ==>{expected_dims}<==)"
+        raise RuntimeError(msg)
+    if not ojac_6x4.units in expected_units:
+        msg = f"ojac_6x4 with unexpected dimensions -->{ojac_6x4.units}<-- " \
+            f"(expected: ==>{expected_units}<==)"
+    nobs,_nlat,_nlon = ojac_6x4.shape
+    #
+    #-- spatial information for the AVENGERS/FIT-IC zoom configuration
+    #
+    reginfo_avengers = regions1D_info(['glb600x400','eur300x200','gns100x100',], nohalo=nohalo)
+    region_table = reginfo_avengers.table
+    #
+    #-- define global grids at the two finer resolutions
+    #
+    glb_6x4 = region_table['glb600x400'].grid
+    eur_3x2 = region_table['eur300x200'].grid
+    gns_1x1 = region_table['gns100x100'].grid
+    glb_3x2 = TM5Grids.from_corners(west=-180, east=180, south=-90, north=90, dlon=3, dlat=2)
+    glb_1x1 = TM5Grids.global1x1()
+    #>> expecting input at 6x4 degree resolution
+    if (_nlat,_nlon)!=(glb_6x4.nlat,glb_6x4.nlon):
+        msg = f"ojac_6x4 with unexpected shape -->{(_nlat,_nlon)}<-- " \
+            f"(expected: {(glb_6x4.nlat,glb_6x4.nlon)}"
+        raise RuntimeError(msg)
+    #
+    #-- global 6x4 sensitivites [ppb/(kgCH4/cell)] --> [ppb/(kgCH4/m2)]
+    #   -> nearest neighbour upscaling must happen in per-squaremeter units
+    #
+    ojac_6x4 = ojac_6x4 / glb_6x4.area
+    #
+    #-- conversion to global 1x1 (nearest neighbour)
+    #
+    _ds_glb1x1 = xr.Dataset(coords=dict(lon=glb_1x1.lonc, lat=glb_1x1.latc))
+    regridder = xesmf.Regridder(ojac_6x4, _ds_glb1x1, method='nearest_s2d')
+    #-- global 1x1 sensitivites [ppb/(kgCH4/m2)]
+    ojac_1x1 = regridder(ojac_6x4)
+    #-- global 1x1 sensitivites [ppb/(kgCH4/cell)] as required for output
+    ojac_1x1 = ojac_1x1 * glb_1x1.area
+    #
+    #-- conversion to global 3x2 (nearest neighbour)
+    #
+    _ds_glb3x2 = xr.Dataset(coords=dict(lon=glb_3x2.lonc, lat=glb_3x2.latc))
+    regridder = xesmf.Regridder(ojac_6x4, _ds_glb3x2, method='nearest_s2d')
+    #-- global 3x2 sensitivites [ppb/(kgCH4/m2)]
+    ojac_3x2 = regridder(ojac_6x4)
+    #-- global 3x2 sensitivites [ppb/(kgCH4/cell)]
+    ojac_3x2 = ojac_3x2 * glb_3x2.area
+    #--
+    msg = f"global sensitiviy sums over all observations and grid-cells for " \
+        f"glb6x4/glb3x2/glb1x1 = {(ojac_6x4*glb_6x4.area).sum().values}/{ojac_3x2.sum().values}/{ojac_1x1.sum().values} [ppb/kgCH4]"
+    logger.info(msg)
+    #
+    # (glb6x4) sensitivities within eur3x2 domain (excluding HALO) become zero
+    #
+    _lonmin = eur_3x2.west  + glb_6x4.dlon
+    _lonmax = eur_3x2.east  - glb_6x4.dlon
+    _latmin = eur_3x2.south + glb_6x4.dlat
+    _latmax = eur_3x2.north - glb_6x4.dlat
+    ojac_6x4.loc[dict(lat=slice(_latmin,_latmax), lon=slice(_lonmin,_lonmax))] = 0.
+    #--
+    ojac_6x4 = ojac_6x4.values.reshape(nobs,glb_6x4.ng)
+    #
+    # (eur3x2) - restrict global 3x2 to eur_3x2
+    #
+    _lon3x2 = (ojac_3x2.lon>=eur_3x2.west) & \
+        (ojac_3x2.lon<=eur_3x2.east)
+    _lat3x2 = (ojac_3x2.lat>=eur_3x2.south) & \
+        (ojac_3x2.lat<=eur_3x2.north)
+    ojac_3x2 = ojac_3x2.sel(lon=_lon3x2,lat=_lat3x2)
+    #
+    # (eur3x2) - zero out domain covered by innermost zoom (excluding HALO)
+    #
+    _lonmin = gns_1x1.west + glb_3x2.dlon
+    _lonmax = gns_1x1.east - glb_3x2.dlon
+    _latmin = gns_1x1.south + glb_3x2.dlat
+    _latmax = gns_1x1.north - glb_3x2.dlat
+    ojac_3x2.loc[dict(lat=slice(_latmin,_latmax), lon=slice(_lonmin,_lonmax))] = 0.
+    #
+    # (eur3x2) - turn lat/lon into 1D vector
+    #
+    ojac_3x2 = ojac_3x2.values.reshape(nobs,eur_3x2.ng)
+    #
+    # (eur3x2) - either restrict to nohalo part of domain
+    #          - or set HALO part to zero
+    #
+    nohalo_mask = region_table['eur300x200'].nohalo_mask
+    if nohalo:
+        ojac_3x2 = ojac_3x2[:,nohalo_mask]
+    else:
+        ojac_3x2[:,~nohalo_mask] = 0.
+    #
+    # (gns1x1) - restrict global 1x1 to gns1x1
+    #
+    _lon1x1 = (ojac_1x1.lon>=gns_1x1.west) & \
+        (ojac_1x1.lon<=gns_1x1.east)
+    _lat1x1 = (ojac_1x1.lat>=gns_1x1.south) & \
+        (ojac_1x1.lat<=gns_1x1.north)
+    ojac_1x1 = ojac_1x1.sel(lon=_lon1x1,lat=_lat1x1)
+    #
+    # (gns1x1) - turn lat/lon into 1D vector
+    #
+    ojac_1x1 = ojac_1x1.values.reshape(nobs,gns_1x1.ng)
+    #
+    # (gns1x1) - either restrict to nohalo part of domain
+    #          - or set HALO part to zero
+    #
+    nohalo_mask = region_table['gns100x100'].nohalo_mask
+    if nohalo:
+        ojac_1x1 = ojac_1x1[:,nohalo_mask]
+    else:
+        ojac_1x1[:,~nohalo_mask] = 0.
+    #
+    #-- concat domain contributions along rows
+    #
+    ojac_out = np.concatenate((ojac_6x4,ojac_3x2,ojac_1x1), axis=1)
+    #-- update ng (number of grid-cells now extended)
+    _nobs,ng = ojac_out.shape
+    if ng!=reginfo_avengers.ng:
+        msg = f"extended Jacobian has shape nobs/ng = {_nobs}/{ng}, " \
+            f"but ng={reginfo_avengers.ng} was expected."
+        raise RuntimeError(msg)
+    emis_lonc1D = reginfo_avengers.lonc1D
+    emis_latc1D = reginfo_avengers.latc1D
+    emis_reg1D  = reginfo_avengers.reg1D
+
+    return SimpleNamespace(jacobian=ojac_out, lonc1D=emis_lonc1D, latc1D=emis_latc1D, reg1D=emis_reg1D)
+
+
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 #
 #          d e p r e c e a t e d   m e t h o d s
 #
-#--  to be removed soone
+#--  to be removed soon
 #
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 def tm5rundir_emissions1D( outpath : str | Path, trange : date_range = None, host : str = 'cosmos') -> SimpleNamespace:
