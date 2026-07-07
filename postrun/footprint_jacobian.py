@@ -2092,7 +2092,7 @@ def subcmd_create_target_jacobian(args : ArgumentNamespace) -> None:
     logger.info(msg)
 
 
-def subcmd_merge_ojac_obs1D(args):
+def subcmd_concat_ojac_obs1D(args):
     """
     """
     filepath_ojac_cont = args.filepath_ojac_cont
@@ -2101,31 +2101,22 @@ def subcmd_merge_ojac_obs1D(args):
     complevel = args.__dict__.get('complevel',4)
 
     #
-    #-- create grid instances
-    #
-    glb_6x4 = TM5Grids.from_corners(west=-180, east=180, south=-90, north=90, dlon=6, dlat=4)
-    glb_3x2 = TM5Grids.from_corners(west=-180, east=180, south=-90, north=90, dlon=3, dlat=2)
-    eur_3x2 = TM5Grids.from_corners(west=-36, east=54, south=22, north=74, dlon=3, dlat=2)
-    gns_1x1 = TM5Grids.from_corners(west=0, east=18, south=42, north=58, dlon=1, dlat=1)
-    glb_1x1 = TM5Grids.global1x1()
-
-    #
     #-- continuous obs Jacobian
     #
     ds_ojac_cont = xr.open_dataset(filepath_ojac_cont)
-    ###
-    for region in ['glb600x400','eur300x200','gns100x100',]:
-        #-- extent of halo corrected domain
-        _domain = regiondomain_halo(region)
-        msg = f"@{region}, halo-corrected domain -->{_domain}<--"
-        print(msg)
-    ###
+
+    #
+    #-- flask obs Jacobian
+    #
     ds_ojac_flask = xr.open_dataset(filepath_ojac_flask)
 #    print(ds_ojac_flask)
     uniq_station_ids = ds_ojac_flask['station_id'].values
     msg = f"flask station  identifiers -->{uniq_station_ids}<-- " \
         f"obs_jacobian shape={ds_ojac_flask.obs_jacobian.shape}"
     logger.debug(msg)
+    #
+    #-- filter for only selected stations
+    #
     idxs_uniq_station_ids = np.where(np.isin(uniq_station_ids, stations_flask))
     idxs_uniq_station_ids = idxs_uniq_station_ids[0]
     obs_station_ids = ds_ojac_flask['station'].values
@@ -2137,98 +2128,20 @@ def subcmd_merge_ojac_obs1D(args):
           f"-->{ds_ojac_flask['station_id'].values}<--, " \
           f"yields shape {ds_ojac_flask.obs_jacobian.shape}"
     logger.debug(msg)
+
+    #
+    #-- some consistency checks
+    #
+    ojac_cont  = ds_ojac_cont.obs_jacobian
     ojac_flask = ds_ojac_flask.obs_jacobian
-    assert ojac_flask.units=="ppb/(kgCH4/cell)"
-    assert ojac_flask.dims==('nobs','ng')
-    nobs_flask,ng = ojac_flask.shape
-    msg = f"ojac_flask, shape={ojac_flask.shape}"
-    logger.debug(msg)
-    flaskojac_6x4 = xr.DataArray(
-        ojac_flask.values.reshape(nobs_flask,glb_6x4.nlat,glb_6x4.nlon),
-        dims = ('nobs_flask','lat','lon'),
-        coords = {
-            'lat': glb_6x4.latc,
-            'lon': glb_6x4.lonc
-            },
-        attrs = {
-            'units': ojac_flask.units
-            }
-        )
-    #
-    msg = f"flaskojac_6x4, sum={flaskojac_6x4.sum()}"
-    logger.debug(msg)
-    flaskojac_6x4_m2 = flaskojac_6x4 / glb_6x4.area
-    #
-    #
-    #
-    ds_glb1x1 = xr.Dataset(coords=dict(lon=glb_1x1.lonc, lat=glb_1x1.latc))
-    regridder = xesmf.Regridder(flaskojac_6x4_m2, ds_glb1x1, method='nearest_s2d')
-    flaskojac_1x1_m2 = regridder(flaskojac_6x4_m2)
-    flaskojac_1x1 = flaskojac_1x1_m2*glb_1x1.area
-    msg = f"flaskojac_1x1, sum={flaskojac_1x1.sum()}"
-    logger.debug(msg)
-    #
-    #
-    #
-    ds_glb3x2 = xr.Dataset(coords=dict(lon=glb_3x2.lonc, lat=glb_3x2.latc))
-    regridder = xesmf.Regridder(flaskojac_6x4_m2, ds_glb3x2, method='nearest_s2d')
-    flaskojac_3x2_m2 = regridder(flaskojac_6x4_m2)
-    flaskojac_3x2 = flaskojac_3x2_m2*glb_3x2.area
-    msg = f"flaskojac_3x2, sum={flaskojac_3x2.sum()}"
-    logger.debug(msg)
-    #
-    #-- start propper merging
-    #
-    # -> glb6x4, zero-out eur3x2 zoom domain with taking into account halo band    #
-    flaskojac_glb6x4 = flaskojac_6x4
-    _lonmin = eur_3x2.west + 6
-    _lonmax = eur_3x2.east - 6
-    _latmin = eur_3x2.south + 4
-    _latmax = eur_3x2.north - 4
-    _lonslice = slice(_lonmin,_lonmax)
-    _latslice = slice(_latmin,_latmax)
-    flaskojac_glb6x4.loc[dict(lat=_latslice,lon=_lonslice)] = 0
-    flaskojac_glb6x4_out = flaskojac_glb6x4.values.reshape(nobs_flask,glb_6x4.nlat*glb_6x4.nlon)
-    #
-    # -> eur3x2 part
-    #
-    _lonmin = eur_3x2.west
-    _lonmax = eur_3x2.east
-    _latmin = eur_3x2.south
-    _latmax = eur_3x2.north
-    _lonslice = slice(_lonmin,_lonmax)
-    _latslice = slice(_latmin,_latmax)
-    flaskojac_eur3x2 = flaskojac_3x2.sel(lat=_latslice, lon=_lonslice)
-    _lonmin = eur_3x2.west + 6
-    _lonmax = eur_3x2.east - 6
-    _latmin = eur_3x2.south + 4
-    _latmax = eur_3x2.north - 4
-    _lonslice = slice(_lonmin,_lonmax)
-    _latslice = slice(_latmin,_latmax)
-    flaskojac_eur3x2.loc[dict(lat=_latslice,lon=_lonslice)] = 0
-    flaskojac_eur3x2_out = flaskojac_eur3x2.values.reshape(nobs_flask,eur_3x2.nlat*eur_3x2.nlon)
-    #
-    # -> gnx1x1 part
-    _lonmin = gns_1x1.west
-    _lonmax = gns_1x1.east
-    _latmin = gns_1x1.south
-    _latmax = gns_1x1.north
-    _lonslice = slice(_lonmin,_lonmax)
-    _latslice = slice(_latmin,_latmax)
-    flaskojac_gns1x1 = flaskojac_1x1.sel(lat=_latslice, lon=_lonslice)
-    _lonmin = gns_1x1.west + 3
-    _lonmax = gns_1x1.east - 3
-    _latmin = gns_1x1.south + 2
-    _latmax = gns_1x1.north - 2
-    _lonslice = slice(_lonmin,_lonmax)
-    _latslice = slice(_latmin,_latmax)
-    flaskojac_gns1x1.loc[dict(lat=_latslice,lon=_lonslice)] = 0
-    flaskojac_gns1x1_out = flaskojac_gns1x1.values.reshape(nobs_flask,gns_1x1.nlat*gns_1x1.nlon)
-    ojac_flask = np.hstack((flaskojac_glb6x4_out,
-                            flaskojac_eur3x2_out,
-                            flaskojac_gns1x1_out))
-    msg = f"...merged flask obs jac (yields shape={ojac_flask.shape})"
-    logger.info(msg)
+    assert ojac_cont.dims==('nobs','ng')
+    assert ojac_flask.dims==ojac_cont.dims
+    assert ojac_cont.shape[1]==ojac_flask.shape[1]
+    assert ojac_cont.units=="ppb/(kgCH4/cell)"
+    assert ojac_flask.units==ojac_cont.units
+    nobs_cont, ng = ojac_cont.shape
+    nobs_flask, _ng = ojac_flask.shape
+    
     dsmerged_table = OrderedDict()
     for v in ds_ojac_cont.variables:
         dims = ds_ojac_cont[v].dims
@@ -2254,8 +2167,9 @@ def subcmd_merge_ojac_obs1D(args):
     #
     #--
     #
-    nobsout, ngout = dsmerged_table['obs_jacobian'][0].shape
-    nstaout        = dsmerged_table['station_id'][0].size
+    nobsout = nobs_cont + nobs_flask
+    ngout   = ng
+    nstaout = dsmerged_table['station_id'][0].size
     #
     #--
     #
@@ -2602,9 +2516,9 @@ sparser.add_argument('--outname',
                      help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
 
 #
-#--       merge_ojac_obs1D
+#--       concat_ojac_obs1D
 #
-sparser = subparsers.add_parser('merge_ojac_obs1D',
+sparser = subparsers.add_parser('concat_ojac_obs1D',
                                 help="""combine observational Jacobians prepared for continuous measurements and flask measurements.""")
 sparser.add_argument('filepath_ojac_cont',
                      type=Path,
@@ -2731,8 +2645,8 @@ def main(args):
     if args.subcmds=='create_target_jacobian':
         subcmd_create_target_jacobian(args)
 
-    if args.subcmds=='merge_ojac_obs1D':
-        subcmd_merge_ojac_obs1D(args)
+    if args.subcmds=='concat_ojac_obs1D':
+        subcmd_concat_ojac_obs1D(args)
 
     if args.subcmds=='inspect_ojac_obs1D':
         subcmd_inspect_ojac_obs1D(args)
