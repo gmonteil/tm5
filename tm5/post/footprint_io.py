@@ -280,171 +280,6 @@ def tm5emisdir_load_emissions2D( emisdir : str | Path, emis_prefix : str, day_ra
                            emisdir=emisdir)
 
 
-def emisvector_to_global1x1( filepath_emis : str | Path, varname : str = 'emission', tosqm : bool = False ) -> SimpleNamespace:
-    """Function that remaps a 1D emission vector used within the FIT-IC
-    inversion system back to global gridded emissions at 1x1 degree resolution.
-    """
-
-    #
-    #-- open 1D emissions vector file
-    #
-    if not Path(filepath_emis).exists():
-        msg = f"prior emissions file ***{filepath_emis}*** not found!"
-        raise FileNotFoundError(msg)
-    dsemis = Dataset(filepath_emis)
-    #
-    #-- setup current FIT-IC region table
-    #
-    if len(region_table)==0:
-        msg = f"...initialise region table"
-        logger.info(msg)
-        _init_region_table()
-    regions_expect = list(region_table.keys())
-    #
-    #-- 
-    #
-    ng = dsemis.dimensions['ng'].size
-    reg1D = dsemis['/region'][:]
-    reg1D_uniq = np.unique(reg1D)
-    if len(reg1D_uniq)!=len(regions_expect):
-        msg = f"...detected unexpected regions ***{reg1D_uniq}***"
-        raise RuntimeError(msg)
-    elif not set(reg1D_uniq)==set(regions_expect):
-        msg = f"...detected unexpected regions ***{reg1D_uniq}***"
-        raise RuntimeError(msg)
-    msg = f"...emissions vector is for regions -->{regions_expect}<--"
-    logger.info(msg)
-    #
-    #-- load emissions
-    #
-    ncemis = dsemis[f"/{varname}"]
-    try:
-        emis_units = ncemis.units
-    except AttributeError:
-        msg = f"expected attribute -->{units}<-- missing for variable 'emissions'"
-        raise AttributeError(msg)
-    #
-    #-- initialise output on 1x1 global grid
-    #
-    grid_glb1x1 = TM5Grids.from_corners(west=-180, east=180, south=-90, north=90, dlon=1, dlat=1)
-    emis_glb1x1 = xr.DataArray(
-        zeros((grid_glb1x1.nlat, grid_glb1x1.nlon)),
-        dims=('lat','lon'),
-        coords = {'lon': grid_glb1x1.lonc, 'lat': grid_glb1x1.latc },
-        attrs = {'units' : emis_units}
-    )
-    #
-    #-- loop over regions from outer to inner (order matters!)
-    #
-    emis_results = SimpleNamespace(table_native={}, table_1x1={})
-    for reg in regions_expect:
-        # print(f"*****{reg}*****")
-        rlat, rlon = region_table[reg].rlat, region_table[reg].rlon
-        grid = region_table[reg].grid
-        nlat, nlon = grid.nlat, grid.nlon
-        #
-        #-- restrict to grid-cells within current region
-        #
-        cnd_reg = (reg1D==reg)
-        ngreg = np.count_nonzero(cnd_reg)
-        if ngreg!=region_table[reg].ng1D:
-            msg = f"...@{reg}, unexpected number of grid-cells in 1D vector, " \
-                f"expected={region_table[reg].ng1D} found={ngreg}"
-            raise RuntimeError(msg)
-        #
-        #-- remap 1D emissions field
-        #
-        if ncemis.dimensions==('nmon','ng'):
-            #-- handling temporal dimension not ready yet!!
-            msg = f"temporal dimension in emissions not yet supported!"
-            raise NotImplementedError(msg)
-            emis_data = ncemis[:][:,cnd_reg]
-            nmon,_ng = emis_data.shape
-            daemis = xr.DataArray(
-                emis_data = emis_data.reshape(nt,grid.nlat,grid.nlon),
-                dims=('time','lat','lon'),
-                coords = {'lon': grid.lonc, 'lat': grid.latc, 'time': np.arange(1,nmon+1)  }
-            )
-        elif ncemis.dimensions==('ng',):
-            emis_data = ncemis[:][cnd_reg]
-            daemis = xr.DataArray(
-                emis_data.reshape(grid.nlat,grid.nlon),
-                dims=('lat','lon'),
-                coords = {'lon': grid.lonc, 'lat': grid.latc },
-                attrs = { 'units': emis_units}
-            )
-            emis_results.table_native[reg] = daemis
-        else:
-            raise RuntimeError(f"unexpected dimensions {ncemis.dimensions}")
-        #
-        #-- spatial domain of current region
-        #
-        lat_slice = slice(grid.south,grid.north)
-        lon_slice = slice(grid.west,grid.east)
-        #
-        #-- no need to clip child part of current region
-        #   since this is overwritten by the child emissions anyhow
-        #
-        if reg=='gns100x100':
-            emis_glb1x1.loc[dict(lat=lat_slice,lon=lon_slice)] = daemis[:]
-        else:
-            #
-            #-- upscale to 1x1
-            #   - equally distributing emissions onto 1x1 grid-cells
-            #     that belong to the same parent grid-cells
-            #
-            grid_1x1 = TM5Grids.from_corners(west=grid.west, east=grid.east, south=grid.south, north=grid.north, dlon=1, dlat=1)
-            nscale = rlat*rlon
-            emis_in = emis_data.reshape(nlat,nlon)
-            #
-            #-- upscale to 1 by 1 degree (nlat*rlat,nlon*rlon)
-            #
-            emis_data_1x1 = np.repeat(emis_in, rlon, axis=1).repeat(rlat, axis=0)
-            # #
-            # #-- MVO-TODO::still a poor man's solution here with explict looping for the upscaling!!
-            # #             ...ths was done in a hurry with lack of time for smarter solution...
-            # #
-            # emis_data_1x1 = zeros((nlat*rlat,nlon*rlon))
-            # for iilat in range(nlat*rlat):
-            #     ilat = iilat//rlat
-            #     for iilon in range(nlon*rlon):
-            #         ilon = iilon//rlon
-            #         emis_data_1x1[iilat,iilon] = emis_in[ilat,ilon]
-            # if np.all(emis_data_1x1==emis_data_1x1x):
-            #     msg = f"*****fast upscaling with numpy.repeat successfull*****"
-            #     logger.info(msg)
-            # else:
-            #     msg = f"...issues with slow vs fast upscaling emissions."
-            #     raise RuntimeError(msg)
-            daemis_1x1 = xr.DataArray(
-                emis_data_1x1,
-                dims=('lat','lon'),
-                coords = {'lon': grid_1x1.lonc, 'lat': grid_1x1.latc},
-                attrs = { 'units': emis_units}
-                )
-            emis_results.table_1x1[reg] = daemis_1x1
-            # print(f"@{reg}, totemis daemis/daemis_1x1 {daemis.sum().values}/{daemis_1x1.sum().values}")
-            #
-            #-- insert domain emissions into global 1x1 emissions data
-            #
-            emis_glb1x1.loc[dict(lat=lat_slice,lon=lon_slice)] = daemis_1x1[:]
-    #--
-    dsemis.close()
-    #
-    #-- unit conversion
-    #
-    if tosqm and emis_units=='kgCH4/cell':
-        emis_glb1x1 = emis_glb1x1 / grid_glb1x1.area
-        emis_glb1x1.attrs['units'] = 'kgCH4/m2'
-    #
-    #-- add to returned namespace
-    #
-    emis_results.emis_glb1x1 = emis_glb1x1
-    emis_results.grid_glb1x1 = grid_glb1x1
-
-    return emis_results
-
-
 def tm5rundir_obstable( outpath : str | Path, drop_missing_value : bool = False ) -> DataFrame:
     yamlfile = Path(outpath) / 'tm5.yaml'
     if not yamlfile.exists():
@@ -997,6 +832,171 @@ def jacobian_redistribute_glb6x4_to_avengers_zoom( ojac_6x4 : xr.DataArray, remo
     emis_reg1D  = reginfo_avengers.reg1D
 
     return SimpleNamespace(jacobian=ojac_out, lonc1D=emis_lonc1D, latc1D=emis_latc1D, reg1D=emis_reg1D)
+
+
+def emisvector_to_global1x1( filepath_emis : str | Path, varname : str = 'emission', tosqm : bool = False ) -> SimpleNamespace:
+    """Function that remaps a 1D emission vector used within the FIT-IC
+    inversion system back to global gridded emissions at 1x1 degree resolution.
+    """
+
+    #
+    #-- open 1D emissions vector file
+    #
+    if not Path(filepath_emis).exists():
+        msg = f"prior emissions file ***{filepath_emis}*** not found!"
+        raise FileNotFoundError(msg)
+    dsemis = Dataset(filepath_emis)
+    #
+    #-- setup current FIT-IC region table
+    #
+    if len(region_table)==0:
+        msg = f"...initialise region table"
+        logger.info(msg)
+        _init_region_table()
+    regions_expect = list(region_table.keys())
+    #
+    #-- 
+    #
+    ng = dsemis.dimensions['ng'].size
+    reg1D = dsemis['/region'][:]
+    reg1D_uniq = np.unique(reg1D)
+    if len(reg1D_uniq)!=len(regions_expect):
+        msg = f"...detected unexpected regions ***{reg1D_uniq}***"
+        raise RuntimeError(msg)
+    elif not set(reg1D_uniq)==set(regions_expect):
+        msg = f"...detected unexpected regions ***{reg1D_uniq}***"
+        raise RuntimeError(msg)
+    msg = f"...emissions vector is for regions -->{regions_expect}<--"
+    logger.info(msg)
+    #
+    #-- load emissions
+    #
+    ncemis = dsemis[f"/{varname}"]
+    try:
+        emis_units = ncemis.units
+    except AttributeError:
+        msg = f"expected attribute -->{units}<-- missing for variable 'emissions'"
+        raise AttributeError(msg)
+    #
+    #-- initialise output on 1x1 global grid
+    #
+    grid_glb1x1 = TM5Grids.from_corners(west=-180, east=180, south=-90, north=90, dlon=1, dlat=1)
+    emis_glb1x1 = xr.DataArray(
+        zeros((grid_glb1x1.nlat, grid_glb1x1.nlon)),
+        dims=('lat','lon'),
+        coords = {'lon': grid_glb1x1.lonc, 'lat': grid_glb1x1.latc },
+        attrs = {'units' : emis_units}
+    )
+    #
+    #-- loop over regions from outer to inner (order matters!)
+    #
+    emis_results = SimpleNamespace(table_native={}, table_1x1={})
+    for reg in regions_expect:
+        # print(f"*****{reg}*****")
+        rlat, rlon = region_table[reg].rlat, region_table[reg].rlon
+        grid = region_table[reg].grid
+        nlat, nlon = grid.nlat, grid.nlon
+        #
+        #-- restrict to grid-cells within current region
+        #
+        cnd_reg = (reg1D==reg)
+        ngreg = np.count_nonzero(cnd_reg)
+        if ngreg!=region_table[reg].ng1D:
+            msg = f"...@{reg}, unexpected number of grid-cells in 1D vector, " \
+                f"expected={region_table[reg].ng1D} found={ngreg}"
+            raise RuntimeError(msg)
+        #
+        #-- remap 1D emissions field
+        #
+        if ncemis.dimensions==('nmon','ng'):
+            #-- handling temporal dimension not ready yet!!
+            msg = f"temporal dimension in emissions not yet supported!"
+            raise NotImplementedError(msg)
+            emis_data = ncemis[:][:,cnd_reg]
+            nmon,_ng = emis_data.shape
+            daemis = xr.DataArray(
+                emis_data = emis_data.reshape(nt,grid.nlat,grid.nlon),
+                dims=('time','lat','lon'),
+                coords = {'lon': grid.lonc, 'lat': grid.latc, 'time': np.arange(1,nmon+1)  }
+            )
+        elif ncemis.dimensions==('ng',):
+            emis_data = ncemis[:][cnd_reg]
+            daemis = xr.DataArray(
+                emis_data.reshape(grid.nlat,grid.nlon),
+                dims=('lat','lon'),
+                coords = {'lon': grid.lonc, 'lat': grid.latc },
+                attrs = { 'units': emis_units}
+            )
+            emis_results.table_native[reg] = daemis
+        else:
+            raise RuntimeError(f"unexpected dimensions {ncemis.dimensions}")
+        #
+        #-- spatial domain of current region
+        #
+        lat_slice = slice(grid.south,grid.north)
+        lon_slice = slice(grid.west,grid.east)
+        #
+        #-- no need to clip child part of current region
+        #   since this is overwritten by the child emissions anyhow
+        #
+        if reg=='gns100x100':
+            emis_glb1x1.loc[dict(lat=lat_slice,lon=lon_slice)] = daemis[:]
+        else:
+            #
+            #-- upscale to 1x1
+            #   - equally distributing emissions onto 1x1 grid-cells
+            #     that belong to the same parent grid-cells
+            #
+            grid_1x1 = TM5Grids.from_corners(west=grid.west, east=grid.east, south=grid.south, north=grid.north, dlon=1, dlat=1)
+            nscale = rlat*rlon
+            emis_in = emis_data.reshape(nlat,nlon)
+            #
+            #-- upscale to 1 by 1 degree (nlat*rlat,nlon*rlon)
+            #
+            emis_data_1x1 = np.repeat(emis_in, rlon, axis=1).repeat(rlat, axis=0)
+            # #
+            # #-- MVO-TODO::still a poor man's solution here with explict looping for the upscaling!!
+            # #             ...ths was done in a hurry with lack of time for smarter solution...
+            # #
+            # emis_data_1x1 = zeros((nlat*rlat,nlon*rlon))
+            # for iilat in range(nlat*rlat):
+            #     ilat = iilat//rlat
+            #     for iilon in range(nlon*rlon):
+            #         ilon = iilon//rlon
+            #         emis_data_1x1[iilat,iilon] = emis_in[ilat,ilon]
+            # if np.all(emis_data_1x1==emis_data_1x1x):
+            #     msg = f"*****fast upscaling with numpy.repeat successfull*****"
+            #     logger.info(msg)
+            # else:
+            #     msg = f"...issues with slow vs fast upscaling emissions."
+            #     raise RuntimeError(msg)
+            daemis_1x1 = xr.DataArray(
+                emis_data_1x1,
+                dims=('lat','lon'),
+                coords = {'lon': grid_1x1.lonc, 'lat': grid_1x1.latc},
+                attrs = { 'units': emis_units}
+                )
+            emis_results.table_1x1[reg] = daemis_1x1
+            # print(f"@{reg}, totemis daemis/daemis_1x1 {daemis.sum().values}/{daemis_1x1.sum().values}")
+            #
+            #-- insert domain emissions into global 1x1 emissions data
+            #
+            emis_glb1x1.loc[dict(lat=lat_slice,lon=lon_slice)] = daemis_1x1[:]
+    #--
+    dsemis.close()
+    #
+    #-- unit conversion
+    #
+    if tosqm and emis_units=='kgCH4/cell':
+        emis_glb1x1 = emis_glb1x1 / grid_glb1x1.area
+        emis_glb1x1.attrs['units'] = 'kgCH4/m2'
+    #
+    #-- add to returned namespace
+    #
+    emis_results.emis_glb1x1 = emis_glb1x1
+    emis_results.grid_glb1x1 = grid_glb1x1
+
+    return emis_results
 
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
