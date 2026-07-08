@@ -376,7 +376,7 @@ def tm5rundir_emissions2D( outpath : str | Path, trange : date_range = None,
     return tm5emisdir_load_emissions2D(emisdir, emis_prefix, trange, regions, remove_halo=remove_halo, clip_child=clip_child)
 
 
-def tm5rundir_jacobian3D( outpath : str | Path, emis_trange : date_range = None,
+def tm5rundir_jacobian3D( outpath : str | Path, emisday_range : date_range = None,
                           obsid : str|list|None = None,
                           remove_halo : bool = True, clip_child : bool = False ) -> NDArray:
     """
@@ -404,7 +404,7 @@ def tm5rundir_jacobian3D( outpath : str | Path, emis_trange : date_range = None,
     #
     #-- load footprints into dataframe, plus ancillary information
     #
-    fpinfo = tm5_fitic_adjoint_corrected_halos(outpath, emis_trange)
+    fpinfo = tm5_fitic_adjoint_corrected_halos(outpath, emisday_range)
     footp_df = fpinfo.data
     obsids   = fpinfo.obsids
     days     = fpinfo.days
@@ -508,7 +508,7 @@ def tm5rundir_jacobian3D( outpath : str | Path, emis_trange : date_range = None,
                            reg1D=reg1D, lonc1D=lonc1D, latc1D=latc1D)
 
 
-def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, emis_trange : date_range = None) -> SimpleNamespace:
+def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, emisday_range : date_range = None) -> SimpleNamespace:
     """Function to read and collect footprint information from one TM5 adjoint run
     for selected period of time into a pandas dataframe for further processing.
     outpath must be the toplevel output directory of the TM5 forward and adjoint run,
@@ -563,8 +563,8 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, emis_trange : date_ra
     #
     #-- set temporal domain
     #
-    if emis_trange is None:
-        emis_trange = date_range(dconf.run.start, dconf.run.end, freq='1d')
+    if emisday_range is None:
+        emisday_range = date_range(dconf.run.start, dconf.run.end, freq='1d')
     #
     #-- dictionary for collecting footprint results
     #
@@ -581,7 +581,7 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, emis_trange : date_ra
     #   - dataasets in adjoint emissions files are written as long 1D arrays (dimension: point),
     #     variable 'int itrac(point)' provides index of associated tracer
     #   - Thus, there should be *no* need to loop along the tracer !?
-    for iday, day in enumerate(emis_trange):
+    for iday, day in enumerate(emisday_range):
         for ireg, region in enumerate(region_list):
             fname = adjemis_dir / day.strftime(f'adjemis.{region}.%Y%m%d.nc')
             # Adjoint files are written only if needed, so it may not exist for a given day/region
@@ -684,7 +684,7 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, emis_trange : date_ra
     footprints = DataFrame.from_dict(footprints)
     # msg = f"...overall #footprints={len(footprints)}"
     # logger.info(msg)
-    return SimpleNamespace(data=footprints, days=emis_trange, regions=region_list, obsids=tracer)
+    return SimpleNamespace(data=footprints, days=emisday_range, regions=region_list, obsids=tracer)
 
 
 def jacobian_redistribute_glb6x4_to_avengers_zoom( ojac_6x4 : xr.DataArray, remove_halo : bool = True ) -> SimpleNamespace:
