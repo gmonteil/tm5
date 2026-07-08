@@ -409,8 +409,9 @@ def tm5rundir_jacobian3D( outpath : str | Path, emisday_range : date_range = Non
     obsids   = fpinfo.obsids
     days     = fpinfo.days
     regions  = fpinfo.regions
-    nobs = len(obsids)
-    nemisday = len(days)
+    nobs     = len(obsids)
+    nemisday = len(emisday_range)
+    assert len(days)==len(emisday_range) #nemisday = len(days)
     msg = f"...origin footprint data read, nfootp={len(footp_df)} for nobs/nemisday = {nobs}/{nemisday}"
     # msg = f"...after tm5_fitic_adjoint_corrected_halos obsids -->{obsids}<--"
     # logger.debug(msg)
@@ -446,7 +447,7 @@ def tm5rundir_jacobian3D( outpath : str | Path, emisday_range : date_range = Non
     #-- get spatial information as 1D vector
     #
     domain1D_info = regions1D_info(regions, remove_halo=remove_halo, clip_child=clip_child)
-    ng = domain1D_info.ng
+    ng     = domain1D_info.ng
     lonc1D = domain1D_info.lonc1D
     latc1D = domain1D_info.latc1D
     reg1D  = domain1D_info.reg1D
@@ -460,8 +461,10 @@ def tm5rundir_jacobian3D( outpath : str | Path, emisday_range : date_range = Non
     #
     #-- fill
     #
+    jac_obsids = []
     for iobs,itrac in enumerate(itrac_list):
         cur_obsid = obsids[itrac]
+        jac_obsids.append(cur_obsid)
         cnd_obs = footp_df.loc[:,'itrac']==itrac
         df = footp_df.loc[cnd_obs,:]
         # msg = f"...restricted to {cur_obsid} yields {len(df)} entries"
@@ -504,6 +507,14 @@ def tm5rundir_jacobian3D( outpath : str | Path, emisday_range : date_range = Non
             #
             jacobian3D[iobs,iday,:] = np.hstack(jac_list)
     #
+    #-- turn into data array
+    #
+    jacobian3D = xr.DataArray(
+        jacobian3D,
+        dims=('obs','emisday','ng'),
+        coords = {'obs': jac_obsids, 'emisday': emisday_range, 'ng': np.arange(ng) },
+        attrs = {'units': 'ppb/(kgCH4/cell/s)'}
+        )
     return SimpleNamespace(jac3D=jacobian3D, days=days, obsids=obsids,
                            reg1D=reg1D, lonc1D=lonc1D, latc1D=latc1D)
 
