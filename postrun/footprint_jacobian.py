@@ -330,6 +330,7 @@ def collect_input4inversion( args : ArgumentNamespace ) -> SimpleNamespace:
 
 def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
                                    obsday_range : DatetimeIndex,
+                                   emisday_range : DatetimeIndex,
                                    remove_halo : bool = True,
                                    obsid : list|None = None,
                                    obsdir : Path|None = None) -> SimpleNamespace:
@@ -350,7 +351,7 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
     Note, in particular for the flask measurements, the list of stations varies per day.
     """
     #-- arguments
-    nday = len(obsday_range)
+    nobsday = len(obsday_range)
     dayf = obsday_range[0]
     dayl = obsday_range[-1]
     msg = f"...collecting footprint information for (daily) observations " \
@@ -626,7 +627,7 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
         #   - current obsday, but possibly restricted to selected stations
         #   - w.r.t. to emissions in the selected range
         #
-        jac_info = tm5rundir_jacobian3D(rundir, emis_trange=obsday_range,
+        jac_info = tm5rundir_jacobian3D(rundir, emisday_range=emisday_range,
                                         obsid=list(obsinfo_curday.index),
                                         remove_halo=remove_halo, clip_child=False)
         #-- Jacobian shape: [nobs,nemisday,ng]
@@ -1370,6 +1371,7 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     topdir = args.outpath_tm5
     domain = args.domain
     obsday_firstlast = args.obsday_firstlast
+    emisday_firstlast = args.emisday_firstlast
     obsid = args.obsid
     difdeg_max = args.difdeg_max
     difalt_max = args.difalt_max
@@ -1380,11 +1382,13 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     #
     msg = f"START collecting sensitiy inputs..."
     logger.info(msg)
-    dayf, dayl = obsday_firstlast
-    obsday_range = date_range(dayf, dayl, freq='1d')
+    obsdayf, obsdayl = obsday_firstlast
+    obsday_range = date_range(obsdayf, obsdayl, freq='1d')
     nobsday = len(obsday_range)
-    # input4inv = collect_input4inversion_obs1D(args, args.domain)
-    input4inv = collect_input4inversion_obs1D(topdir, domain, obsday_range,
+    emisdayf, emisdayl = emisday_firstlast
+    emisday_range = date_range(emisdayf, emisdayl, freq='1d')
+    nemisday = len(emisday_range)
+    input4inv = collect_input4inversion_obs1D(topdir, domain, obsday_range, emisday_range,
                                               remove_halo=args.remove_halo,
                                               obsid=args.obsid,
                                               obsdir=args.obsdir)
@@ -1396,27 +1400,31 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     stationlist_1D = input4inv.stationlist_1D
     obstimelist_1D = input4inv.obstimelist_1D
     #--
-    obsmix_1D = input4inv.obsmix_1D
+    obsmix_1D    = input4inv.obsmix_1D
     inic_array1D = input4inv.inic_array1D
-    jac_array = input4inv.jac_array #-- nobs/nemisday/ng
-    nobs, nemisday, ng = jac_array.shape
+    jac_array    = input4inv.jac_array #-- nobs/nemisday/ng
+    nobs, _nemisday, ng = jac_array.shape
+    if nemisday!=_nemisday:
+        msg = f"inversion input collection supposed for {nemisday} emission days, " \
+            f"but shape of resulting Jacobian {jac_array.shape} is unexpected"
+        raise RuntimeError(msg)
     #
-    #-- so far
-    #   - Jacobian quantifies deltac [ppb] w.r.t. daily emission rates [kgCH4/cell/s]
-    #   - emissions are (daily) emission rates also in [kgCH4/cell/s]
+    #-- Jacobian quantifies deltac [ppb] w.r.t. daily emission rates [kgCH4/cell/s]
     #
-    #-- convert to
+    sensitivity_units = 'ppb/(kgCH4/cell/s)'
+    #
+    #-- unit convert to
     #   - total emissions (per grid-cell) for the complete period
     #   - need to scale and average entries in Jacobian accordingly
     #
-    sensitivity_units = 'ppb/(kgCH4/cell/s)'
     if args.jac4totemis:
-        ojac_tot = jac_array.sum(axis=1)/(nobsday*nsecday)
+        ojac_tot = jac_array.sum(axis=1)/(nemisday*nsecday)
         sensitivity_units = 'ppb/(kgCH4/cell)'
         #
         #-- verification of monthly total aggregation
         #
         #-- select emissions from from first rundir
+        #
         rundir_first = input4inv.rundir_list[0]
         emis_info = tm5rundir_emissions2D(rundir_first, trange=obsday_range, remove_halo=args.remove_halo)
         emis2D = emis_info.emis2D
@@ -1527,7 +1535,18 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     else:
         msg = f"observation coordinates will be written --per-observation--"
         logger.info(msg)
-    trange_tag = f"{dayf.strftime('%Y%m%d')}--{dayl.strftime('%Y%m%d')}"
+    if nobsday==1:
+        obsday_tag = f"obsday-{obsdayf.strftime('%Y%m%d')}"
+    else:
+        obsday_tag = f"obsdays-{obsdayf.strftime('%Y%m%d')}--{obsdayl.strftime('%Y%m%d')}"
+    if nemisday==1:
+        emisday_tag = f"{emisdayf.strftime('%Y%m%d')}"
+    else:
+        emisday_tag = f"{emisdayf.strftime('%Y%m%d')}--{emisdayl.strftime('%Y%m%d')}"
+    if args.jac4totemis:
+        emisday_tag = f"wrt-totalemis-{emisday_tag}"
+    else:
+        emisday_tag = f"wrt-dailyemis-{emisday_tag}"
     if nsta==1:
         obsid_tag = station_list[0]
     elif nsta<=5:
@@ -1538,9 +1557,7 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
         domain_tag = f"{args.domain}-to-gns100x100"
     else:
         domain_tag = args.domain
-    outname_tokens = ["fitic-inversion-input-obs1D", obsid_tag, domain_tag, trange_tag,]
-    if args.jac4totemis:
-        outname_tokens.append('jac4totemis')
+    outname_tokens = ["fitic-inversion-input-obs1D", obsid_tag, domain_tag, obsday_tag, emisday_tag]
     if args.remove_halo:
         outname_tokens.append('removed-halos')
     outname = '_'.join(outname_tokens) + '.nc'
@@ -2485,14 +2502,15 @@ sparser.add_argument('--obsday_firstlast',
                      nargs=2,
                      type=Timestamp,
                      default=[Timestamp("20210101"),Timestamp("20210102")],
-                     help="""last observational day of accumulation period (default: %(default)s).""")
-# sparser.add_argument('--days',
-#                      type=int,
-#                      default=2,
-#                      help="""number of days backwards of accumulation period (default: %(default)s).""")
+                     help="""first/last day of observational period (default: %(default)s).""")
+sparser.add_argument('--emisday_firstlast',
+                     nargs=2,
+                     type=Timestamp,
+                     default=[Timestamp("20210101"),Timestamp("20210102")],
+                     help="""first/last day of emissions included for sensitivities (default: %(default)s).""")
 sparser.add_argument('--jac4totemis',
                      action='store_true',
-                     help="""whether to condense the Jacobian such that it reflects the sensitivity w.r.t. to the total emissions within the temporal domain.""")
+                     help="""whether to condense the Jacobian to the sensitivity w.r.t. to the total emissions within the emissions temporal domain.""")
 sparser.add_argument('--glb6x4_to_avengers-zoom',
                      action='store_true',
                      help="""Option to be used only in conjunction with domain=='glb600x400'! This will re-distribute the globally computed sensitivities at 6x4 degrees to sensitivities w.r.t. to the grid-cells used for the (gns1x1) zoom  domain.""")
