@@ -332,7 +332,7 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
                                    obsday_range : DatetimeIndex,
                                    remove_halo : bool = True,
                                    obsid : list|None = None,
-                                   observation_dir : Path|None = None) -> SimpleNamespace:
+                                   obsdir : Path|None = None) -> SimpleNamespace:
 
     """Routine to collect results from (a series of) TM5 adjoint footprint simulations
     that were run for observations within a dedicated domain.
@@ -1387,7 +1387,7 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     input4inv = collect_input4inversion_obs1D(topdir, domain, obsday_range,
                                               remove_halo=args.remove_halo,
                                               obsid=args.obsid,
-                                              observation_dir=args.obsdir)
+                                              obsdir=args.obsdir)
     msg = f"...input collection FINISHED."
     logger.info(msg)
     #
@@ -1409,7 +1409,7 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     #   - total emissions (per grid-cell) for the complete period
     #   - need to scale and average entries in Jacobian accordingly
     #
-    sensitiviy_units = 'ppb/(kgCH4/cell/s)'
+    sensitivity_units = 'ppb/(kgCH4/cell/s)'
     if args.jac4totemis:
         ojac_tot = jac_array.sum(axis=1)/(nobsday*nsecday)
         sensitivity_units = 'ppb/(kgCH4/cell)'
