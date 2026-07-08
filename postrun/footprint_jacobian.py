@@ -148,7 +148,7 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
     obsalt_1D = np.empty(0)
     obsmix_1D = np.empty(0)
     inic_array1D = np.empty(0)
-    jac_array = None
+    jac_da    = None
     emis_lonc1D = None
     emis_latc1D = None
     emis_reg1D  = None
@@ -410,12 +410,10 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
                                         obsid=list(obsinfo_curday.index),
                                         remove_halo=remove_halo, clip_child=False)
         #-- Jacobian shape: [nobs,nemisday,ng]
-        jac3D = jac_info.jac3D
-        # print(f"@{dirday}, jac3D.shape={jac3D.shape}")
-        if jac_array is None:
-            jac_array = np.copy(jac3D)
+        if jac_da is None:
+            jac_da = jac_info.jac3D
         else:
-            jac_array = np.concatenate((jac_array,jac3D), axis=0)
+            jac_da = xr.concat([jac_da,jac_info.jac3D], dim='obs')
         #
         #-- emission location (required only once)
         #
@@ -431,7 +429,7 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
     # print(f"obstimelist_1D -->{obstimelist_1D}<--")
     # print(f"obsmix_1D -->{obsmix_1D}<--")
     # print(f"inic_array1D -->{inic_array1D}<--")
-    # print(f"jac_array shape={jac_array.shape}")
+    # print(f"jac_da.shape={jac_da.shape}")
 
     #->
     #
@@ -449,7 +447,7 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
         emis_lonc1D=emis_lonc1D,
         emis_latc1D=emis_latc1D,
         emis_reg1D=emis_reg1D,
-        jac_array=jac_array)
+        jac_da=jac_da)
     return input4inv
 
     # #
@@ -581,7 +579,7 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     #--
     obsmix_1D    = input4inv.obsmix_1D
     inic_array1D = input4inv.inic_array1D
-    jac_array    = input4inv.jac_array #-- nobs/nemisday/ng
+    jac_da       = input4inv.jac_da
     nobs, _nemisday, ng = jac_array.shape
     if nemisday!=_nemisday:
         msg = f"inversion input collection supposed for {nemisday} emission days, " \
@@ -590,15 +588,17 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     #
     #-- Jacobian quantifies deltac [ppb] w.r.t. daily emission rates [kgCH4/cell/s]
     #
-    sensitivity_units = 'ppb/(kgCH4/cell/s)'
+    sensitivity_units = jac_da.units
+    msg = f"...detected sensitivity units -->{sensitivity_units}<--"
+    logger.debug(msg)
     #
     #-- unit convert to
     #   - total emissions (per grid-cell) for the complete period
     #   - need to scale and average entries in Jacobian accordingly
     #
     if args.jac4totemis:
-        ojac_tot = jac_array.sum(axis=1)/(nemisday*nsecday)
         sensitivity_units = 'ppb/(kgCH4/cell)'
+        ojac_da = jac_da.sum(dim='emisday') / (nemisday*nsecday)
         #
         #-- verification of monthly total aggregation
         #
@@ -619,9 +619,9 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
             msg = f"@{_obsday},{_staid}: deltacconc derived by daily-rate/temporal-total = " \
                 f"{dc}/{dc_tot}"
             logger.info(msg)
-        ojac_out = ojac_tot
+        ojac_out = ojac_tot.values
     else:
-        ojac_out = jac_array
+        ojac_out = jac_da.values
 
     #
     #-- re-distribute global flask Jacobian (which has been computed *only* on global 6x4 grid)
@@ -878,7 +878,385 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     msg = f"generated file ***{outname}***"
     logger.info(msg)
 
-    
+
+def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
+    """
+    """
+    topdir = args.outpath_tm5
+    domain = args.domain
+    obsid = args.obsid
+    month_firstlast = args.month_firstlast
+    emisday_first = args.emisday_first
+    difdeg_max = args.difdeg_max
+    difalt_max = args.difalt_max
+    obsyear = args.__dict__.get('obsyear', 2021) #-- FIT-IC currently restricted to 2021 observations
+    complevel = args.__dict__.get('complevel',4)
+    #
+    #--
+    #
+    if domain=='gns100x100':
+        region_list = ['glb600x400','eur300x200','gns100x100']
+    elif domain=='glb600x400':
+        region_list = ['glb600x400']
+    else:
+        msg = f"unexpected domain ==>{domain}<--"
+        raise RuntimeError(msg)
+    reginfo = regions1D_info(region_list, remove_halo=args.remove_halo)
+    ng = reginfo.ng
+    #
+    #--
+    #
+    monf,monl = month_firstlast
+    monf = Timestamp(f"{obsyear}{monf:02d}01")
+    monl = Timestamp(f"{obsyear}{monl:02d}01")
+    obsmon_range = date_range(monf, monl, freq='MS')
+    nobsmon = len(obsmon_range)
+    msg = f"obsmon_range -->{obsmon_range}<--"
+    logger.debug(msg)
+    obsdayf = monf
+    obsdayl = (monl + Timedelta(days=32)).replace(day=1) - Timedelta(days=1)
+    obsday_range = date_range(obsdayf, obsdayl, freq='1d')
+    nobsday = len(obsday_range)
+    #
+    #-- 
+    #
+    if emisday_first.day!=1:
+        msg = f"...first day of emissions must be on the first day of month, " \
+            f"but got -->{emisday_first}<--"
+        raise RuntimeError(msg)
+    emismon_range = date_range(emisday_first, monl, freq='MS')
+    nemismon = len(emismon_range)
+    msg = f"emismon_range -->{emismon_range}<--"
+    logger.debug(msg)
+    njaccol = nemismon*ng
+    #
+    #--
+    #
+    sensitivity_units = 'ppb/(kgCH4/cell/month)'
+    stationlist_1D = None
+    obstimelist_1D = None
+    obsmix_1D      = None
+    inic_array1D   = None
+    jac_da         = None
+    jac3D_da       = None
+    jaccol_emismon = np.array(list(emismon_range)*ng)
+    jaccol_emisgc  = np.tile(np.arange(ng), nemismon)
+    emis_lonc1D    = None
+    emis_latc1D    = None
+    emis_reg1D     = None
+    #
+    #--
+    #
+    for imon,curobsdayf in enumerate(obsmon_range):
+        curobsdayl = (curobsdayf + Timedelta(days=32)).replace(day=1) - Timedelta(days=1)
+        curobsday_range = date_range(curobsdayf, curobsdayl, freq='1d')
+        curemisdayf = emisday_first
+        curemisdayl = curobsdayl
+        curemisday_range = date_range(curemisdayf, curemisdayl, freq='1d')
+        nemisday = len(curemisday_range)
+        msg = f"start collection for month starting on {curobsdayf.strftime('%Y-%m-%d')})"
+        logger.info(msg)
+        input4inv = collect_input4inversion_obs1D(topdir, domain, curobsday_range, curemisday_range,
+                                                  remove_halo=args.remove_halo,
+                                                  obsid=args.obsid,
+                                                  obsdir=args.obsdir)
+        curjac_da = input4inv.jac_da
+        curnobs,curnemisday,_ = curjac_da.shape
+        if nemisday!=curnemisday:
+            msg = f"inversion input collection supposed for {nemisday} emission days, " \
+                f"but shape of resulting Jacobian {jac_array.shape} is unexpected"
+            raise RuntimeError(msg)
+        #
+        #-- aggregate to sensitivities per month
+        #
+        curjac_array = zeros((curnobs,njaccol))
+        curjac3D_da = xr.DataArray(
+            zeros((curnobs,nemismon,ng)),
+            dims=('obs','emismon','ng'),
+            coords={'obs':curjac_da.obs, 'emismon':emismon_range, 'ng': np.arange(ng)},
+            attrs = {'units': sensitivity_units}
+            )
+        for iemismon,emismondayf in enumerate(emismon_range):
+            #-- can stop for emission months that are past the last observation
+            if emismondayf>max(curemisday_range):
+                break
+            #
+            msg = f"...getting sensitivities for emismondayf={emismondayf.strftime('%Y-%m-%d')}"
+            logger.info(msg)
+            #x1
+            #-- extraction for current emission month
+            #
+            cnd_emismon = (curjac_da.emisday>=curemisdayf)&(curjac_da.emisday<=curemisdayl)
+            _jac_da = curjac_da.sel(emisday=cnd_emismon)
+            msg = f"......_jac_da.shape={_jac_da.shape}"
+            logger.debug(msg)
+            nsec = _jac_da.shape[1]*nsecday #-- number of emission seconds [in month]
+            #-- [ppb/kgCH4/cell/s] --> [ppb/kgCH4/cell/month]
+            _jac_da = _jac_da.sum(dim='emisday') / nsec
+            msg = f"......after summing-up for month, _jac_da.shape={_jac_da.shape}"
+            logger.debug(msg)
+            #
+            #-- insert into overall array
+            #
+            curjac3D_da.loc[dict(emismon=slice(curemisdayf,curemisdayl))] = _jac_da.values.reshape((curnobs,1,ng))
+            #--
+            icolf = iemismon*ng
+            icoll = icolf+ng
+            curjac_array[:,icolf:icoll] = _jac_da.values
+        curjac_da = xr.DataArray(
+            curjac_array,
+            dims=('obs','njaccol'),
+            coords={'obs':curjac_da.obs, 'njaccol': np.arange(njaccol)},
+            attrs = {'units': sensitivity_units}
+            )
+        #
+        #--
+        #
+        if imon==0:
+            stationlist_1D = input4inv.stationlist_1D
+            obstimelist_1D = input4inv.obstimelist_1D
+            inic_array1D   = input4inv.inic_array1D
+            obsmix_1D      = input4inv.obsmix_1D
+            jac_da         = curjac_da
+            jac3D_da       = curjac3D_da
+            emis_lonc1D    = input4inv.emis_lonc1D
+            emis_latc1D    = input4inv.emis_latc1D
+            emis_reg1D     = input4inv.emis_reg1D
+        else:
+            stationlist_1D = np.hstack((stationlist_1D, input4inv.stationlist_1D))
+            obstimelist_1D = np.hstack((obstimelist_1D, input4inv.obstimelist_1D))
+            inic_array1D   = np.hstack((inic_array1D, input4inv.inic_array1D))
+            obsmix_1D      = np.hstack((obsmix_1D, input4inv.obsmix_1D))
+            jac_da         = xr.concat([jac_da, curjac_da], dim='obs')
+            jac3D_da       = xr.concat([jac3D_da, curjac3D_da], dim='obs')
+            emis_lonc1D    = np.hstack((emis_lonc1D,input4inv.emis_lonc1D))
+            emis_latc1D    = np.hstack((emis_latc1D,input4inv.emis_latc1D))
+            emis_reg1D     = np.hstack((emis_reg1D,input4inv.emis_reg1D))
+    #
+    #--
+    #
+    nobs, _njaccol = jac_da.shape
+    assert njaccol==_njaccol
+    msg = f"...monthly collection loop finished yields Jacobian for overall " \
+        f"{nobs} observations w.r.t. overall {njaccol} monthly emissions " \
+        f"(nemismon={nemismon},ng={ng})"
+    logger.debug(msg)
+
+    #
+    #-- determine unique stations
+    #
+    if args.obsid==None:
+        station_list = np.unique(stationlist_1D)
+    else:
+        station_list = np.array(args.obsid)
+    nsta = len(station_list)
+    #
+    #-- station coordinates were collected per-observation
+    #   (but we expect them not to change from obs to obs at the same station)
+    #
+    coords_fill = -9999.
+    station_coords = np.full((nsta,3), coords_fill) #-- lon/lat/alt
+    for ista,sta in enumerate(station_list):
+        idxs_sta = np.where(stationlist_1D==sta)
+        nidxs = len(idxs_sta[0])
+        _lon_sta = input4inv.obslon_1D[idxs_sta]
+        _lat_sta = input4inv.obslat_1D[idxs_sta]
+        _alt_sta = input4inv.obsalt_1D[idxs_sta]
+        if nidxs==1:
+            station_coords[ista,:] = (_lon_sta[0],_lat_sta[0],_alt_sta[0])
+        else:
+            #-- longitude
+            diflon_max = np.max(np.diff(np.abs(_lon_sta-_lon_sta[0])))
+            if diflon_max<=difdeg_max:
+                station_coords[ista,0] = _lon_sta[0]
+            else:
+                msg = f"@{sta}, varying longitudes diflon_max={diflon_max} exceeds threshold " \
+                    f"{difdeg_max}"
+                logger.debug(msg)
+            #-- latitude
+            diflat_max = np.max(np.diff(np.abs(_lat_sta-_lat_sta[0])))
+            if diflat_max<=difdeg_max:
+                station_coords[ista,1] = _lat_sta[0]
+            else:
+                msg = f"@{sta}, varying latitudes diflat_max={diflat_max} exceeds threshold " \
+                    f"{difdeg_max}" 
+                logger.debug(msg)
+            #-- altitude
+            sta_difalt_max = np.max(np.diff(np.abs(_alt_sta-_alt_sta[0])))
+            if sta_difalt_max<=difalt_max:
+                station_coords[ista,2] = _alt_sta[0]
+            else:
+                msg = f"@{sta}, varying altitudes sta_difalt_max={sta_difalt_max} exceeds threshold " \
+                    f"{difalt_max}"
+                logger.debug(msg)
+    #--
+    stacoords_per_sta = not (coords_fill in station_coords)
+    if stacoords_per_sta:
+        msg = f"observation coordinates will be written --per-station--"
+        logger.info(msg)
+    else:
+        msg = f"observation coordinates will be written --per-observation--"
+        logger.info(msg)
+    #
+    #-- prepare output
+    #
+    if nobsday==1:
+        obsday_tag = f"obsday-{obsdayf.strftime('%Y%m%d')}"
+    else:
+        obsday_tag = f"obsdays-{obsdayf.strftime('%Y%m%d')}--{obsdayl.strftime('%Y%m%d')}"
+    emismon_tag = f"wrt-monthlyemis-{emismon_range[0].strftime('%Y%m')}--{emismon_range[-1].strftime('%Y%m')}"
+    if nsta==1:
+        obsid_tag = station_list[0]
+    elif nsta<=5:
+        obsid_tag = '--' + '--'.join([_ for _ in station_list]) + '--'
+    else:
+        obsid_tag = f"{nsta}-obslocations"
+    if args.domain=='glb600x400' and args.glb6x4_to_avengers_zoom:
+        domain_tag = f"{args.domain}-to-gns100x100"
+    else:
+        domain_tag = args.domain
+    outname_tokens = ["fitic-inversion-input", obsid_tag, domain_tag, obsday_tag, emismon_tag]
+    if args.remove_halo:
+        outname_tokens.append('removed-halos')
+    outname = '_'.join(outname_tokens) + '.nc'
+    outname = set_outname(args, outname)
+    msg = f"writing inversion inputs to file ***{outname}***..."
+    logger.info(msg)
+    #
+    #-- create dimensions
+    #
+    fp = Dataset(outname, 'w')
+    fp.createDimension('ng', ng)
+    fp.createDimension('nemismon', nemismon)
+    fp.createDimension('nobs', nobs)
+    fp.createDimension('njaccol', njaccol)
+    fp.createDimension('nsta', nsta)
+    #
+    #-- unique list of stations
+    #
+    ncvar = fp.createVariable('station_id', str, ('nsta',))
+    ncvar[:] = station_list[:]
+    ncvar.long_name = f"station_identifier_list"
+    ncvar.units = ''
+    ncvar.comment = f"Comprises the overall list of stations. Note, that there may be no observations for a station on certain day(s)."
+    if stacoords_per_sta:
+        #-- longitude
+        ncvar = fp.createVariable('station_lon', 'f8', ('nsta',))
+        ncvar[:] = station_coords[:,0]
+        ncvar.long_name = 'station_longitude'
+        ncvar.units = 'degrees_east'
+        #-- latitude
+        ncvar = fp.createVariable('station_lat', 'f8', ('nsta',))
+        ncvar[:] = station_coords[:,1]
+        ncvar.long_name = 'station_longitude'
+        ncvar.units = 'degrees_north'
+        #-- altitude
+        ncvar = fp.createVariable('station_alt', 'f8', ('nsta',))
+        ncvar[:] = station_coords[:,2]
+        ncvar.long_name = 'station_altitude'
+        ncvar.units = 'm'
+
+    #
+    ncvar = fp.createVariable('lon', 'f8', ('ng',),
+                              compression='zlib', complevel=complevel)
+    ncvar.long_name = 'longitude'
+    ncvar.units = 'degrees_east'
+    ncvar.comment = 'references center of grid-cell in related zoom domain'
+    ncvar[:] = emis_lonc1D[:]
+    #
+    ncvar = fp.createVariable('lat', 'f8', ('ng',),
+                              compression='zlib', complevel=complevel)
+    ncvar.long_name = 'latitude'
+    ncvar.units = 'degrees_north'
+    ncvar.comment = 'references center of grid-cell in related zoom domain'
+    ncvar[:] = emis_latc1D[:]
+    #
+    ncvar = fp.createVariable('region', input4inv.emis_reg1D.dtype, ('ng',))
+    ncvar.long_name = f"emission_region_identifier"
+    ncvar.units = ''
+    ncvar[:] = emis_reg1D[:]
+    #
+    ncvar = fp.createVariable('obs', 'f8', ('nobs',),
+                              compression='zlib', complevel=complevel)
+    ncvar[:] = obsmix_1D[:]
+    ncvar.long_name = f"observed CH4 concentration"
+    ncvar.units = 'ppb'
+    #
+    ncvar = fp.createVariable('iniconc', 'f8', ('nobs',),
+                              compression='zlib', complevel=complevel)
+    ncvar[:] = inic_array1D[:]
+    ncvar.long_name = f"initial_concentration"
+    ncvar.units = 'ppb'
+    #
+    ncvar = fp.createVariable('station', str, ('nobs',) )
+    ncvar[:] = stationlist_1D[:]
+    ncvar.long_name = 'station_identifier'
+    ncvar.units = ''
+    #
+    ncvar = fp.createVariable('obstime', str, ('nobs',) )
+    ncvar[:] = np.array([ _.strftime('%Y%m%dT%H%M%S') for _ in obstimelist_1D ])
+    # for iobs in range(nobs):
+    #     ncvar[iobs] = obstimelist_1D[iobs].strftime('%Y%m%dT%H')
+    ncvar.long_name = 'time_of_observation'
+    ncvar.units = ''
+    if not stacoords_per_sta:
+        #
+        ncvar = fp.createVariable('obslon', 'f8', ('nobs',),
+                                  compression='zlib', complevel=complevel)
+        ncvar[:] = input4inv.obslon_1D[:]
+        ncvar.long_name = 'longitude_of_observation'
+        ncvar.units = 'degrees_east'
+        #
+        ncvar = fp.createVariable('obslat', 'f8', ('nobs',),
+                                  compression='zlib', complevel=complevel)
+        ncvar[:] = input4inv.obslat_1D[:]
+        ncvar.long_name = 'latitude_of_observation'
+        ncvar.units = 'degrees_north'
+        #
+        ncvar = fp.createVariable('obsalt', 'f8', ('nobs',),
+                                  compression='zlib', complevel=complevel)
+        ncvar[:] = input4inv.obsalt_1D[:]
+        ncvar.long_name = 'altitude_of_observation'
+        ncvar.units = 'm'
+    #
+    ncvar = fp.createVariable('emismon', str, ('nemismon',))
+    ncvar.long_name = 'emission_month'
+    ncvar[:] = np.array([ _.strftime('%Y%m%d') for _ in emismon_range ])
+    #-- Jacobian dataset
+    ncvar = fp.createVariable('obs_jacobian', 'f8', ('nobs','njaccol',),
+                              compression='zlib', complevel=complevel)
+    ncvar[:] = jac_da[:]
+    ncvar.units = jac_da.attrs['units']
+    ncvar.comment = f"Jacobian quantifies the sensitivity of concentration at " \
+        f"observed times and locations w.r.t. to monthly emissions."
+    #--
+    ncvar = fp.createVariable('obs_jacobian3D', 'f8', ('nobs','nemismon','ng',),
+                              compression='zlib', complevel=complevel)
+    ncvar[:] = jac3D_da[:]
+    ncvar.units = jac_da.attrs['units']
+    ncvar.comment = f"Jacobian quantifies the sensitivity of concentration at " \
+        f"observed times and locations w.r.t. to monthly emissions."
+    #-- global attributes
+    #
+    fp.description = f"Inputs for FIT-IC inversion environment comprising the observational" \
+        f"Jacobian, as well as initial and observed concentrations " \
+        f"at selected stations and for the selected days."
+    fp.footprint_directory = str(topdir.absolute())
+    fp.removed_halos = np.int32(args.remove_halo)
+    try:
+        fp.processing_platform = f"{os.environ['USER']}@{os.environ['HOSTNAME']}"
+    except KeyError:
+        pass
+    fp.history = f"{' '.join(sys.argv)}"
+    fp.date_created = Timestamp.utcnow().isoformat()
+    #
+    #-- close
+    #
+    fp.close()
+    msg = f"generated file ***{outname}***"
+    logger.info(msg)
+
+
 def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
     """
     Preparation of monthly averaged emissions suitable as input for (Fortran based)
@@ -1598,7 +1976,57 @@ sparser.add_argument('--no-remove-halo','--no-halo_correction',
                      help="""meanwhile, by default the HALO part in zoom domains with parent are being removed. Use this option to activate the old behaviour.""")
 sparser.add_argument('--obsdir',
                      type=Path,
-                     # default="/lunarc/nobackup/projects/ghg_inv/michael/FIT-IC/observations_fitic-gui",
+                     help="""explicitly provided directory that contains obspack NetCDF data files with CH4 observations for selected station/site (!!!NOTE: this is only required in case the obs table files used for the underlying footprint computations still contain dummy measurement values instead of the real ones.!!!).""")
+sparser.add_argument('--difdeg_max',
+                     type=float,
+                     default=0.00001,
+                     help="""geographical coordinates may be varying per observation, in case their differences are below this threshold a single value is associated to only the station in the NetCDF file (default: %(default)s).""")
+sparser.add_argument('--difalt_max',
+                     type=float,
+                     default=0.1,
+                     help="""measurement altitude may be varying per observation, in case their differences are below this threshold a single value is associated to only the station in the NetCDF file (default: %(default)s[m]).""")
+sparser.add_argument('--refdir',
+                     help="""TM5 forward simulation, can be used to verify the Jacobian approach.""") 
+sparser.add_argument('--outdir',
+                     type=Path,
+                     help="""top-level directory for any generated outputs..""")
+sparser.add_argument('--outname',
+                     help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
+
+#
+#--       monthly_obsjacobian_for_inversion
+#
+sparser = subparsers.add_parser('monthly_obsjacobian_for_inversion',
+                                help="""generation of an observational Jacobian (and provision of daily inicial concentrations and observations) quantifying the sensitivity of (daily) observations at selected sites with respect to monthly emisssions.""")
+sparser.add_argument('outpath_tm5',
+                     type=Path,
+                     help="""top-level directory of series of TM5 adjoint runs for footprint creation each of those for one observation day.""")
+sparser.add_argument('domain',
+                     choices=['gns100x100','glb600x400',],
+                     help="""observational domain. As of now the TM5 footprint simulations have been run with two different setups. gns100x100 indicates footprints calculated with the zoom setup (for continuous measurements), while glb600x400 has been used to calculate footprints for flask measurements at only the coarse 6x4 degree resolution globally.""")
+sparser.add_argument('--obsid',
+                     nargs='+',
+                     help="""select one single observational location (default: %(default)s).""")
+sparser.add_argument('--month_firstlast',
+                     nargs=2,
+                     type=int,
+                     choices=list(range(1,13)),
+                     default=[1,2],
+                     help="""selected months (in 2021) (default: %(default)s).""")
+sparser.add_argument('--emisday_first',
+                     type=Timestamp,
+                     default=[Timestamp("20210101")],
+                     help="""first day of emissions included for sensitivities, must start on day 1 of a month (default: %(default)s).""")
+sparser.add_argument('--no-glb6x4_to_avengers-zoom',
+                     dest='glb6x4_to_avengers_zoom',
+                     action='store_false',
+                     help="""Option to be used only in conjunction with domain=='glb600x400'! This will re-distribute the globally computed sensitivities at 6x4 degrees to sensitivities w.r.t. to the grid-cells used for the (gns1x1) zoom  domain.""")
+sparser.add_argument('--no-remove-halo','--no-halo_correction',
+                     action='store_false',
+                     dest='remove_halo',
+                     help="""meanwhile, by default the HALO part in zoom domains with parent are being removed. Use this option to activate the old behaviour.""")
+sparser.add_argument('--obsdir',
+                     type=Path,
                      help="""explicitly provided directory that contains obspack NetCDF data files with CH4 observations for selected station/site (!!!NOTE: this is only required in case the obs table files used for the underlying footprint computations still contain dummy measurement values instead of the real ones.!!!).""")
 sparser.add_argument('--difdeg_max',
                      type=float,
@@ -1727,6 +2155,9 @@ def main(args):
 
     if args.subcmds=='build_jacobian_period_obs1D':
         subcmd_build_jacobian_period_obs1D(args)
+
+    if args.subcmds=='monthly_obsjacobian_for_inversion':
+        subcmd_monthly_obsjacobian_for_inversion(args)
 
     if args.subcmds=='monthly_emissions_for_inversion':
         subcmd_monthly_emissions_for_inversion(args)
