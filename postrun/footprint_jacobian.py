@@ -141,8 +141,8 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
     #-- loop over (obs) days
     #
     obsfile_info_cache = OrderedDict()
-    stationlist_1D = []
-    obstimelist_1D = []
+    stationid_1D = []
+    obstime_1D = []
     obslon_1D = np.empty(0)
     obslat_1D = np.empty(0)
     obsalt_1D = np.empty(0)
@@ -244,7 +244,7 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
                 obslonlist_curday.append(_obsid_data.lon)
                 obslatlist_curday.append(_obsid_data.lat)
                 obsaltlist_curday.append(_obsid_data.alt)
-                obstimelist_1D.append(_obsid_data.time)
+                obstime_1D.append(_obsid_data.time)
             else:
                 if args.obsdir==None:
                     # msg = f"...no observation directory provided for continuous measurements " \
@@ -256,7 +256,7 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
                     obslonlist_curday.append(_obsid_data.lon)
                     obslatlist_curday.append(_obsid_data.lat)
                     obsaltlist_curday.append(_obsid_data.alt)
-                    obstimelist_1D.append(_obsid_data.time)
+                    obstime_1D.append(_obsid_data.time)
                 else:
                     #
                     #-- cumbersome case: extract averaged observation from original observation file
@@ -332,7 +332,7 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
                         obslonlist_curday.append(obs_df.loc[cnd_time,'longitude'].mean())
                         obslatlist_curday.append(obs_df.loc[cnd_time,'latitude'].mean())
                         obsaltlist_curday.append(obs_df.loc[cnd_time,'altitude'].mean())
-                        obstimelist_1D.append(_obstime)
+                        obstime_1D.append(_obstime)
                     else:
                         msg = f"...@{staid}, no observations found in time window {_ostart}==>{_oend}"
                         logger.info(msg)
@@ -354,9 +354,9 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
         #-- extend 1D arrays
         #
         if domain_tag=='glb600x400':
-            stationlist_1D += [ '_'.join(_.lower().split('_')[:2]) for _ in obsinfo_curday.index ]
+            stationid_1D += [ '_'.join(_.lower().split('_')[:2]) for _ in obsinfo_curday.index ]
         elif domain_tag=='gns100x100':
-            stationlist_1D += list(obsinfo_curday.index)
+            stationid_1D += list(obsinfo_curday.index)
         else:
             raise RuntimeError(f"unexpected domain -->{domain_tag}<--")
         obsmix_1D = np.concat((obsmix_1D,np.array(obslist_curday)))
@@ -425,8 +425,8 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
     nobs = len(obsmix_1D)
     msg = f"...collected {nobs} observations overall."
     logger.info(msg)
-    # print(f"stationlist_1D -->{stationlist_1D}<--")
-    # print(f"obstimelist_1D -->{obstimelist_1D}<--")
+    # print(f"stationid_1D -->{stationid_1D}<--")
+    # print(f"obstime_1D -->{obstime_1D}<--")
     # print(f"obsmix_1D -->{obsmix_1D}<--")
     # print(f"inic_array1D -->{inic_array1D}<--")
     # print(f"jac_da.shape={jac_da.shape}")
@@ -437,8 +437,8 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
     #
     input4inv = SimpleNamespace(
         rundir_list=rundir_list,
-        stationlist_1D=np.array(stationlist_1D),
-        obstimelist_1D=obstimelist_1D,
+        stationid_1D=np.array(stationid_1D),
+        obstime_1D=obstime_1D,
         obslon_1D=obslon_1D,
         obslat_1D=obslat_1D,
         obsalt_1D=obsalt_1D,
@@ -574,8 +574,8 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     #
     #--
     #
-    stationlist_1D = input4inv.stationlist_1D
-    obstimelist_1D = input4inv.obstimelist_1D
+    stationid_1D = input4inv.stationid_1D
+    obstime_1D = input4inv.obstime_1D
     #--
     obsmix_1D    = input4inv.obsmix_1D
     inic_array1D = input4inv.inic_array1D
@@ -612,8 +612,8 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
         logger.debug(msg)
         #
         for iobs in range(nobs):
-            _staid  = stationlist_1D[iobs]
-            _obsday = obstimelist_1D[iobs].strftime('%Y%m%d')
+            _staid  = stationid_1D[iobs]
+            _obsday = obstime_1D[iobs].strftime('%Y%m%d')
             dc_tot = np.dot(ojac_tot[iobs,:], emis_tot)
             dc     = np.dot(jac_array[iobs,:].ravel(), emis2D.ravel())
             msg = f"@{_obsday},{_staid}: deltacconc derived by daily-rate/temporal-total = " \
@@ -663,7 +663,7 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     #-- prepare output
     #
     if args.obsid==None:
-        station_list = np.unique(stationlist_1D)
+        station_list = np.unique(stationid_1D)
     else:
         station_list = np.array(args.obsid)
     nsta = len(station_list)
@@ -674,7 +674,7 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     coords_fill = -9999.
     station_coords = np.full((nsta,3), coords_fill) #-- lon/lat/alt
     for ista,sta in enumerate(station_list):
-        idxs_sta = np.where(stationlist_1D==sta)
+        idxs_sta = np.where(stationid_1D==sta)
         nidxs = len(idxs_sta[0])
         _lon_sta = input4inv.obslon_1D[idxs_sta]
         _lat_sta = input4inv.obslat_1D[idxs_sta]
@@ -810,14 +810,14 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     ncvar.units = 'ppb'
     #
     ncvar = fp.createVariable('station', str, ('nobs',) )
-    ncvar[:] = stationlist_1D[:]
+    ncvar[:] = stationid_1D[:]
     ncvar.long_name = 'station_identifier'
     ncvar.units = ''
     #
     ncvar = fp.createVariable('obstime', str, ('nobs',) )
-    ncvar[:] = np.array([ _.strftime('%Y%m%dT%H%M%S') for _ in obstimelist_1D ])
+    ncvar[:] = np.array([ _.strftime('%Y%m%dT%H%M%S') for _ in obstime_1D ])
     # for iobs in range(nobs):
-    #     ncvar[iobs] = obstimelist_1D[iobs].strftime('%Y%m%dT%H')
+    #     ncvar[iobs] = obstime_1D[iobs].strftime('%Y%m%dT%H')
     ncvar.long_name = 'time_of_observation'
     ncvar.units = ''
     if not stacoords_per_sta:
@@ -933,8 +933,11 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     #--
     #
     sensitivity_units = 'ppb/(kgCH4/cell/month)'
-    stationlist_1D = None
-    obstimelist_1D = None
+    stationid_1D = None
+    obslon_1D      = None
+    obslat_1D      = None
+    obsalt_1D      = None
+    obstime_1D = None
     obsmix_1D      = None
     inic_array1D   = None
     jac_da         = None
@@ -1013,18 +1016,24 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
         #--
         #
         if imon==0:
-            stationlist_1D = input4inv.stationlist_1D
-            obstimelist_1D = input4inv.obstimelist_1D
-            inic_array1D   = input4inv.inic_array1D
-            obsmix_1D      = input4inv.obsmix_1D
-            jac_da         = curjac_da
-            jac3D_da       = curjac3D_da
-            emis_lonc1D    = input4inv.emis_lonc1D
-            emis_latc1D    = input4inv.emis_latc1D
-            emis_reg1D     = input4inv.emis_reg1D
+            stationid_1D  = input4inv.stationid_1D
+            obslon_1D     = input4inv.obslon_1D
+            obslat_1D     = input4inv.obslat_1D
+            obsalt_1D     = input4inv.obsalt_1D
+            obstime_1D    = input4inv.obstime_1D
+            inic_array1D  = input4inv.inic_array1D
+            obsmix_1D     = input4inv.obsmix_1D
+            jac_da        = curjac_da
+            jac3D_da      = curjac3D_da
+            emis_lonc1D   = input4inv.emis_lonc1D
+            emis_latc1D   = input4inv.emis_latc1D
+            emis_reg1D    = input4inv.emis_reg1D
         else:
-            stationlist_1D = np.hstack((stationlist_1D, input4inv.stationlist_1D))
-            obstimelist_1D = np.hstack((obstimelist_1D, input4inv.obstimelist_1D))
+            stationid_1D   = np.hstack((stationid_1D, input4inv.stationid_1D))
+            obslon_1D      = np.hstack((obslon_1D, input4inv.obslon_1D))
+            obslat_1D      = np.hstack((obslat_1D, input4inv.obslat_1D))
+            obsalt_1D      = np.hstack((obsalt_1D, input4inv.obsalt_1D))
+            obstime_1D     = np.hstack((obstime_1D, input4inv.obstime_1D))
             inic_array1D   = np.hstack((inic_array1D, input4inv.inic_array1D))
             obsmix_1D      = np.hstack((obsmix_1D, input4inv.obsmix_1D))
             jac_da         = xr.concat([jac_da, curjac_da], dim='obs')
@@ -1046,7 +1055,7 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     #-- determine unique stations
     #
     if args.obsid==None:
-        station_list = np.unique(stationlist_1D)
+        station_list = np.unique(stationid_1D)
     else:
         station_list = np.array(args.obsid)
     nsta = len(station_list)
@@ -1057,11 +1066,11 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     coords_fill = -9999.
     station_coords = np.full((nsta,3), coords_fill) #-- lon/lat/alt
     for ista,sta in enumerate(station_list):
-        idxs_sta = np.where(stationlist_1D==sta)
+        idxs_sta = np.where(stationid_1D==sta)
         nidxs = len(idxs_sta[0])
-        _lon_sta = input4inv.obslon_1D[idxs_sta]
-        _lat_sta = input4inv.obslat_1D[idxs_sta]
-        _alt_sta = input4inv.obsalt_1D[idxs_sta]
+        _lon_sta = obslon_1D[idxs_sta]
+        _lat_sta = obslat_1D[idxs_sta]
+        _alt_sta = obsalt_1D[idxs_sta]
         if nidxs==1:
             station_coords[ista,:] = (_lon_sta[0],_lat_sta[0],_alt_sta[0])
         else:
@@ -1189,14 +1198,14 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     ncvar.units = 'ppb'
     #
     ncvar = fp.createVariable('station', str, ('nobs',) )
-    ncvar[:] = stationlist_1D[:]
+    ncvar[:] = stationid_1D[:]
     ncvar.long_name = 'station_identifier'
     ncvar.units = ''
     #
     ncvar = fp.createVariable('obstime', str, ('nobs',) )
-    ncvar[:] = np.array([ _.strftime('%Y%m%dT%H%M%S') for _ in obstimelist_1D ])
+    ncvar[:] = np.array([ _.strftime('%Y%m%dT%H%M%S') for _ in obstime_1D ])
     # for iobs in range(nobs):
-    #     ncvar[iobs] = obstimelist_1D[iobs].strftime('%Y%m%dT%H')
+    #     ncvar[iobs] = obstime_1D[iobs].strftime('%Y%m%dT%H')
     ncvar.long_name = 'time_of_observation'
     ncvar.units = ''
     if not stacoords_per_sta:
