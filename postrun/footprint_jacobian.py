@@ -131,10 +131,10 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
     """
     #-- arguments
     nobsday = len(obsday_range)
-    dayf = obsday_range[0]
-    dayl = obsday_range[-1]
+    obsdayf = obsday_range[0]
+    obsdayl = obsday_range[-1]
     msg = f"...collecting footprint information for (daily) observations " \
-        f"in temporal range {dayf.strftime('%Y%m%d')} - {dayl.strftime('%Y%m%d')}"
+        f"in temporal range {obsdayf.strftime('%Y%m%d')} - {obsdayl.strftime('%Y%m%d')}"
     logger.info(msg)
 
     #
@@ -170,7 +170,7 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
             raise RuntimeError(msg)
         rundir = cur_rundir_list[0]
         msg = f"@obsday={obsday.strftime('%Y-%m-%d')}, reading from directory -->{rundir}<--"
-        logger.info(msg)
+        logger.debug(msg)
         rundir_list.append(rundir)
         #
         #-- load observations
@@ -300,8 +300,8 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
                                 obsfile = obspack_list[0]
                         msg = f"...reading observed concentrations from file ***{str(obsfile)}***..."
                         logger.info(msg)
-                        tstart = dayf 
-                        tend   = dayl+Timedelta(seconds=86399)
+                        tstart = obsdayf 
+                        tend   = obsdayl+Timedelta(seconds=86399)
                         #-- ATTENTION:: restricting to the day is unsufficient,
                         #               i.e. we have sites (at high altitude) where
                         #               1am is in the mid of the time-window which
@@ -933,17 +933,17 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     #--
     #
     sensitivity_units = 'ppb/(kgCH4/cell/month)'
-    stationid_1D = None
+    stationid_1D   = None
     obslon_1D      = None
     obslat_1D      = None
     obsalt_1D      = None
-    obstime_1D = None
+    obstime_1D     = None
     obsmix_1D      = None
     inic_array1D   = None
     jac_da         = None
     jac3D_da       = None
-    jaccol_emismon = np.array(list(emismon_range)*ng)
-    jaccol_emisgc  = np.tile(np.arange(ng), nemismon)
+    jaccol_emismon = np.array([_.strftime('%Y-%m-%d') for _ in emismon_range]*ng)
+    jaccol_emisgc  = np.tile(np.arange(ng,dtype='i4'), nemismon)
     emis_lonc1D    = None
     emis_latc1D    = None
     emis_reg1D     = None
@@ -963,8 +963,9 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
                                                   remove_halo=args.remove_halo,
                                                   obsid=args.obsid,
                                                   obsdir=args.obsdir)
-        curjac_da = input4inv.jac_da
-        curnobs,curnemisday,_ = curjac_da.shape
+        # #-- 
+        curjacdaily_da = input4inv.jac_da
+        curnobs,curnemisday,_ = curjacdaily_da.shape
         if nemisday!=curnemisday:
             msg = f"inversion input collection supposed for {nemisday} emission days, " \
                 f"but shape of resulting Jacobian {jac_array.shape} is unexpected"
@@ -973,45 +974,56 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
         #-- aggregate to sensitivities per month
         #
         curjac_array = zeros((curnobs,njaccol))
+        #
+        #-- allocate buffer for current observation month
+        #
+        #   TODO::currently two type of buffers are created,
+        #         buf[obs,njaccol] and buf[obs,emismon,ng],
+        #         Eventually we need to select which variant is best for inversion environment
+        #
+        curjac_da = xr.DataArray(
+            zeros((curnobs,njaccol)),
+            dims=('obs','njaccol'),
+            coords={'obs':curjacdaily_da.obs, 'njaccol': np.arange(njaccol)},
+            attrs = {'units': sensitivity_units}
+            )
         curjac3D_da = xr.DataArray(
             zeros((curnobs,nemismon,ng)),
             dims=('obs','emismon','ng'),
-            coords={'obs':curjac_da.obs, 'emismon':emismon_range, 'ng': np.arange(ng)},
+            coords={'obs':curjacdaily_da.obs, 'emismon':emismon_range, 'ng': np.arange(ng)},
             attrs = {'units': sensitivity_units}
             )
+        #
+        #-- loop over (daily) emissions per month
+        #
         for iemismon,emismondayf in enumerate(emismon_range):
-            #-- can stop for emission months that are past the last observation
+            #-- no sensitivity for emission months that are past the last observation
             if emismondayf>max(curemisday_range):
                 break
             #
             msg = f"...getting sensitivities for emismondayf={emismondayf.strftime('%Y-%m-%d')}"
             logger.info(msg)
-            #x1
-            #-- extraction for current emission month
             #
-            cnd_emismon = (curjac_da.emisday>=curemisdayf)&(curjac_da.emisday<=curemisdayl)
-            _jac_da = curjac_da.sel(emisday=cnd_emismon)
+            #-- extraction sensitivities for current emission month
+            #
+            cnd_emismon = (curjacdaily_da.emisday>=curemisdayf)&(curjacdaily_da.emisday<=curemisdayl)
+            _jac_da = curjacdaily_da.sel(emisday=cnd_emismon)
             msg = f"......_jac_da.shape={_jac_da.shape}"
             logger.debug(msg)
+            #
+            #-- unit conversion [ppb/kgCH4/cell/s] --> [ppb/kgCH4/cell/month]
+            #
             nsec = _jac_da.shape[1]*nsecday #-- number of emission seconds [in month]
-            #-- [ppb/kgCH4/cell/s] --> [ppb/kgCH4/cell/month]
             _jac_da = _jac_da.sum(dim='emisday') / nsec
             msg = f"......after summing-up for month, _jac_da.shape={_jac_da.shape}"
             logger.debug(msg)
             #
             #-- insert into overall array
             #
-            curjac3D_da.loc[dict(emismon=slice(curemisdayf,curemisdayl))] = _jac_da.values.reshape((curnobs,1,ng))
-            #--
             icolf = iemismon*ng
-            icoll = icolf+ng
-            curjac_array[:,icolf:icoll] = _jac_da.values
-        curjac_da = xr.DataArray(
-            curjac_array,
-            dims=('obs','njaccol'),
-            coords={'obs':curjac_da.obs, 'njaccol': np.arange(njaccol)},
-            attrs = {'units': sensitivity_units}
-            )
+            icoll = icolf+ng-1
+            curjac_da.loc[dict(njaccol=slice(icolf,icoll))] = _jac_da.values
+            curjac3D_da.loc[dict(emismon=slice(curemisdayf,curemisdayl))] = _jac_da.values.reshape((curnobs,1,ng))
         #
         #--
         #
@@ -1038,9 +1050,15 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
             obsmix_1D      = np.hstack((obsmix_1D, input4inv.obsmix_1D))
             jac_da         = xr.concat([jac_da, curjac_da], dim='obs')
             jac3D_da       = xr.concat([jac3D_da, curjac3D_da], dim='obs')
-            emis_lonc1D    = np.hstack((emis_lonc1D,input4inv.emis_lonc1D))
-            emis_latc1D    = np.hstack((emis_latc1D,input4inv.emis_latc1D))
-            emis_reg1D     = np.hstack((emis_reg1D,input4inv.emis_reg1D))
+            if np.any(emis_lonc1D!=input4inv.emis_lonc1D):
+                msg = f"@{curobsdayf},imon={imon}, inconsistency in emission longitudes"
+                raise RuntimeError(msg)
+            if np.any(emis_latc1D!=input4inv.emis_latc1D):
+                msg = f"@{curobsdayf},imon={imon}, inconsistency in emission latitudes"
+                raise RuntimeError(msg)
+            if np.any(emis_reg1D!=input4inv.emis_reg1D):
+                msg = f"@{curobsdayf},imon={imon}, inconsistency in emission region identifiers"
+                raise RuntimeError(msg)
     #
     #--
     #
@@ -1059,9 +1077,13 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     else:
         station_list = np.array(args.obsid)
     nsta = len(station_list)
+    msg = f"...Jacobian prepared for {nsta} different stations (-->{station_list}<--)"
+    logger.info(msg)
     #
     #-- station coordinates were collected per-observation
-    #   (but we expect them not to change from obs to obs at the same station)
+    #   - we expect them not to change from obs to obs at the same station,
+    #     but there occurred small differences (at least in case the observations
+    #     were extracted from the origin obspack NetCDF files)
     #
     coords_fill = -9999.
     station_coords = np.full((nsta,3), coords_fill) #-- lon/lat/alt
@@ -1141,31 +1163,6 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     fp.createDimension('njaccol', njaccol)
     fp.createDimension('nsta', nsta)
     #
-    #-- unique list of stations
-    #
-    ncvar = fp.createVariable('station_id', str, ('nsta',))
-    ncvar[:] = station_list[:]
-    ncvar.long_name = f"station_identifier_list"
-    ncvar.units = ''
-    ncvar.comment = f"Comprises the overall list of stations. Note, that there may be no observations for a station on certain day(s)."
-    if stacoords_per_sta:
-        #-- longitude
-        ncvar = fp.createVariable('station_lon', 'f8', ('nsta',))
-        ncvar[:] = station_coords[:,0]
-        ncvar.long_name = 'station_longitude'
-        ncvar.units = 'degrees_east'
-        #-- latitude
-        ncvar = fp.createVariable('station_lat', 'f8', ('nsta',))
-        ncvar[:] = station_coords[:,1]
-        ncvar.long_name = 'station_longitude'
-        ncvar.units = 'degrees_north'
-        #-- altitude
-        ncvar = fp.createVariable('station_alt', 'f8', ('nsta',))
-        ncvar[:] = station_coords[:,2]
-        ncvar.long_name = 'station_altitude'
-        ncvar.units = 'm'
-
-    #
     ncvar = fp.createVariable('lon', 'f8', ('ng',),
                               compression='zlib', complevel=complevel)
     ncvar.long_name = 'longitude'
@@ -1180,7 +1177,7 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     ncvar.comment = 'references center of grid-cell in related zoom domain'
     ncvar[:] = emis_latc1D[:]
     #
-    ncvar = fp.createVariable('region', input4inv.emis_reg1D.dtype, ('ng',))
+    ncvar = fp.createVariable('region', emis_reg1D.dtype, ('ng',))
     ncvar.long_name = f"emission_region_identifier"
     ncvar.units = ''
     ncvar[:] = emis_reg1D[:]
@@ -1208,43 +1205,84 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     #     ncvar[iobs] = obstime_1D[iobs].strftime('%Y%m%dT%H')
     ncvar.long_name = 'time_of_observation'
     ncvar.units = ''
-    if not stacoords_per_sta:
+    #
+    #-- unique list of stations
+    #
+    ncvar = fp.createVariable('station_id', str, ('nsta',))
+    ncvar[:] = station_list[:]
+    ncvar.long_name = f"station_identifier_list"
+    ncvar.units = ''
+    ncvar.comment = f"Comprises the overall list of stations. Note, that there may be no observations for a station on certain day(s)."
+    if stacoords_per_sta:
+        #-- longitude
+        ncvar = fp.createVariable('station_lon', 'f8', ('nsta',))
+        ncvar[:] = station_coords[:,0]
+        ncvar.long_name = 'station_longitude'
+        ncvar.units = 'degrees_east'
+        #-- latitude
+        ncvar = fp.createVariable('station_lat', 'f8', ('nsta',))
+        ncvar[:] = station_coords[:,1]
+        ncvar.long_name = 'station_longitude'
+        ncvar.units = 'degrees_north'
+        #-- altitude
+        ncvar = fp.createVariable('station_alt', 'f8', ('nsta',))
+        ncvar[:] = station_coords[:,2]
+        ncvar.long_name = 'station_altitude'
+        ncvar.units = 'm'
+
+    else:#if not stacoords_per_sta:
         #
         ncvar = fp.createVariable('obslon', 'f8', ('nobs',),
                                   compression='zlib', complevel=complevel)
-        ncvar[:] = input4inv.obslon_1D[:]
+        ncvar[:] = obslon_1D[:]
         ncvar.long_name = 'longitude_of_observation'
         ncvar.units = 'degrees_east'
         #
         ncvar = fp.createVariable('obslat', 'f8', ('nobs',),
                                   compression='zlib', complevel=complevel)
-        ncvar[:] = input4inv.obslat_1D[:]
+        ncvar[:] = obslat_1D[:]
         ncvar.long_name = 'latitude_of_observation'
         ncvar.units = 'degrees_north'
         #
         ncvar = fp.createVariable('obsalt', 'f8', ('nobs',),
                                   compression='zlib', complevel=complevel)
-        ncvar[:] = input4inv.obsalt_1D[:]
+        ncvar[:] = obsalt_1D[:]
         ncvar.long_name = 'altitude_of_observation'
         ncvar.units = 'm'
     #
     ncvar = fp.createVariable('emismon', str, ('nemismon',))
     ncvar.long_name = 'emission_month'
     ncvar[:] = np.array([ _.strftime('%Y%m%d') for _ in emismon_range ])
-    #-- Jacobian dataset
+    #
+    #-- 2D Jacobian dataset
+    #
     ncvar = fp.createVariable('obs_jacobian', 'f8', ('nobs','njaccol',),
                               compression='zlib', complevel=complevel)
     ncvar[:] = jac_da[:]
     ncvar.units = jac_da.attrs['units']
     ncvar.comment = f"Jacobian quantifies the sensitivity of concentration at " \
         f"observed times and locations w.r.t. to monthly emissions."
-    #--
+    #-- 2D Jacobian ancillary information for columns
+    #> NOTE: compression seems  problematic for 'str' typed variable
+    ncvar = fp.createVariable('jaccol_emismon', jaccol_emismon.dtype, ('njaccol',))
+    ncvar[:] = jaccol_emismon[:]
+    ncvar.long_name = "emission_month_of_column_in_jacobian"
+    ncvar.units = ''
+    ncvar = fp.createVariable('jaccol_gridcell_index', jaccol_emisgc.dtype, ('njaccol',),
+                              compression='zlib', complevel=complevel)
+    ncvar[:] = jaccol_emisgc[:]
+    ncvar.long_name = "0-based index of emission grid-cell of column in Jacobian"
+    ncvar.units = ''
+    #
+    #-- 3D Jabobian dataset
+    #
     ncvar = fp.createVariable('obs_jacobian3D', 'f8', ('nobs','nemismon','ng',),
                               compression='zlib', complevel=complevel)
     ncvar[:] = jac3D_da[:]
     ncvar.units = jac_da.attrs['units']
     ncvar.comment = f"Jacobian quantifies the sensitivity of concentration at " \
         f"observed times and locations w.r.t. to monthly emissions."
+    #
     #-- global attributes
     #
     fp.description = f"Inputs for FIT-IC inversion environment comprising the observational" \
@@ -2159,6 +2197,7 @@ sparser.add_argument('--outname',
 #
 def main(args):
 
+    ts = Timestamp.utcnow()
     if args.subcmds=='test_jacobianfwd_1day':
         subcmd_test_jacobianfwd_1day(args)
 
@@ -2183,6 +2222,10 @@ def main(args):
     if args.subcmds=='compare_ojac_obs1D':
         subcmd_compare_ojac_obs1D(args)
 
+    #
+    te = Timestamp.utcnow()
+    msg = f"...subcommand +++{args.subcmds}+++ DONE (time_elapsed={te-ts})"
+    logger.info(msg)
 #
 if __name__ == '__main__':
     import datetime as dtm
