@@ -169,6 +169,16 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
                 f"found ==>{cur_rundir_list}<=="
             raise RuntimeError(msg)
         rundir = cur_rundir_list[0]
+        #
+        #-- all footprint run directories should contain (a copy of) the
+        #   yaml configuration file involved
+        #
+        yamlfile = rundir / 'tm5.yaml'
+        if not yamlfile.exists():
+            msg = f"...@{rundir}, ATTENTION yaml configuration file not present! " \
+                f"Should usually not happen, here we will just skip!"
+            logger.warning(msg)
+            continue
         msg = f"@obsday={obsday.strftime('%Y-%m-%d')}, reading from directory -->{rundir}<--"
         logger.debug(msg)
         rundir_list.append(rundir)
@@ -335,9 +345,9 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
                         obstime_1D.append(_obstime)
                     else:
                         msg = f"...@{staid}, no observations found in time window {_ostart}==>{_oend}"
-                        logger.info(msg)
+                        logger.debug(msg)
         #
-        #-- restrict obsdata frame of this day to those stations without missing obs.
+        #-- restrict obsdata frame for current day to those stations without missing obs.
         #
         if len(stalist_curday)!=len(obsinfo_curday):
             cnd_sta = obsinfo_curday.index.isin(stalist_curday)
@@ -580,7 +590,7 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     obsmix_1D    = input4inv.obsmix_1D
     inic_array1D = input4inv.inic_array1D
     jac_da       = input4inv.jac_da
-    nobs, _nemisday, ng = jac_array.shape
+    nobs, _nemisday, ng = jac_da.shape
     if nemisday!=_nemisday:
         msg = f"inversion input collection supposed for {nemisday} emission days, " \
             f"but shape of resulting Jacobian {jac_array.shape} is unexpected"
@@ -597,6 +607,7 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     #   - need to scale and average entries in Jacobian accordingly
     #
     if args.jac4totemis:
+        ojac_daily = jac_da.values
         sensitivity_units = 'ppb/(kgCH4/cell)'
         ojac_da = jac_da.sum(dim='emisday') / (nemisday*nsecday)
         #
@@ -610,16 +621,17 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
         emis_tot = np.sum(emis2D*nsecday, axis=0) #-- overall emissions in temporal range
         msg = f"emis_tot min/mean/max = {emis_tot.min()}/{emis_tot.mean()}/{emis_tot.max()}"
         logger.debug(msg)
+        ojac_tot = ojac_da.values
         #
         for iobs in range(nobs):
             _staid  = stationid_1D[iobs]
             _obsday = obstime_1D[iobs].strftime('%Y%m%d')
             dc_tot = np.dot(ojac_tot[iobs,:], emis_tot)
-            dc     = np.dot(jac_array[iobs,:].ravel(), emis2D.ravel())
+            dc     = np.dot(ojac_daily[iobs,:].ravel(), emis2D.ravel())
             msg = f"@{_obsday},{_staid}: deltacconc derived by daily-rate/temporal-total = " \
                 f"{dc}/{dc_tot}"
             logger.info(msg)
-        ojac_out = ojac_tot.values
+        ojac_out = ojac_da.values
     else:
         ojac_out = jac_da.values
 
@@ -848,7 +860,7 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
         ncvar.units = sensitivity_units
         ncvar.comment = f"Jacobian quantifies the sensitivity of concentration at " \
             f"observed times and locations w.r.t. to the total emission field in the " \
-            f"temporal range from {dayf.strftime('%Y%m%d')} to {dayl.strftime('%Y%m%d')}"
+            f"temporal range from {emisdayf.strftime('%Y%m%d')} to {emisdayl.strftime('%Y%m%d')}"
     else:
         ncvar = fp.createVariable('obs_jacobian', 'f8', ('nobs','nemisday','ng',),
                                   compression='zlib', complevel=complevel)
