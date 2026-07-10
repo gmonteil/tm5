@@ -10,7 +10,7 @@ from pathlib import Path
 from collections import OrderedDict
 from loguru import logger
 from pandas import date_range, DataFrame, Series
-from pandas import Timestamp, Timedelta, concat
+from pandas import Timestamp, Timedelta, concat, DatetimeIndex
 import xarray as xr
 import numpy as np
 from numpy import zeros, tile
@@ -198,7 +198,7 @@ def regiondomain_halo( region : str ) -> list:
     return [lonmin,lonmax,latmin,latmax,]
 
 
-def tm5emisdir_load_emissions2D( emisdir : str | Path, emis_prefix : str, day_range : date_range, regions : list, remove_halo : bool = True, clip_child : bool = False ) -> SimpleNamespace:
+def tm5emisdir_load_emissions2D( emisdir : str | Path, emis_prefix : str, day_range : DatetimeIndex, regions : list, remove_halo : bool = True, clip_child : bool = False ) -> SimpleNamespace:
     """Read in daily emissions as prepared for TM5 for the selected temporal range
     and regions.
     The emissions array will be 2D with only one single dimension in the spatial domain,
@@ -342,7 +342,7 @@ def tm5rundir_iniconc_1obs( outpath : str | Path, obs_info : Series ) -> SimpleN
     return SimpleNamespace(point_output=sta_outp, conc=sta_outp.mixing_ratio, nsamples=sta_outp.nsamples, averaging_time=sta_outp.averaging_time)
 
 
-def tm5rundir_emissions2D( outpath : str | Path, trange : date_range = None,
+def tm5rundir_emissions2D( outpath : str | Path, trange : DatetimeIndex|None = None,
                            emis_prefix : str = None,
                            remove_halo : bool = True, clip_child : bool = False, host : str = 'cosmos' ) -> SimpleNamespace:
     """
@@ -376,7 +376,7 @@ def tm5rundir_emissions2D( outpath : str | Path, trange : date_range = None,
     return tm5emisdir_load_emissions2D(emisdir, emis_prefix, trange, regions, remove_halo=remove_halo, clip_child=clip_child)
 
 
-def tm5rundir_jacobian3D( outpath : str | Path, emisday_range : date_range = None,
+def tm5rundir_jacobian3D( outpath : str | Path, emisday_range : DatetimeIndex|None = None,
                           obsid : str|list|None = None,
                           remove_halo : bool = True, clip_child : bool = False ) -> NDArray:
     """
@@ -421,7 +421,7 @@ def tm5rundir_jacobian3D( outpath : str | Path, emisday_range : date_range = Non
         obsid = [obsid,]
     if obsid!=None:
         msg = f"...extract only for observation -->{obsid}<--"
-        logger.info(msg)
+        logger.debug(msg)
         #-- position of obs. identifier (location) in list of tracers/obs
         itrac_list = [ obsids.index(_) for _ in obsid ]
         nobsout = len(itrac_list)
@@ -453,7 +453,7 @@ def tm5rundir_jacobian3D( outpath : str | Path, emisday_range : date_range = Non
     reg1D  = domain1D_info.reg1D
     msg = f"...preparing Jacobian for emissions for {nobs} observation locations, " \
         f" {nemisday} emission days and ng={ng} emission grid-cells (per day)."
-    logger.info(msg)
+    logger.debug(msg)
     #
     #-- initialise Jacobian to zero
     #
@@ -476,6 +476,10 @@ def tm5rundir_jacobian3D( outpath : str | Path, emisday_range : date_range = Non
             df_day = df.loc[cnd_day,:]
             # msg = f"...restricted to {days[iday].strftime('%Y%m%d')} yields {len(df_day)} entries"
             # logger.debug(msg)
+            #
+            #-- collect sensitivity contributions for
+            #
+            jac_list = []
             for reg in regions:
                 # print(f"@{reg}\n", df.head())
                 cnd_reg = df_day.loc[:,'region']==reg
@@ -505,6 +509,9 @@ def tm5rundir_jacobian3D( outpath : str | Path, emisday_range : date_range = Non
                 #     f"{sens.min()}/{sens.mean()}/{sens.max()}"
                 # logger.info(msg)
             #
+            #-- stack regional contributions into single array
+            #   insert into global buffer
+            #
             jacobian3D[iobs,iday,:] = np.hstack(jac_list)
     #
     #-- turn into data array
@@ -519,19 +526,20 @@ def tm5rundir_jacobian3D( outpath : str | Path, emisday_range : date_range = Non
                            reg1D=reg1D, lonc1D=lonc1D, latc1D=latc1D)
 
 
-def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, emisday_range : date_range = None) -> SimpleNamespace:
+def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, emisday_range : DatetimeIndex|None = None) -> SimpleNamespace:
     """Function to read and collect footprint information from one TM5 adjoint run
     for selected period of time into a pandas dataframe for further processing.
     outpath must be the toplevel output directory of the TM5 forward and adjoint run,
     that also contains the rc-configuration files.
     The dataframe will contain 
 
-    Currently it is expected that the simulation was carried on the FIT-IC spatial zoom
+    Currently it is expected that the simulation was carried out the FIT-IC spatial zoom
     domain.
 
     This routine handles the HALOs of the two inner zoom domains (eur300x200, gns100x100).
     """
-    yamlfile = Path(outpath) / 'tm5.yaml'
+    outpath = Path(outpath)
+    yamlfile = outpath / 'tm5.yaml'
     if not yamlfile.exists():
         msg = f"yaml configuration file ***{str(yamlfile)}*** not found on system."
         raise FileNotFoundError(msg)
@@ -540,8 +548,8 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, emisday_range : date_
     #-- get name of tracer/obsids
     #
     # MVO-ATTENTION::
-    # - for the zoom footprint simulations the the ingoing obs file
-    #   contained always *all* stations - also in case if no actual observation
+    # - for the zoom footprint simulations the ingoing obs file
+    #   contained always *all* stations - also in case that no actual observation
     #   was available for a particular day.
     # - Thus, for the proper indexing below, we *MUST NOT* drop
     #   those here!
@@ -591,7 +599,7 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, emisday_range : date_
     #-- MVO-20260424:
     #   - dataasets in adjoint emissions files are written as long 1D arrays (dimension: point),
     #     variable 'int itrac(point)' provides index of associated tracer
-    #   - Thus, there should be *no* need to loop along the tracer !?
+    #
     for iday, day in enumerate(emisday_range):
         for ireg, region in enumerate(region_list):
             fname = adjemis_dir / day.strftime(f'adjemis.{region}.%Y%m%d.nc')
@@ -599,102 +607,103 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, emisday_range : date_
             if not fname.exists():
                 continue
             with Dataset(fname, 'r') as ds:
+                # msg = f"@{day}/{region} reading from ***{str(fname)}***"
+                # logger.debug(msg)
+                #
+                #-- adjoint sensitivities are stored as 1D arrays
+                #
                 ilat = ds['ilat'][:].data
                 ilon = ds['ilon'][:].data
                 itrac = ds['itrac'][:].data
                 values = ds['values'][:].data
+                #
+                #-- lonc/latc are initially (only) for the grid-cells of the domain
+                #
                 lonc = ds['lon'][:].data
                 latc = ds['lat'][:].data
+                #
+                #-- now determine lonc/latc for each of the sensitivities
+                #
                 lonc = lonc[ilon]
                 latc = latc[ilat]
+                # nfootp = len(ilat)
+                # msg = f"@{day}/{region}: len(lonc)={len(lonc)}, len(latc)={len(latc)}"
+                # print(msg)
+                # msg = f"@{region},{day.strftime('%Y-%m-%d')}: nfootp={nfootp}, " \
+                #       f"ilon min/max={min(ilon)}/{max(ilon)}, " \
+                #       f"ilat min/max={min(ilat)}/{max(ilat)}, "
+                # print(msg)
+                #
+                #-- HALO correction for inner domains
+                #
+                if region=='gns100x100' or region=='eur300x200':
+                    #-- initial approach:
+                    #   (1) restrict to halo corrected domain of region
+                    #   (2) remove parts from the inner-most zoom domain
+                    #
+                    # lonmin1,lonmax2,latmin1,latmax2 = regiondomain_halo(region)
+                    # lonmax1,lonmin2,latmax1,latmin2 = regiondomain_halo(region_table[region].child)
+                    # cnd_lon = ((lonc>=lonmin1)&(lonc<=lonmax1))|((lonc>=lonmin2)&(lonc<=lonmax2))
+                    # cnd_lat = ((latc>=latmin1)&(latc<=latmax1))|((latc>=latmin2)&(latc<=latmax2))
+                    # cnd_nohalo = cnd_lon&cnd_lat
+                    # MVO: 2026-04-29, Guillaume confirmed that removal of "inner" part
+                    #                  is handled within TM5
+                    #
+                    #- on zonal and 
+                    #
+                    lonmin,lonmax,latmin,latmax = regiondomain_halo(region)
+                    cnd_lon = (lonc>=lonmin)&(lonc<=lonmax)
+                    cnd_lat = (latc>=latmin)&(latc<=latmax)
+                    cnd_nohalo = cnd_lon&cnd_lat
+                    idxs_nohalo = np.where(cnd_nohalo)
+                    ilat   = ilat[idxs_nohalo]
+                    ilon   = ilon[idxs_nohalo]
+                    itrac  = itrac[idxs_nohalo]
+                    values = values[idxs_nohalo]
+                    lonc   = lonc[idxs_nohalo]
+                    latc   = latc[idxs_nohalo]
+                elif region=='glb600x400':
+                    #
+                    #-- global domain does *NOT* require halo correction
+                    pass
+                #
+                #--
+                #
+                # #
+                # #-- cbw_207 at second position
+                # #
+                # icbw = np.where(itrac==1)
+                # vcbw = values[icbw]
+                # msg = f"DEBUG@cbw_207, {day.strftime('%Y-%m-%d')}, {region}: " \
+                #     f"values min/mean/max = {vcbw.min()}/{vcbw.mean()}/{vcbw.max()}"
+                # print(msg)
+                # if iday==0:
+                #     msg = f"@{region},{day.strftime('%Y-%m-%d')}: after halo-correction " \
+                #         f"remaining footprints={len(idxs_nohalo[0])}"
+                #     print(msg)
+                #
+                #-- append information into collection dictionary 
+                #
                 nfootp = len(ilat)
-            # print(f"@{region},{day.strftime('%Y-%m-%d')}: " \
-            #       f"ilon min/max={min(ilon)}/{max(ilon)}, " \
-            #       f"ilat min/max={min(ilat)}/{max(ilat)}, ")
-            #
-            #-- halo correction
-            #
-            # if iday==0:
-            #     nfootp = len(ilat)
-            #     print(f"@{region},{day.strftime('%Y-%m-%d')}: #footprints={nfootp}")
-            if region=='gns100x100':
-                #
-                #- on zonal and 
-                #
-                lonmin,lonmax,latmin,latmax = regiondomain_halo(region)
-                cnd_lon = (lonc>=lonmin)&(lonc<=lonmax)
-                cnd_lat = (latc>=latmin)&(latc<=latmax)
-                cnd_nohalo = cnd_lon&cnd_lat
-                # print(f"@{region},{day.strftime('%Y-%m-%d')}, nfootp prior/post filtering = " \
-                #       f"{nfootp}/{np.count_nonzero(cnd_nohalo)}")
-            elif region=='eur300x200':
-                #-- initial approach:
-                #   (1) restrict to halo corrected domain of region
-                #   (2) remove parts from the inner-most zoom domain
-                #
-                # lonmin1,lonmax2,latmin1,latmax2 = regiondomain_halo(region)
-                # lonmax1,lonmin2,latmax1,latmin2 = regiondomain_halo(region_table[region].child)
-                # cnd_lon = ((lonc>=lonmin1)&(lonc<=lonmax1))|((lonc>=lonmin2)&(lonc<=lonmax2))
-                # cnd_lat = ((latc>=latmin1)&(latc<=latmax1))|((latc>=latmin2)&(latc<=latmax2))
-                # cnd_nohalo = cnd_lon&cnd_lat
-                # MVO: 2026-04-29, Guillaume confirmed that removal of "inner" part
-                #                  is handled within TM5
-                lonmin,lonmax,latmin,latmax = regiondomain_halo(region)
-                cnd_lon = (lonc>=lonmin)&(lonc<=lonmax)
-                cnd_lat = (latc>=latmin)&(latc<=latmax)
-                cnd_nohalo = cnd_lon&cnd_lat
-                # print(f"@{region},{day.strftime('%Y-%m-%d')}, nfootp prior/post filtering = " \
-                #       f"{nfootp}/{np.count_nonzero(cnd_nohalo)}")
-            elif region=='glb600x400':
-                #-- initial approach:
-                #   (1) restrict to halo corrected domain of region
-                #   (2) remove parts from the inner-most zoom domain
-                #
-                # lonmin1,lonmax2,latmin1,latmax2 = regiondomain_halo(region)
-                # lonmax1,lonmin2,latmax1,latmin2 = regiondomain_halo(region_table[region].child)
-                # cnd_lon = ((lonc>=lonmin1)&(lonc<=lonmax1))|((lonc>=lonmin2)&(lonc<=lonmax2))
-                # cnd_lat = ((latc>=latmin1)&(latc<=latmax1))|((latc>=latmin2)&(latc<=latmax2))
-                # cnd_nohalo = cnd_lon&cnd_lat
-                # print(f"@{region},{day.strftime('%Y-%m-%d')}, nfootp prior/post filtering = " \
-                #       f"{nfootp}/{np.count_nonzero(cnd_nohalo)}")
-                # MVO: 2026-04-29, Guillaume confirmed that removal of "inner" part
-                #                  is handled within TM5
-                # => for the global domain there are no halos to correct!
-                # => all collected footprints are taken
-                cnd_nohalo = np.full(len(ilat), True)
-            ##
-            idxs_nohalo = np.where(cnd_nohalo)
-            ilat = ilat[idxs_nohalo]
-            ilon = ilon[idxs_nohalo]
-            itrac = itrac[idxs_nohalo]
-            values = values[idxs_nohalo]
-            lonc = lonc[idxs_nohalo]
-            latc = latc[idxs_nohalo]
-            nfootp = len(ilat)
-            # #
-            # #-- cbw_207 at second position
-            # #
-            # icbw = np.where(itrac==1)
-            # vcbw = values[icbw]
-            # msg = f"DEBUG@cbw_207, {day.strftime('%Y-%m-%d')}, {region}: " \
-            #     f"values min/mean/max = {vcbw.min()}/{vcbw.mean()}/{vcbw.max()}"
-            # print(msg)
-            # if iday==0:
-            #     msg = f"@{region},{day.strftime('%Y-%m-%d')}: after halo-correction " \
-            #         f"remaining footprints={len(idxs_nohalo[0])}"
-            #     print(msg)
-
-            footprints['ilat'].extend(ilat)
-            footprints['ilon'].extend(ilon)
-            footprints['latc'].extend(latc)
-            footprints['lonc'].extend(lonc)
-            footprints['itime'].extend([iday] * nfootp)
-            footprints['value'].extend(values)
-            footprints['itrac'].extend(itrac)
-            footprints['region'].extend([region] * nfootp)
+                footprints['ilat'].extend(ilat)
+                footprints['ilon'].extend(ilon)
+                footprints['latc'].extend(latc)
+                footprints['lonc'].extend(lonc)
+                footprints['itime'].extend([iday] * nfootp)
+                footprints['value'].extend(values)
+                footprints['itrac'].extend(itrac)
+                footprints['region'].extend([region] * nfootp)
+    #
+    #--
+    #
+    nfootp_tot = len(footprints['ilat'])
+    msg = f"...@{outpath.name}, overall collected {nfootp_tot} footprint sensitivities."
+    logger.debug(msg)
+    #
+    #-- turn into dataframe
+    #
     footprints = DataFrame.from_dict(footprints)
-    # msg = f"...overall #footprints={len(footprints)}"
-    # logger.info(msg)
+
     return SimpleNamespace(data=footprints, days=emisday_range, regions=region_list, obsids=tracer)
 
 
@@ -1017,7 +1026,7 @@ def emisvector_to_global1x1( filepath_emis : str | Path, varname : str = 'emissi
 #--  to be removed soon
 #
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-def tm5rundir_emissions1D( outpath : str | Path, trange : date_range = None, host : str = 'cosmos') -> SimpleNamespace:
+def tm5rundir_emissions1D( outpath : str | Path, trange : DatetimeIndex = None, host : str = 'cosmos') -> SimpleNamespace:
     """
     """
     yamlfile = Path(outpath) / 'tm5.yaml'
