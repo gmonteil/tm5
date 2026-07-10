@@ -1021,12 +1021,12 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
         #         buf[obs,njaccol] and buf[obs,emismon,ng],
         #         Eventually we need to select which variant is best for inversion environment
         #
-        curjac_da = xr.DataArray(
-            zeros((curnobs,njaccol)),
-            dims=('obs','njaccol'),
-            coords={'obs':curjacdaily_da.obs, 'njaccol': np.arange(njaccol)},
-            attrs = {'units': sensitivity_units}
-            )
+        # curjac_da = xr.DataArray(
+        #     zeros((curnobs,njaccol)),
+        #     dims=('obs','njaccol'),
+        #     coords={'obs':curjacdaily_da.obs, 'njaccol': np.arange(njaccol)},
+        #     attrs = {'units': sensitivity_units}
+        #     )
         curjac3D_da = xr.DataArray(
             zeros((curnobs,nemismon,ng)),
             dims=('obs','emismon','ng'),
@@ -1062,7 +1062,7 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
             #
             icolf = iemismon*ng
             icoll = icolf+ng-1
-            curjac_da.loc[dict(njaccol=slice(icolf,icoll))] = _jac_da.values
+            # curjac_da.loc[dict(njaccol=slice(icolf,icoll))] = _jac_da.values
             curjac3D_da.loc[dict(emismon=slice(curemisdayf,curemisdayl))] = _jac_da.values.reshape((curnobs,1,ng))
         #
         #--
@@ -1075,7 +1075,7 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
             obstime_1D    = input4inv.obstime_1D
             inic_array1D  = input4inv.inic_array1D
             obsmix_1D     = input4inv.obsmix_1D
-            jac_da        = curjac_da
+            # jac_da        = curjac_da
             jac3D_da      = curjac3D_da
             emis_lonc1D   = input4inv.emis_lonc1D
             emis_latc1D   = input4inv.emis_latc1D
@@ -1088,7 +1088,7 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
             obstime_1D     = np.hstack((obstime_1D, input4inv.obstime_1D))
             inic_array1D   = np.hstack((inic_array1D, input4inv.inic_array1D))
             obsmix_1D      = np.hstack((obsmix_1D, input4inv.obsmix_1D))
-            jac_da         = xr.concat([jac_da, curjac_da], dim='obs')
+            # jac_da         = xr.concat([jac_da, curjac_da], dim='obs')
             jac3D_da       = xr.concat([jac3D_da, curjac3D_da], dim='obs')
             if np.any(emis_lonc1D!=input4inv.emis_lonc1D):
                 msg = f"@{curobsdayf},imon={imon}, inconsistency in emission longitudes"
@@ -1102,12 +1102,13 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     #
     #--
     #
-    nobs, _njaccol = jac_da.shape
-    assert njaccol==_njaccol
-    msg = f"...monthly collection loop finished yields Jacobian for overall " \
-        f"{nobs} observations w.r.t. overall {njaccol} monthly emissions " \
-        f"(nemismon={nemismon},ng={ng})"
-    logger.debug(msg)
+    nobs, _nemisdays,_ng = jac3D_da.shape
+    # nobs, _njaccol = jac_da.shape
+    # assert njaccol==_njaccol
+    # msg = f"...monthly collection loop finished yields Jacobian for overall " \
+    #     f"{nobs} observations w.r.t. overall {njaccol} monthly emissions " \
+    #     f"(nemismon={nemismon},ng={ng})"
+    # logger.debug(msg)
 
     #
     #-- determine unique stations
@@ -1202,6 +1203,9 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     fp.createDimension('nobs', nobs)
     fp.createDimension('njaccol', njaccol)
     fp.createDimension('nsta', nsta)
+    fp.createDimension('ntc', 6) #-- year/mon/day/hour/minute/second for calendar type variable(s)
+    #
+    #-- longitude
     #
     ncvar = fp.createVariable('lon', 'f8', ('ng',),
                               compression='zlib', complevel=complevel)
@@ -1210,6 +1214,8 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     ncvar.comment = 'references center of grid-cell in related zoom domain'
     ncvar[:] = emis_lonc1D[:]
     #
+    #-- latitude
+    #
     ncvar = fp.createVariable('lat', 'f8', ('ng',),
                               compression='zlib', complevel=complevel)
     ncvar.long_name = 'latitude'
@@ -1217,10 +1223,14 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     ncvar.comment = 'references center of grid-cell in related zoom domain'
     ncvar[:] = emis_latc1D[:]
     #
+    #-- region identifier
+    #
     ncvar = fp.createVariable('region', emis_reg1D.dtype, ('ng',))
     ncvar.long_name = f"emission_region_identifier"
     ncvar.units = ''
     ncvar[:] = emis_reg1D[:]
+    #
+    #-- observed concentration
     #
     ncvar = fp.createVariable('obs', 'f8', ('nobs',),
                               compression='zlib', complevel=complevel)
@@ -1228,21 +1238,34 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     ncvar.long_name = f"observed CH4 concentration"
     ncvar.units = 'ppb'
     #
+    #-- initial concentration
+    #
     ncvar = fp.createVariable('iniconc', 'f8', ('nobs',),
                               compression='zlib', complevel=complevel)
     ncvar[:] = inic_array1D[:]
     ncvar.long_name = f"initial_concentration"
     ncvar.units = 'ppb'
     #
+    #-- station identifier (per observation)
+    #
     ncvar = fp.createVariable('station', str, ('nobs',) )
     ncvar[:] = stationid_1D[:]
     ncvar.long_name = 'station_identifier'
     ncvar.units = ''
     #
+    #-- observational time points
+    #
     ncvar = fp.createVariable('obstime', str, ('nobs',) )
     ncvar[:] = np.array([ _.strftime('%Y%m%dT%H%M%S') for _ in obstime_1D ])
-    # for iobs in range(nobs):
-    #     ncvar[iobs] = obstime_1D[iobs].strftime('%Y%m%dT%H')
+    ncvar.long_name = 'time_of_observation'
+    ncvar.units = ''
+    #
+    #-- observational calendar (to ease integration in Fortran inversion environment)
+    #
+    ncvar = fp.createVariable('obs_calendar', 'i4', ('nobs','ntc'),
+                              compression='zlib', complevel=complevel)
+    for iobs,_obst in enumerate(obstime_1D):
+        ncvar[iobs,:] = [_obst.year,_obst.month,_obst.day,_obst.hour,_obst.minute,_obst.second]
     ncvar.long_name = 'time_of_observation'
     ncvar.units = ''
     #
@@ -1290,36 +1313,48 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
         ncvar.long_name = 'altitude_of_observation'
         ncvar.units = 'm'
     #
+    #-- emission month
+    #
     ncvar = fp.createVariable('emismon', str, ('nemismon',))
     ncvar.long_name = 'emission_month'
+    ncvar.units = ''
     ncvar[:] = np.array([ _.strftime('%Y%m%d') for _ in emismon_range ])
     #
-    #-- 2D Jacobian dataset
+    #-- emission month (as calendar variable)
     #
-    ncvar = fp.createVariable('obs_jacobian', 'f8', ('nobs','njaccol',),
+    ncvar = fp.createVariable('emis_calendar', 'i4', ('nemismon','ntc',),
                               compression='zlib', complevel=complevel)
-    ncvar[:] = jac_da[:]
-    ncvar.units = jac_da.attrs['units']
-    ncvar.comment = f"Jacobian quantifies the sensitivity of concentration at " \
-        f"observed times and locations w.r.t. to monthly emissions."
-    #-- 2D Jacobian ancillary information for columns
-    #> NOTE: compression seems  problematic for 'str' typed variable
-    ncvar = fp.createVariable('jaccol_emismon', jaccol_emismon.dtype, ('njaccol',))
-    ncvar[:] = jaccol_emismon[:]
-    ncvar.long_name = "emission_month_of_column_in_jacobian"
+    for imon,_mon in enumerate(emismon_range):
+        ncvar[imon,:] = [_mon.year,_mon.month,_mon.day,0,0,0]
+    ncvar.long_name = 'emission_month_calendar'
     ncvar.units = ''
-    ncvar = fp.createVariable('jaccol_gridcell_index', jaccol_emisgc.dtype, ('njaccol',),
-                              compression='zlib', complevel=complevel)
-    ncvar[:] = jaccol_emisgc[:]
-    ncvar.long_name = "0-based index of emission grid-cell of column in Jacobian"
-    ncvar.units = ''
+    # #
+    # #-- 2D Jacobian dataset
+    # #
+    # ncvar = fp.createVariable('obs_jacobian2D', 'f8', ('nobs','njaccol',),
+    #                           compression='zlib', complevel=complevel)
+    # ncvar[:] = jac_da[:]
+    # ncvar.units = jac_da.attrs['units']
+    # ncvar.comment = f"Jacobian quantifies the sensitivity of concentration at " \
+    #     f"observed times and locations w.r.t. to monthly emissions."
+    # #-- 2D Jacobian ancillary information for columns
+    # #> NOTE: compression seems  problematic for 'str' typed variable
+    # ncvar = fp.createVariable('jaccol_emismon', jaccol_emismon.dtype, ('njaccol',))
+    # ncvar[:] = jaccol_emismon[:]
+    # ncvar.long_name = "emission_month_of_column_in_jacobian"
+    # ncvar.units = ''
+    # ncvar = fp.createVariable('jaccol_gridcell_index', jaccol_emisgc.dtype, ('njaccol',),
+    #                           compression='zlib', complevel=complevel)
+    # ncvar[:] = jaccol_emisgc[:]
+    # ncvar.long_name = "0-based index of emission grid-cell of column in Jacobian"
+    # ncvar.units = ''
     #
     #-- 3D Jabobian dataset
     #
-    ncvar = fp.createVariable('obs_jacobian3D', 'f8', ('nobs','nemismon','ng',),
+    ncvar = fp.createVariable('obs_jacobian', 'f8', ('nobs','nemismon','ng',),
                               compression='zlib', complevel=complevel)
     ncvar[:] = jac3D_da[:]
-    ncvar.units = jac_da.attrs['units']
+    ncvar.units = jac3D_da.attrs['units']
     ncvar.comment = f"Jacobian quantifies the sensitivity of concentration at " \
         f"observed times and locations w.r.t. to monthly emissions."
     #
@@ -1446,32 +1481,42 @@ def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
         ncvar[:] = time_data[:]
     else:
         pass
+    #
     #-- longitude
+    #
     ncvar = fp.createVariable('lon', 'f8', ('ng',),
                               compression='zlib', complevel=complevel)
     ncvar.long_name = 'longitude'
     ncvar.units = 'degrees_east'
     ncvar.comment = 'references center of grid-cell in underlying domain'
     ncvar[:] = reginfo.lonc1D
+    #
     #-- latitude
+    #
     ncvar = fp.createVariable('lat', 'f8', ('ng',),
                               compression='zlib', complevel=complevel)
     ncvar.long_name = 'latitude'
     ncvar.units = 'degrees_north'
     ncvar.comment = 'references center of grid-cell in underlying domain'
     ncvar[:] = reginfo.latc1D
+    #
     #-- area
+    #
     ncvar = fp.createVariable('area', 'f8', ('ng',),
                               compression='zlib', complevel=complevel)
     ncvar.long_name = 'gridcell_area'
     ncvar.units = 'm2'
     ncvar[:] = reginfo.area1D
+    #
     #-- region identifier
+    #
     ncvar = fp.createVariable('region', reginfo.reg1D.dtype, ('ng',))
     ncvar.long_name = f"gridcell_region_identifier"
     ncvar.units = ''
     ncvar[:] = reginfo.reg1D[:]
+    #
     #-- emission variable
+    #
     if month==None:
         ncvar = fp.createVariable('emission', 'f8', ('nmon','ng'),
                                   compression='zlib', complevel=complevel)
