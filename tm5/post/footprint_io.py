@@ -494,8 +494,8 @@ def tm5rundir_jacobian3D( outpath : str | Path, emisday_range : DatetimeIndex|No
             #-- read adjoint sensitivities w.r.t. to current emissions day
             #
             ds = Dataset(fname, 'r')
-            msg = f"@{emisday}/{region} reading from ***{str(fname)}***"
-            logger.debug(msg)
+            # msg = f"@{emisday}/{region} reading from ***{str(fname)}***"
+            # logger.debug(msg)
             #
             #-- adjoint sensitivities are stored as 1D arrays
             #
