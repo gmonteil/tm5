@@ -402,6 +402,231 @@ def tm5rundir_jacobian3D( outpath : str | Path, emisday_range : DatetimeIndex|No
         msg = f"options remove_halo and clip_child cannot be active at the same time"
         raise NotImplementedError(msg)
     #
+    #-- setup region table
+    #
+    if len(region_table)==0:
+        msg = f"...initialise region table"
+        logger.info(msg)
+        _init_region_table()
+    #
+    #-- for now we handle exactly two configurations
+    #   - ['glb600x400', 'eur300x200', 'gns100x100']
+    #   - ['glb600x400',]
+    #
+    expected_region_list = [ list(region_table.keys()), ['glb600x400',] ]
+    outpath = Path(outpath)
+    yamlfile = outpath / 'tm5.yaml'
+    if not yamlfile.exists():
+        msg = f"yaml configuration file ***{str(yamlfile)}*** not found on system."
+        raise FileNotFoundError(msg)
+    dconf = OmegaConf.load(yamlfile)
+    adjemis_dir = outpath / 'adjemis' 
+    #
+    #-- determine regions and spatial information as 1D vector
+    #
+    #
+    region_list = dconf.run.regions
+    if not region_list in expected_region_list:
+        msg = f"@{outpath}, unexpected region configuration -->{region_list}<--, " \
+            f"supported are only ==>{expected_region_list}<=="
+        raise RuntimeError(msg)
+    domain1D_info = regions1D_info(region_list, remove_halo=remove_halo, clip_child=clip_child)
+    ng     = domain1D_info.ng
+    lonc1D = domain1D_info.lonc1D
+    latc1D = domain1D_info.latc1D
+    reg1D  = domain1D_info.reg1D
+    #
+    #-- determine temporal domain of emissions
+    #
+    if emisday_range is None:
+        emisday_range = date_range(dconf.run.start, dconf.run.end, freq='1D')
+    nemisday = len(emisday_range)
+    #
+    #-- get name of tracer/obsids
+    #
+    # MVO-ATTENTION::
+    # - for the zoom footprint simulations the ingoing obs file
+    #   contained always *all* stations - also in case that no actual observation
+    #   was available for a particular day.
+    # - Thus, for the proper indexing below, we *MUST NOT* drop
+    #   those here!
+    #   
+    obs_table = tm5rundir_obstable(outpath, drop_missing_value=False)
+    allobsid_list = list(obs_table.index)
+    if obsid==None:
+        nobs = len(obs_table)
+        itrac_list = np.arange(nobs)
+        footp_obsids = allobsid_list
+    else:
+        if type(obsid)==str:
+            obsid = [obsid,]
+        nobs = len(obsid)
+        itrac_list = [ allobsid_list.index(_) for _ in obsid ]
+        footp_obsids = obsid
+    msg = f"...preparing Jacobian for emissions for " \
+        f"{nobs} observation locations ({footp_obsids}), " \
+        f"{nemisday} emission days and ng={ng} emission grid-cells (per day)."
+    logger.debug(msg)
+    #
+    #-- initialise Jacobian to zero
+    #
+    jacobian3D = xr.DataArray(
+        zeros((nobs,nemisday,ng)),
+        dims=('obs','emisday','ng'),
+        coords = {'obs': footp_obsids, 'emisday':emisday_range, 'ng':np.arange(ng)},
+        attrs = {'units': 'ppb/(kgCH4/cell/s)'}
+        )
+    #
+    #-- loop over adjoint emissions files
+    #
+    for ireg,region in enumerate(region_list):
+        #
+        #--
+        #
+        grid = region_table[region].grid
+        idxs_region = np.where(reg1D==region)[0] #-- indices of current region in concatenated 1D vector
+        jacvalues2D = zeros((grid.nlat,grid.nlon))
+        for iday,emisday in enumerate(emisday_range):
+            fname = adjemis_dir / emisday.strftime(f'adjemis.{region}.%Y%m%d.nc')
+            if not fname.exists():
+                continue
+            #
+            #-- read adjoint sensitivities w.r.t. to current emissions day
+            #
+            ds = Dataset(fname, 'r')
+            msg = f"@{emisday}/{region} reading from ***{str(fname)}***"
+            logger.debug(msg)
+            #
+            #-- adjoint sensitivities are stored as 1D arrays
+            #
+            ilat = ds['ilat'][:].data
+            ilon = ds['ilon'][:].data
+            itrac = ds['itrac'][:].data
+            values = ds['values'][:].data
+            #
+            #-- lonc/latc are initially (only) for the grid-cells of the domain
+            #
+            lonc = ds['lon'][:].data
+            latc = ds['lat'][:].data
+            #
+            #-- now determine lonc/latc for each of the sensitivities
+            #
+            lonc = lonc[ilon]
+            latc = latc[ilat]
+            # nfootp = len(ilat)
+            # msg = f"@{emisday}/{region}: len(lonc)={len(lonc)}, len(latc)={len(latc)}"
+            # print(msg)
+            # msg = f"@{region},{emisday.strftime('%Y-%m-%d')}: nfootp={nfootp}, " \
+            #       f"ilon min/max={min(ilon)}/{max(ilon)}, " \
+            #       f"ilat min/max={min(ilat)}/{max(ilat)}, "
+            # print(msg)
+            #
+            #-- HALO correction for inner domains
+            #
+            if region=='gns100x100' or region=='eur300x200':
+                #-- initial approach:
+                #   (1) restrict to halo corrected domain of region
+                #   (2) remove parts from the inner-most zoom domain
+                #
+                # lonmin1,lonmax2,latmin1,latmax2 = regiondomain_halo(region)
+                # lonmax1,lonmin2,latmax1,latmin2 = regiondomain_halo(region_table[region].child)
+                # cnd_lon = ((lonc>=lonmin1)&(lonc<=lonmax1))|((lonc>=lonmin2)&(lonc<=lonmax2))
+                # cnd_lat = ((latc>=latmin1)&(latc<=latmax1))|((latc>=latmin2)&(latc<=latmax2))
+                # cnd_nohalo = cnd_lon&cnd_lat
+                # MVO: 2026-04-29, Guillaume confirmed that removal of "inner" part
+                #                  is handled within TM5
+                #
+                #- on zonal and 
+                #
+                lonmin,lonmax,latmin,latmax = regiondomain_halo(region)
+                cnd_lon = (lonc>=lonmin)&(lonc<=lonmax)
+                cnd_lat = (latc>=latmin)&(latc<=latmax)
+                cnd_nohalo = cnd_lon&cnd_lat
+                idxs_nohalo = np.where(cnd_nohalo)
+                ilat   = ilat[idxs_nohalo]
+                ilon   = ilon[idxs_nohalo]
+                itrac  = itrac[idxs_nohalo]
+                values = values[idxs_nohalo]
+                lonc   = lonc[idxs_nohalo]
+                latc   = latc[idxs_nohalo]
+            elif region=='glb600x400':
+                #
+                #-- global domain does *NOT* require halo correction
+                pass
+            #
+            #-- loop over observational locations
+            #   NOTE: these are identified *only* by the tracer index in the adjoint emissions file
+            #
+            for obs_cur,itrac_cur in zip(footp_obsids,itrac_list):
+                #
+                #-- indices for current obs location
+                #
+                idxs_trac_cur = np.where(itrac==itrac_cur)
+                #
+                #--
+                #
+                ilat_cur = ilat[idxs_trac_cur]
+                ilon_cur = ilon[idxs_trac_cur]
+                values_cur = values[idxs_trac_cur]
+                #
+                #-- sensitivities as 2D field
+                #   - these quantify the change of CH4 concentration [ppb]
+                #     at the current observational day and current observational location
+                #     w.r.t. to emissions from all grid-cells in the current region
+                #     [kgCH4/cell/s]
+                #
+                jacvalues2D[:] = 0.
+                jacvalues2D[ilat_cur,ilon_cur] = values_cur
+                #--
+                jacvalues = jacvalues2D.ravel()
+                msk = None
+                if remove_halo and clip_child:
+                    msk = region_table[region].nohalo_mask & region_table[region].usemask
+                elif remove_halo:
+                    msk = region_table[region].nohalo_mask
+                elif clip_child:
+                    msk = region_table[region].usemask
+                if not msk is None:
+                    jacvalues = jacvalues[msk]
+                #
+                #-- insert values at correct position
+                #
+                #
+                jacobian3D.loc[dict(obs=obs_cur,emisday=emisday,ng=idxs_region)] = jacvalues[:]
+            ds.close()
+    #
+    #--
+    #
+    return SimpleNamespace(jac3D=jacobian3D, days=list(emisday_range), obsids=footp_obsids,
+                           reg1D=reg1D, lonc1D=lonc1D, latc1D=latc1D)
+
+
+def tm5rundir_jacobian3D_old( outpath : str | Path, emisday_range : DatetimeIndex|None = None,
+                              obsid : str|list|None = None,
+                              remove_halo : bool = True, clip_child : bool = False ) -> NDArray:
+    """
+    Reads in the sensitivity (or Jacobian) from ***one single TM5 adjoint run***,
+    which provides the sensitivities of CH4 concentrations (at multiple stations) with respect
+    to all daily emissions from simulation start to the observational day.
+    
+    We store these sensitivities conceptionally in an array (nobs,nemis),
+    where nobs quantifies the number of stations, while emission days *and* emission grid-cells
+    are combined into a single 1D vector of 'nemis' elements.
+    Ordering of emission time and location in this 1D vector is as follows
+    - day1
+      - reg1 (flattened)
+      - reg2 (flattened)
+      - reg3 (flattened)
+    - day2
+      - reg1 (flattened)
+      .
+      .
+      .
+    """
+    if remove_halo and clip_child:
+        msg = f"options remove_halo and clip_child cannot be active at the same time"
+        raise NotImplementedError(msg)
+    #
     #-- load footprints into dataframe, plus ancillary information
     #
     fpinfo = tm5_fitic_adjoint_corrected_halos(outpath, emisday_range)
@@ -413,6 +638,7 @@ def tm5rundir_jacobian3D( outpath : str | Path, emisday_range : DatetimeIndex|No
     nemisday = len(emisday_range)
     assert len(days)==len(emisday_range) #nemisday = len(days)
     msg = f"...origin footprint data read, nfootp={len(footp_df)} for nobs/nemisday = {nobs}/{nemisday}"
+
     # msg = f"...after tm5_fitic_adjoint_corrected_halos obsids -->{obsids}<--"
     # logger.debug(msg)
     # ### DEBUGGING
@@ -589,8 +815,8 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, emisday_range : Datet
     #
     footprints = { 'ilat':[],
                    'ilon':[],
-                   'latc':[],  #-- only for diagnostics
-                   'lonc':[],  #-- only for diagnostics
+                   'latc':[],  #-- in output only for diagnostics
+                   'lonc':[],  #-- in output only for diagnostics
                    'itime':[],
                    'value':[],
                    'region':[],
@@ -607,8 +833,8 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, emisday_range : Datet
             if not fname.exists():
                 continue
             with Dataset(fname, 'r') as ds:
-                # msg = f"@{day}/{region} reading from ***{str(fname)}***"
-                # logger.debug(msg)
+                msg = f"@{day}/{region} reading from ***{str(fname)}***"
+                logger.debug(msg)
                 #
                 #-- adjoint sensitivities are stored as 1D arrays
                 #

@@ -29,6 +29,7 @@ from tm5.post.footprint_io import region_table, _init_region_table
 from tm5.post.footprint_io import tm5rundir_obstable, tm5rundir_iniconc_1obs
 from tm5.post.footprint_io import regions1D_info
 from tm5.post.footprint_io import tm5rundir_jacobian3D
+from tm5.post.footprint_io import tm5rundir_jacobian3D_old, tm5_fitic_adjoint_corrected_halos
 from tm5.post.footprint_io import tm5rundir_emissions2D, tm5emisdir_load_emissions2D
 from tm5.post.footprint_io import jacobian_redistribute_glb6x4_to_avengers_zoom
 from tm5.post.plot_util import cnorm_set
@@ -416,6 +417,9 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
         #   - current obsday, but possibly restricted to selected stations
         #   - w.r.t. to emissions in the selected range
         #
+        # jac_info = tm5rundir_jacobian3D_old(rundir, emisday_range=emisday_range,
+        #                                 obsid=list(obsinfo_curday.index),
+        #                                 remove_halo=remove_halo, clip_child=False)
         jac_info = tm5rundir_jacobian3D(rundir, emisday_range=emisday_range,
                                         obsid=list(obsinfo_curday.index),
                                         remove_halo=remove_halo, clip_child=False)
@@ -542,6 +546,30 @@ def subcmd_test_jacobianfwd_1day(args : ArgumentNamespace) -> None:
     csim = df_obs.loc[:,'mix'].sum()
     print(f"csim={csim}")
 
+
+def subcmd_debug_footprint_io(args):
+    tm5rundir = args.tm5rundir
+    if args.emisday_firstlast!=None:
+        emisdayf,emisdayl = args.emisday_firstlast
+        emisday_range = date_range(emisdayf, emisdayl, freq='1d')
+    else:
+        emisday_range = None
+    #
+    #--
+    #
+    obs_table = tm5rundir_obstable(tm5rundir, drop_missing_value=False)
+    obsid = ['cbw_207','cra_60',]
+    print(obs_table.head())
+    x = obs_table.loc[obsid,:]
+    print(x)
+    footprint_info = tm5rundir_jacobian3D_update(tm5rundir, emisday_range, obsid=obsid,
+                                                 remove_halo=True)
+    sys.exit(0)
+    #
+    #--
+    #
+    footprint_info = tm5_fitic_adjoint_corrected_halos(tm5rundir, emisday_range=emisday_range)
+    
 
 def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     """Updated approach for preparation of inputs for Fortran-based inversion environment
@@ -2000,6 +2028,21 @@ sparser.add_argument('--outname',
                     help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
 
 #
+#--
+#
+sparser = subparsers.add_parser('debug_footprint_io',
+                                help="""some testing and inspection of the lower level footprint I/O""")
+sparser.add_argument('tm5rundir',
+                     help="""top-level directory of TM5 adjoint run for footprint creation.""")
+sparser.add_argument('--emisday_firstlast',
+                     metavar=('tstart','tend'),
+                     nargs=2,
+                     type=Timestamp,
+                     help="""potentially restrict to footprint on certain emission days""")
+sparser.add_argument('--outname',
+                    help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
+
+#
 #--       build_jacobian_period_obs1D
 #
 sparser = subparsers.add_parser('build_jacobian_period_obs1D',
@@ -2210,8 +2253,12 @@ sparser.add_argument('--outname',
 def main(args):
 
     ts = Timestamp.utcnow()
+    
     if args.subcmds=='test_jacobianfwd_1day':
         subcmd_test_jacobianfwd_1day(args)
+
+    if args.subcmds=='debug_footprint_io':
+        subcmd_debug_footprint_io(args)
 
     if args.subcmds=='build_jacobian_period_obs1D':
         subcmd_build_jacobian_period_obs1D(args)
