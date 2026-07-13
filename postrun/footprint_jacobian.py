@@ -929,7 +929,7 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     topdir = args.outpath_tm5
     domain = args.domain
     obsid = args.obsid
-    month_firstlast = args.month_firstlast
+    obsmon_firstlast = args.obsmon_firstlast
     emisday_first = args.emisday_first
     difdeg_max = args.difdeg_max
     difalt_max = args.difalt_max
@@ -948,18 +948,17 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     reginfo = regions1D_info(region_list, remove_halo=args.remove_halo)
     ng = reginfo.ng
     #
-    #--
+    #-- range of observation months
     #
-    monf,monl = month_firstlast
-    monf = Timestamp(f"{obsyear}{monf:02d}01")
-    monl = Timestamp(f"{obsyear}{monl:02d}01")
-    obsmon_range = date_range(monf, monl, freq='MS')
+    monf,monl = obsmon_firstlast
+    #- normalise to day1 in month
+    obsdayf = monf.replace(day=1)
+    obsdayl = (monl.replace(day=1) + Timedelta(days=32)).replace(day=1) - Timedelta(days=1)
+    obsmon_range = date_range(obsdayf, obsdayl, freq='MS')
     nobsmon = len(obsmon_range)
     msg = f"obsmon_range -->{obsmon_range}<--"
     logger.debug(msg)
-    obsdayf = monf
-    obsdayl = (monl + Timedelta(days=32)).replace(day=1) - Timedelta(days=1)
-    obsday_range = date_range(obsdayf, obsdayl, freq='1d')
+    obsday_range = date_range(obsdayf, obsdayl, freq='1D')
     nobsday = len(obsday_range)
     #
     #-- 
@@ -968,7 +967,7 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
         msg = f"...first day of emissions must be on the first day of month, " \
             f"but got -->{emisday_first}<--"
         raise RuntimeError(msg)
-    emismon_range = date_range(emisday_first, monl, freq='MS')
+    emismon_range = date_range(emisday_first, obsdayl, freq='MS')
     nemismon = len(emismon_range)
     msg = f"emismon_range -->{emismon_range}<--"
     logger.debug(msg)
@@ -996,10 +995,10 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     #
     for imon,curobsdayf in enumerate(obsmon_range):
         curobsdayl = (curobsdayf + Timedelta(days=32)).replace(day=1) - Timedelta(days=1)
-        curobsday_range = date_range(curobsdayf, curobsdayl, freq='1d')
+        curobsday_range = date_range(curobsdayf, curobsdayl, freq='1D')
         curemisdayf = emisday_first
         curemisdayl = curobsdayl
-        curemisday_range = date_range(curemisdayf, curemisdayl, freq='1d')
+        curemisday_range = date_range(curemisdayf, curemisdayl, freq='1D')
         nemisday = len(curemisday_range)
         msg = f"start collection for month starting on {curobsdayf.strftime('%Y-%m-%d')})"
         logger.info(msg)
@@ -2188,12 +2187,11 @@ sparser.add_argument('domain',
 sparser.add_argument('--obsid',
                      nargs='+',
                      help="""select one single observational location (default: %(default)s).""")
-sparser.add_argument('--month_firstlast',
+sparser.add_argument('--obsmon_firstlast',
                      nargs=2,
-                     type=int,
-                     choices=list(range(1,13)),
-                     default=[1,2],
-                     help="""selected months (in 2021) (default: %(default)s).""")
+                     type=Timestamp,
+                     default=[Timestamp('2021-01-01'),Timestamp('2021-02-28')],
+                     help="""selected temporal range of observation months (default: %(default)s), from the specied timestamps only the year/month will actually been used.""")
 sparser.add_argument('--emisday_first',
                      type=Timestamp,
                      default=[Timestamp("20210101")],
