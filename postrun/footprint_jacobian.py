@@ -165,7 +165,11 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
         dirday = obsday + Timedelta(days=1)
         dirpattern = dirday.strftime(f"footprints_{domain_tag}_*%Y%m%d")
         cur_rundir_list = sorted(topdir.glob(dirpattern))
-        if len(cur_rundir_list)!=1:
+        if len(cur_rundir_list)==0:
+            msg = f"@obsday={obsday}, now TM5 run directory found " \
+                f"(which may happen if there were not observations on that day)."
+            logger.warn(msg)
+        elif len(cur_rundir_list)>1:
             msg = f"@obsday={obsday}, expected single TM5 run directory only, but " \
                 f"found ==>{cur_rundir_list}<=="
             raise RuntimeError(msg)
