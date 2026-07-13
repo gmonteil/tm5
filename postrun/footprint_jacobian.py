@@ -13,7 +13,7 @@ from pandas import Timestamp, Timedelta, concat
 import xarray as xr
 import numpy as np
 from numpy import zeros, tile
-from netCDF4 import Dataset
+from netCDF4 import Dataset, stringtochar
 import xesmf
 from types import SimpleNamespace
 import matplotlib as mpl
@@ -1197,6 +1197,7 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     #
     #-- create dimensions
     #
+    n_strlen = 32
     fp = Dataset(outname, 'w')
     fp.createDimension('ng', ng)
     fp.createDimension('nemismon', nemismon)
@@ -1204,6 +1205,7 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     fp.createDimension('njaccol', njaccol)
     fp.createDimension('nsta', nsta)
     fp.createDimension('ntc', 6) #-- year/mon/day/hour/minute/second for calendar type variable(s)
+    fp.createDimension('nstrlen', n_strlen)
     #
     #-- longitude
     #
@@ -1230,6 +1232,15 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     ncvar.units = ''
     ncvar[:] = emis_reg1D[:]
     #
+    #-- region identifier
+    #
+    ncvar = fp.createVariable('region_ftn', 'S1', ('ng','nstrlen',))
+    ncvar.long_name = f"emission_region_identifier"
+    ncvar.comment = f"region identifer in a format which is suitable " \
+        f"for Fortran based I/O"
+    ncvar.units = ''
+    ncvar[:] = stringtochar(emis_reg1D[:], n_strlen=n_strlen)
+    #
     #-- observed concentration
     #
     ncvar = fp.createVariable('obs', 'f8', ('nobs',),
@@ -1252,6 +1263,13 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     ncvar[:] = stationid_1D[:]
     ncvar.long_name = 'station_identifier'
     ncvar.units = ''
+    ncvar = fp.createVariable('station_ftn', 'S1', ('nobs','nstrlen',),
+                              compression='zlib', complevel=complevel)
+    ncvar[:] = stringtochar(stationid_1D[:], n_strlen=n_strlen)
+    ncvar.long_name = 'station_identifier'
+    ncvar.comment = f"station identifier in a format which is suitable " \
+        f"for Fortran based I/O"
+    ncvar.units = ''
     #
     #-- observational time points
     #
@@ -1268,6 +1286,8 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
         ncvar[iobs,:] = [_obst.year,_obst.month,_obst.day,_obst.hour,_obst.minute,_obst.second]
     ncvar.long_name = 'time_of_observation'
     ncvar.units = ''
+    ncvar.comment = f"observational time points in a format which is suitable " \
+        f"for Fortran based I/O"
     #
     #-- unique list of stations
     #
@@ -1276,6 +1296,14 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     ncvar.long_name = f"station_identifier_list"
     ncvar.units = ''
     ncvar.comment = f"Comprises the overall list of stations. Note, that there may be no observations for a station on certain day(s)."
+    ncvar = fp.createVariable('station_id_ftn', 'S1', ('nsta','nstrlen',),
+                              compression='zlib', complevel=complevel)
+    ncvar[:] = stringtochar(station_list[:], n_strlen=n_strlen)
+    ncvar.long_name = 'station_identifier'
+    ncvar.comment = f"station identifier in a format which is suitable " \
+        f"for Fortran based I/O"
+    ncvar.units = ''
+    
     if stacoords_per_sta:
         #-- longitude
         ncvar = fp.createVariable('station_lon', 'f8', ('nsta',))
@@ -1322,11 +1350,13 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     #
     #-- emission month (as calendar variable)
     #
-    ncvar = fp.createVariable('emis_calendar', 'i4', ('nemismon','ntc',),
+    ncvar = fp.createVariable('emismon_calendar', 'i4', ('nemismon','ntc',),
                               compression='zlib', complevel=complevel)
     for imon,_mon in enumerate(emismon_range):
         ncvar[imon,:] = [_mon.year,_mon.month,_mon.day,0,0,0]
     ncvar.long_name = 'emission_month_calendar'
+    ncvar.comment = f"emission month information in a format which is suitable " \
+        f"for Fortran based I/O"
     ncvar.units = ''
     # #
     # #-- 2D Jacobian dataset
