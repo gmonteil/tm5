@@ -169,6 +169,7 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
             msg = f"@obsday={obsday}, now TM5 run directory found " \
                 f"(which may happen if there were not observations on that day)."
             logger.warning(msg)
+            continue
         elif len(cur_rundir_list)>1:
             msg = f"@obsday={obsday}, expected single TM5 run directory only, but " \
                 f"found ==>{cur_rundir_list}<=="
