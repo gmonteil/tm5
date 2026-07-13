@@ -168,7 +168,7 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
         if len(cur_rundir_list)==0:
             msg = f"@obsday={obsday}, now TM5 run directory found " \
                 f"(which may happen if there were not observations on that day)."
-            logger.warn(msg)
+            logger.warning(msg)
         elif len(cur_rundir_list)>1:
             msg = f"@obsday={obsday}, expected single TM5 run directory only, but " \
                 f"found ==>{cur_rundir_list}<=="
@@ -933,7 +933,6 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     emisday_first = args.emisday_first
     difdeg_max = args.difdeg_max
     difalt_max = args.difalt_max
-    obsyear = args.__dict__.get('obsyear', 2021) #-- FIT-IC currently restricted to 2021 observations
     complevel = args.__dict__.get('complevel',4)
     #
     #--
