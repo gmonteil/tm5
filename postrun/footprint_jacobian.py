@@ -1092,7 +1092,7 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     #--
     #
     nobs, _nemisdays,_ng = jac3D_da.shape
-    msg = f"...Jacobian array created (dimensions={jac3D_da.dimensions}, shape={jac3D_da.shape})."
+    msg = f"...Jacobian array created (dimensions={jac3D_da.dims}, shape={jac3D_da.shape})."
     logger.debug(msg)
     #
     #-- re-distribute global flask Jacobian (which has been computed *only* on global 6x4 grid)
