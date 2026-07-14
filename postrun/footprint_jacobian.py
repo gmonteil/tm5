@@ -695,7 +695,7 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
         #
         #-- extract the relevant bits
         #
-        ojac_out = jacobian_redistributed.jacobian
+        ojac_out = jacobian_redistributed.jacobian.values
         _, ng = ojac_out.shape #-- update number of grid-cells (!)
         emis_lonc1D = jacobian_redistributed.lonc1D
         emis_latc1D = jacobian_redistributed.latc1D
@@ -1112,7 +1112,38 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     #     f"{nobs} observations w.r.t. overall {njaccol} monthly emissions " \
     #     f"(nemismon={nemismon},ng={ng})"
     # logger.debug(msg)
-
+    #
+    #-- re-distribute global flask Jacobian (which has been computed *only* on global 6x4 grid)
+    #
+    if args.domain=='glb600x400' and args.glb6x4_to_avengers_zoom:
+        #
+        #-- turn 1D spatial part of global 6x4 sensitivites to lat/lon
+        #   (nobs,ng) --> (nobs,nlat,nlon)
+        #
+        glb_6x4 = TM5Grids.from_corners(west=-180, east=180, south=-90, north=90, dlon=6, dlat=4)
+        ojac4D = jac3D_da.values.reshape(nobs,nemismon,glb_6x4.nlat,glb_6x4.nlon)
+        ojac_6x4 = xr.DataArray(
+            ojac4D,
+            dims = ('obs','emismon','lat','lon'),
+            coords = {
+                'obs': jac3D_da.obs,
+                'emismon': jac3D_da.emismon,
+                'lat': glb_6x4.latc,
+                'lon': glb_6x4.lonc
+            },
+            attrs = {
+                'units': jac3D_da.units
+            }
+        )
+        jac3D_redistributed = jacobian_redistribute_glb6x4_to_avengers_zoom(ojac_6x4)
+        jac3D_da = jac3D_redistributed.jacobian
+        emis_lonc1D = jac3D_redistributed.lonc1D
+        emis_latc1D = jac3D_redistributed.latc1D
+        emis_reg1D  = jac3D_redistributed.reg1D
+        ngout = len(emis_lonc1D)       
+    else:
+        ngout = ng
+        
     #
     #-- determine unique stations
     #
@@ -1202,10 +1233,10 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     #
     n_strlen = 32
     fp = Dataset(outname, 'w')
-    fp.createDimension('ng', ng)
+    fp.createDimension('ng', ngout)
     fp.createDimension('nemismon', nemismon)
     fp.createDimension('nobs', nobs)
-    fp.createDimension('njaccol', njaccol)
+    # fp.createDimension('njaccol', njaccol)
     fp.createDimension('nsta', nsta)
     fp.createDimension('ntc', 6) #-- year/mon/day/hour/minute/second for calendar type variable(s)
     fp.createDimension('nstrlen', n_strlen)
@@ -1423,6 +1454,9 @@ def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
     regions = args.regions
     complevel = args.__dict__.get('complevel',4)
 
+    #
+    #-- spatial configuration
+    #
     reginfo = regions1D_info(regions, remove_halo=args.remove_halo)
     ng = reginfo.ng
     msg = f"-->{regions}<-- yield overall {ng} grid-cells"

@@ -948,16 +948,28 @@ def jacobian_redistribute_glb6x4_to_avengers_zoom( ojac_6x4 : xr.DataArray, remo
     #
     #-- some consistency checks
     #
-    expected_dims  = ('nobs','lat','lon')
+    expected_dims  = [('obs','lat','lon'), ('obs','emismon','lat','lon')]
     expected_units = ['ppb/(kgCH4/cell)', 'ppb/(kgCH4/cell/s)',]
-    if ojac_6x4.dims!=expected_dims:
+    if not ojac_6x4.dims in expected_dims:
         msg = f"ojac_6x4 with unexpected dimensions -->{ojac_6x4.dims}<-- " \
             f"(expected: ==>{expected_dims}<==)"
+        raise RuntimeError(msg)
+    elif ojac_6x4.dims==expected_dims[0]:
+        dims_out = ('obs','ng')
+        idx_ng = 1
+    elif ojac_6x4.dims==expected_dims[1]:
+        dims_out = ('obs','emismon','ng')
+        idx_ng = 2
+    else:
+        msg = f"internal error when trying to set idx_ng with dimensions -->{ojac_6x4.dims}<--"
         raise RuntimeError(msg)
     if not ojac_6x4.units in expected_units:
         msg = f"ojac_6x4 with unexpected dimensions -->{ojac_6x4.units}<-- " \
             f"(expected: ==>{expected_units}<==)"
-    nobs,_nlat,_nlon = ojac_6x4.shape
+    if idx_ng==1:
+        nobs,_nlat,_nlon = ojac_6x4.shape
+    elif idx_ng==2:
+        nobs, nemismon, _nlat, _nlon = ojac_6x4.shape
     #
     #-- spatial information for the AVENGERS/FIT-IC zoom configuration
     #
@@ -1012,7 +1024,10 @@ def jacobian_redistribute_glb6x4_to_avengers_zoom( ojac_6x4 : xr.DataArray, remo
     _latmax = eur_3x2.north - glb_6x4.dlat
     ojac_6x4.loc[dict(lat=slice(_latmin,_latmax), lon=slice(_lonmin,_lonmax))] = 0.
     #--
-    ojac_6x4 = ojac_6x4.values.reshape(nobs,glb_6x4.ng)
+    if idx_ng==1:
+        ojac_6x4_array = ojac_6x4.values.reshape(nobs,glb_6x4.ng)
+    elif idx_ng==2:
+        ojac_6x4_array = ojac_6x4.values.reshape(nobs,nemismon,glb_6x4.ng)
     #
     # (eur3x2) - restrict global 3x2 to eur_3x2
     #
@@ -1032,16 +1047,24 @@ def jacobian_redistribute_glb6x4_to_avengers_zoom( ojac_6x4 : xr.DataArray, remo
     #
     # (eur3x2) - turn lat/lon into 1D vector
     #
-    ojac_3x2 = ojac_3x2.values.reshape(nobs,eur_3x2.ng)
-    #
-    # (eur3x2) - either restrict to nohalo part of domain
+    if idx_ng==1:
+        ojac_3x2_array = ojac_3x2.values.reshape(nobs,eur_3x2.ng)
+    elif idx_ng==2:
+        ojac_3x2_array = ojac_3x2.values.reshape(nobs,nemismon,eur_3x2.ng)
+    # # (eur3x2) - either restrict to nohalo part of domain
     #          - or set HALO part to zero
     #
     nohalo_mask = region_table['eur300x200'].nohalo_mask
     if remove_halo:
-        ojac_3x2 = ojac_3x2[:,nohalo_mask]
+        if idx_ng==1:
+            ojac_3x2_array = ojac_3x2_array[:,nohalo_mask]
+        elif idx_ng==2:
+            ojac_3x2_array = ojac_3x2_array[:,:,nohalo_mask]
     else:
-        ojac_3x2[:,~nohalo_mask] = 0.
+        if idx_ng==1:
+            ojac_3x2_array[:,~nohalo_mask] = 0.
+        elif idx_ng==2:
+            ojac_3x2_array[:,:,~nohalo_mask] = 0.
     #
     # (gns1x1) - restrict global 1x1 to gns1x1
     #
@@ -1053,31 +1076,50 @@ def jacobian_redistribute_glb6x4_to_avengers_zoom( ojac_6x4 : xr.DataArray, remo
     #
     # (gns1x1) - turn lat/lon into 1D vector
     #
-    ojac_1x1 = ojac_1x1.values.reshape(nobs,gns_1x1.ng)
+    if idx_ng==1:
+        ojac_1x1_array = ojac_1x1.values.reshape(nobs,gns_1x1.ng)
+    elif idx_ng==2:
+        ojac_1x1_array = ojac_1x1.values.reshape(nobs,nemismon,gns_1x1.ng)
     #
     # (gns1x1) - either restrict to nohalo part of domain
     #          - or set HALO part to zero
     #
     nohalo_mask = region_table['gns100x100'].nohalo_mask
     if remove_halo:
-        ojac_1x1 = ojac_1x1[:,nohalo_mask]
+        if idx_ng==1:
+            ojac_1x1_array = ojac_1x1_array[:,nohalo_mask]
+        elif idx_ng==2:
+            ojac_1x1_array = ojac_1x1_array[:,:,nohalo_mask]
     else:
-        ojac_1x1[:,~nohalo_mask] = 0.
+        if idx_ng==1:
+            ojac_1x1_array[:,~nohalo_mask] = 0.
+        elif idx_ng==2:
+            ojac_1x1_array[:,:,~nohalo_mask] = 0.
     #
     #-- concat domain contributions along rows
     #
-    ojac_out = np.concatenate((ojac_6x4,ojac_3x2,ojac_1x1), axis=1)
+    ojac_out = np.concatenate((ojac_6x4_array,ojac_3x2_array,ojac_1x1_array), axis=idx_ng)
     #-- update ng (number of grid-cells now extended)
-    _nobs,ng = ojac_out.shape
+    ng = ojac_out.shape[-1] #-- at last position
     if ng!=reginfo_avengers.ng:
         msg = f"extended Jacobian has shape nobs/ng = {_nobs}/{ng}, " \
             f"but ng={reginfo_avengers.ng} was expected."
         raise RuntimeError(msg)
+    ojac_out_da = xr.DataArray(
+        ojac_out,
+        dims=dims_out,
+        coords = {
+            'obs':ojac_6x4.obs,
+            'emismon':ojac_6x4.emismon,
+            'ng':np.arange(ng)
+        },
+        attrs = {'units': ojac_6x4.units}
+        )
     emis_lonc1D = reginfo_avengers.lonc1D
     emis_latc1D = reginfo_avengers.latc1D
     emis_reg1D  = reginfo_avengers.reg1D
 
-    return SimpleNamespace(jacobian=ojac_out, lonc1D=emis_lonc1D, latc1D=emis_latc1D, reg1D=emis_reg1D)
+    return SimpleNamespace(jacobian=ojac_out_da, lonc1D=emis_lonc1D, latc1D=emis_latc1D, reg1D=emis_reg1D)
 
 
 def emisvector_to_global1x1( filepath_emis : str | Path, varname : str = 'emission', tosqm : bool = False ) -> SimpleNamespace:
