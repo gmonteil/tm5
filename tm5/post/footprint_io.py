@@ -933,7 +933,7 @@ def tm5_fitic_adjoint_corrected_halos( outpath : str|Path, emisday_range : Datet
     return SimpleNamespace(data=footprints, days=emisday_range, regions=region_list, obsids=tracer)
 
 
-def jacobian_redistribute_glb6x4_to_avengers_zoom( ojac_6x4 : xr.DataArray, remove_halo : bool = True ) -> SimpleNamespace:
+def jacobian_redistribute_glb6x4_to_avengers_zoom( ojac_6x4_in : xr.DataArray, remove_halo : bool = True ) -> SimpleNamespace:
     """
     Re-distributing sensitivities (Jacobian) that were computed globally only at the
     coarse 6x4 degree resolution spatially to grid-cells as used in the AVENGERS
@@ -948,28 +948,28 @@ def jacobian_redistribute_glb6x4_to_avengers_zoom( ojac_6x4 : xr.DataArray, remo
     #
     #-- some consistency checks
     #
-    expected_dims  = [('obs','lat','lon'), ('obs','emismon','lat','lon')]
+    expected_dims  = [('obs','ng'), ('obs','emismon','ng')]
     expected_units = ['ppb/(kgCH4/cell)', 'ppb/(kgCH4/cell/s)',]
-    if not ojac_6x4.dims in expected_dims:
-        msg = f"ojac_6x4 with unexpected dimensions -->{ojac_6x4.dims}<-- " \
+    if not ojac_6x4_in.dims in expected_dims:
+        msg = f"ojac_6x4_in with unexpected dimensions -->{ojac_6x4_in.dims}<-- " \
             f"(expected: ==>{expected_dims}<==)"
         raise RuntimeError(msg)
-    elif ojac_6x4.dims==expected_dims[0]:
+    elif ojac_6x4_in.dims==expected_dims[0]:
         dims_out = ('obs','ng')
+        coords_out = { 'obs': ojac_6x4_in.obs }
+        nobs,_ng = ojac_6x4_in.shape
         idx_ng = 1
-    elif ojac_6x4.dims==expected_dims[1]:
+    elif ojac_6x4_in.dims==expected_dims[1]:
         dims_out = ('obs','emismon','ng')
+        coords_out = { 'obs': ojac_6x4_in.obs, 'emismon': ojac_6x4_in.emismon }
+        nobs, nemismon, _ng = ojac_6x4_in.shape
         idx_ng = 2
     else:
-        msg = f"internal error when trying to set idx_ng with dimensions -->{ojac_6x4.dims}<--"
+        msg = f"internal error when trying to set idx_ng with dimensions -->{ojac_6x4_in.dims}<--"
         raise RuntimeError(msg)
-    if not ojac_6x4.units in expected_units:
-        msg = f"ojac_6x4 with unexpected dimensions -->{ojac_6x4.units}<-- " \
+    if not ojac_6x4_in.units in expected_units:
+        msg = f"ojac_6x4_in with unexpected dimensions -->{ojac_6x4_in.units}<-- " \
             f"(expected: ==>{expected_units}<==)"
-    if idx_ng==1:
-        nobs,_nlat,_nlon = ojac_6x4.shape
-    elif idx_ng==2:
-        nobs, nemismon, _nlat, _nlon = ojac_6x4.shape
     #
     #-- spatial information for the AVENGERS/FIT-IC zoom configuration
     #
@@ -983,11 +983,42 @@ def jacobian_redistribute_glb6x4_to_avengers_zoom( ojac_6x4 : xr.DataArray, remo
     gns_1x1 = region_table['gns100x100'].grid
     glb_3x2 = TM5Grids.from_corners(west=-180, east=180, south=-90, north=90, dlon=3, dlat=2)
     glb_1x1 = TM5Grids.global1x1()
+    #
     #>> expecting input at 6x4 degree resolution
-    if (_nlat,_nlon)!=(glb_6x4.nlat,glb_6x4.nlon):
-        msg = f"ojac_6x4 with unexpected shape -->{(_nlat,_nlon)}<-- " \
-            f"(expected: {(glb_6x4.nlat,glb_6x4.nlon)}"
+    if _ng!=glb_6x4.nlat*glb_6x4.nlon:
+        msg = f"ojac_6x4_in with unexpected number of grid-cells -->{_ng}<-- " \
+            f"(expected: {glb_6x4.nlat*glb_6x4.nlon}"
         raise RuntimeError(msg)
+    #
+    #--
+    #
+    if idx_ng==1:
+        ojac_6x4 = xr.DataArray(
+            ojac_6x4_in.values.reshape(nobs,glb_6x4.nlat,glb_6x4.nlon),
+            dims = ('obs','lat','lon'),
+            coords = {
+                'obs': ojac_6x4_in.obs,
+                'lat': glb_6x4.latc,
+                'lon': glb_6x4.lonc
+            },
+            attrs = {
+                'units': ojac_6x4_in.units
+            }
+        )
+    else:
+        ojac_6x4 = xr.DataArray(
+            ojac_6x4_in.values.reshape(nobs,nemismon,glb_6x4.nlat,glb_6x4.nlon),
+            dims = ('obs','emismon','lat','lon'),
+            coords = {
+                'obs': ojac_6x4_in.obs,
+                'emismon': ojac_6x4_in.emismon,
+                'lat': glb_6x4.latc,
+                'lon': glb_6x4.lonc
+            },
+            attrs = {
+                'units': ojac_6x4_in.units
+            }
+        )
     #
     #-- global 6x4 sensitivites [ppb/(kgCH4/cell)] --> [ppb/(kgCH4/m2)]
     #   -> nearest neighbour upscaling must happen in per-squaremeter units
@@ -1105,14 +1136,11 @@ def jacobian_redistribute_glb6x4_to_avengers_zoom( ojac_6x4 : xr.DataArray, remo
         msg = f"extended Jacobian has shape nobs/ng = {_nobs}/{ng}, " \
             f"but ng={reginfo_avengers.ng} was expected."
         raise RuntimeError(msg)
+    coords_out['ng'] = np.arange(ng)
     ojac_out_da = xr.DataArray(
         ojac_out,
-        dims=dims_out,
-        coords = {
-            'obs':ojac_6x4.obs,
-            'emismon':ojac_6x4.emismon,
-            'ng':np.arange(ng)
-        },
+        dims = dims_out,
+        coords = coords_out,
         attrs = {'units': ojac_6x4.units}
         )
     emis_lonc1D = reginfo_avengers.lonc1D

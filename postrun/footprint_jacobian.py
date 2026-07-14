@@ -664,8 +664,10 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
             msg = f"@{_obsday},{_staid}: deltacconc derived by daily-rate/temporal-total = " \
                 f"{dc}/{dc_tot}"
             logger.info(msg)
+        ojac_out_da = ojac_da
         ojac_out = ojac_da.values
     else:
+        ojac_out_da = jac_da
         ojac_out = jac_da.values
 
     #
@@ -673,25 +675,9 @@ def subcmd_build_jacobian_period_obs1D(args : ArgumentNamespace) -> None:
     #
     if args.domain=='glb600x400' and args.glb6x4_to_avengers_zoom:
         #
-        #-- turn 1D spatial part of global 6x4 sensitivites to lat/lon
-        #   (nobs,ng) --> (nobs,nlat,nlon)
-        #
-        glb_6x4 = TM5Grids.from_corners(west=-180, east=180, south=-90, north=90, dlon=6, dlat=4)
-        ojac_6x4 = xr.DataArray(
-        ojac_out.reshape(nobs,glb_6x4.nlat,glb_6x4.nlon),
-            dims = ('nobs','lat','lon'),
-            coords = {
-                'lat': glb_6x4.latc,
-                'lon': glb_6x4.lonc
-            },
-            attrs = {
-                'units': sensitivity_units
-            }
-        )
-        #
         #-- spatially re-distribute sensitivities to the 1D avengers zoom vector
         #
-        jacobian_redistributed = jacobian_redistribute_glb6x4_to_avengers_zoom(ojac_6x4)
+        jacobian_redistributed = jacobian_redistribute_glb6x4_to_avengers_zoom(ojac_out_da)
         #
         #-- extract the relevant bits
         #
@@ -1106,37 +1092,20 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     #--
     #
     nobs, _nemisdays,_ng = jac3D_da.shape
-    # nobs, _njaccol = jac_da.shape
-    # assert njaccol==_njaccol
-    # msg = f"...monthly collection loop finished yields Jacobian for overall " \
-    #     f"{nobs} observations w.r.t. overall {njaccol} monthly emissions " \
-    #     f"(nemismon={nemismon},ng={ng})"
-    # logger.debug(msg)
+    msg = f"...Jacobian array created (dimensions={jac3D_da.dimensions}, shape={jac3D_da.shape})."
+    logger.debug(msg)
     #
     #-- re-distribute global flask Jacobian (which has been computed *only* on global 6x4 grid)
     #
     if args.domain=='glb600x400' and args.glb6x4_to_avengers_zoom:
         #
-        #-- turn 1D spatial part of global 6x4 sensitivites to lat/lon
-        #   (nobs,ng) --> (nobs,nlat,nlon)
+        #-- perfrom the re-distribution to the AVENGERS zoom domain
         #
-        glb_6x4 = TM5Grids.from_corners(west=-180, east=180, south=-90, north=90, dlon=6, dlat=4)
-        ojac4D = jac3D_da.values.reshape(nobs,nemismon,glb_6x4.nlat,glb_6x4.nlon)
-        ojac_6x4 = xr.DataArray(
-            ojac4D,
-            dims = ('obs','emismon','lat','lon'),
-            coords = {
-                'obs': jac3D_da.obs,
-                'emismon': jac3D_da.emismon,
-                'lat': glb_6x4.latc,
-                'lon': glb_6x4.lonc
-            },
-            attrs = {
-                'units': jac3D_da.units
-            }
-        )
-        jac3D_redistributed = jacobian_redistribute_glb6x4_to_avengers_zoom(ojac_6x4)
-        jac3D_da = jac3D_redistributed.jacobian
+        jac3D_redistributed = jacobian_redistribute_glb6x4_to_avengers_zoom(jac3D_da)
+        #
+        #-- update local variables for output accordingly
+        #
+        jac3D_da    = jac3D_redistributed.jacobian
         emis_lonc1D = jac3D_redistributed.lonc1D
         emis_latc1D = jac3D_redistributed.latc1D
         emis_reg1D  = jac3D_redistributed.reg1D
