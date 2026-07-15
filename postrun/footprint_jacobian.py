@@ -1418,11 +1418,22 @@ def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
     inversion system.
     """
     tm5emisdir = args.tm5emisdir
-    year = args.year
-    month = args.month #-- processing single month only (!!for testing only!!)
+    time_start, time_end = args.time_range
     regions = args.regions
     complevel = args.__dict__.get('complevel',4)
 
+    #
+    #--
+    #
+    mon_range = date_range(time_start, time_end, freq='MS')
+    nmon = len(mon_range)
+    ntc = 3 #-- recording year/month/day
+    time_data = np.full((nmon,ntc), -1)
+    for imon,mon in enumerate(mon_range):
+        time_data[imon,:] = [mon.year, mon.month, mon.day] #-- deliberately take first day
+    day_first = mon_range[0]
+    day_last  = (mon_range[-1] + Timedelta(days=32)).replace(day=1) - Timedelta(days=1)
+    month_tag = f"{day_first.strftime('%Y%m%d')}--{day_last.strftime('%Y%m%d')}"
     #
     #-- spatial configuration
     #
@@ -1440,30 +1451,20 @@ def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
         _ng_nohalo = reg_data.ng1D_nohalo
         msg = f"@{reg}, ng/ng_nohalo/difference = {_ng}/{_ng_nohalo}/{_ng-_ng_nohalo}"
         logger.info(msg)
-
     #
     #-- determine list of months
     #
-    nday = None
     region_file_table = OrderedDict()
-    for reg in regions:
-        file_list = sorted(Path(tm5emisdir).glob(f"ch4emis.CH4.{reg}.{year}????.nc"))
-        region_file_table[reg] = file_list
-        if nday is None:
-            nday = len(file_list)
+    nday = None
+    for ireg,reg in enumerate(regions):
+        region_file_table[reg] = []
+        for mondate in mon_range:
+            file_list = sorted(Path(tm5emisdir).glob(f"ch4emis.CH4.{reg}.{mondate.year}{mondate.month}??.nc"))
+            region_file_table[reg] += file_list
+        if ireg==0:
+            nday = len(region_file_table[reg])
         else:
-            #-- make sure number of files is consistent for all regions
-            assert nday==len(file_list)
-    #--
-    day_list = [ Timestamp(str(_).split('.')[3]) for _ in region_file_table[regions[0]] ]
-    mon_first = day_list[0].month
-    mon_last  = day_list[-1].month
-    mon_list = list(range(mon_first,mon_last+1))
-    nmon = len(mon_list)
-    ntc = 3 #-- recording year/month/day
-    time_data = np.full((nmon,ntc), -1)
-    for imon,mon in enumerate(mon_list):
-        time_data[imon,:] = [year, mon, 1] #-- deliberately take first day
+            assert nday==len(region_file_table[reg])
     #
     #-- initialise array for emissions
     #
@@ -1471,8 +1472,7 @@ def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
     emis_miss = -99999.
     emis_data = np.full((nmon,ng), emis_miss)
     #-- fill array
-    for imon,mon in enumerate(mon_list):
-        dayf = Timestamp(f"{year:04d}{mon:02d}01")
+    for imon,dayf in enumerate(mon_range):
         dayl = (dayf + Timedelta(days=32)).replace(day=1) - Timedelta(days=1)
         day_range = date_range(dayf,dayl)
         msg = f"...loading emissions for {dayf.strftime('%Y%m%d')} to {dayl.strftime('%Y%m%d')}"
@@ -1486,13 +1486,6 @@ def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
     msg = f"...monthly emission data ready."
     logger.info(msg)
 
-    if month!=None:
-        selmon = Timestamp(f"{year:04}{month:02}01")
-        msg = selmon.strftime(f"restrictint to single month -->%Y-%B<--")
-        logger.info(msg)
-        month_tag = selmon.strftime('%Y-%b')
-    else:
-        month_tag = f"{year:04d}{mon_first:02d}--{year:04d}{mon_last:02d}"
     #
     #-- output preparation
     #
@@ -1506,17 +1499,16 @@ def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
     #-- spatial dimensions
     #
     fp = Dataset(outname, 'w')
+    n_strlen = 32
     fp.createDimension('ntc', ntc)
+    fp.createDimension('nstrlen', n_strlen)
     fp.createDimension('ng', ng)
-    if month==None:
-        fp.createDimension('nmon', nmon)
-        #-- time variable
-        ncvar = fp.createVariable('time', 'i4', ('nmon','ntc',))
-        ncvar.long_name = "date_of_first_day_in_month"
-        ncvar.units = ''
-        ncvar[:] = time_data[:]
-    else:
-        pass
+    fp.createDimension('nmon', nmon)
+    #-- time variable
+    ncvar = fp.createVariable('time', 'i4', ('nmon','ntc',))
+    ncvar.long_name = "date_of_first_day_in_month"
+    ncvar.units = ''
+    ncvar[:] = time_data[:]
     #
     #-- longitude
     #
@@ -1551,9 +1543,18 @@ def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
     ncvar.units = ''
     ncvar[:] = reginfo.reg1D[:]
     #
+    #-- region identifier (Fortran compliant)
+    #
+    ncvar = fp.createVariable('region_ftn', 'S1', ('ng','nstrlen'))
+    ncvar.long_name = f"gridcell_region_identifier"
+    ncvar.comment = f"region identifer in a format which is suitable " \
+        f"for Fortran based I/O"
+    ncvar.units = ''
+    ncvar[:] = stringtochar(reginfo.reg1D[:], n_strlen=n_strlen)
+    #
     #-- emission variable
     #
-    if month==None:
+    if nmon>1:
         ncvar = fp.createVariable('emission', 'f8', ('nmon','ng'),
                                   compression='zlib', complevel=complevel)
         ncvar[:] = emis_data[:]
@@ -1569,10 +1570,9 @@ def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
     #
     fp.emission_directory = str(tm5emisdir)
     fp.removed_halos = np.int32(args.remove_halo)
-    if month==None:
-        fp.time_coverage_start = day_list[0].strftime('%Y-%m-%d')
-        fp.time_coverage_end   = day_list[-1].strftime('%Y-%m-%d')
-        fp.time_coverage_resolution = "P1M"
+    fp.time_coverage_start = day_first.strftime('%Y-%m-%d')
+    fp.time_coverage_end   = day_last.strftime('%Y-%m-%d')
+    fp.time_coverage_resolution = "P1M"
     try:
         fp.processing_platform = f"{os.environ['USER']}@{os.environ['HOSTNAME']}"
     except KeyError:
@@ -2253,14 +2253,15 @@ sparser = subparsers.add_parser('monthly_emissions_for_inversion',
                                 help="""test preparation of inputs for Fortran inversion system.""")
 sparser.add_argument('tm5emisdir',
                      help="""name of directory containing daily emissions files as prepared for TM5 simulations plus the initial part of the file name pattern.""")
-sparser.add_argument('--year',
-                     type=int,
-                     default=2021,
-                     help="""selected year (default: %(default)s).""")
-sparser.add_argument('--month',
-                     type=int,
-                     choices=list(np.arange(1,13)),
-                     help="""restrict to single month.""")
+sparser.add_argument('--time_range',
+                     type=Timestamp,
+                     nargs=2,
+                     default=[Timestamp(2021,1,1), Timestamp(2021,12,31)],
+                     help="""temporal range, only year and month are significant (default: %(default)s).""")
+# sparser.add_argument('--month',
+#                      type=int,
+#                      choices=list(np.arange(1,13)),
+#                      help="""restrict to single month.""")
 sparser.add_argument('--regions',
                      nargs='+',
                      choices=['glb600x400','eur300x200','gns100x100',],
