@@ -328,13 +328,19 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             - 100: something went wrong ...
             - 101: result is not valid json
         """
-        if self.experiment in self.cache_inv and task == 'inversion':
-            return self.cache_inv[self.experiment]
-        elif self.experiment in self.cache_fwd and task == 'forward':
-            return self.cache_fwd[self.experiment]
+        # if self.experiment in self.cache_inv and task == 'inversion':
+        #     return self.cache_inv[self.experiment]
+        # elif self.experiment in self.cache_fwd and task == 'forward':
+        #     return self.cache_fwd[self.experiment]
 
         url = f"{self.gui_settings.backend_url}/forward"
-        r = requests.get(url, params={'emis': self.experiment, 'task': task})
+
+        settings = {
+            'emis': self.experiment,
+            'task': task
+        }
+
+        r = requests.post(url, data={'conf': OmegaConf.to_yaml(settings)})
         if not r.ok:
             self.alert = f"{task} run failed: backend returned {r.status_code} for emis={self.experiment} at {url}. Body: {r.text[:500]}"
             return

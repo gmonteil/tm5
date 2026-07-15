@@ -268,16 +268,28 @@ def coarsen_file_with_overwrite( cat : DictConfig, reg : TM5Grids, start : Times
         elif ds.attrs['time_coverage_resolution']=='P1M' and \
              ovr_ds.attrs['time_coverage_resolution']=='P1Y':
             def_tvalues = da.time.values
+            nmon_def = len(def_tvalues)
             ovr_tvalues = ovr_da.time.values
+            nyr_ovr = len(ovr_tvalues)
             if not def_tvalues[0]==ovr_tvalues[0]:
                 msg = "default/overwrite emission fluxes not prepared " \
                     f"for same points in time."
+                raise RuntimeError(msg)
+            elif not nyr_ovr*12==nmon_def:
+                msg = f"default/overwrite emission fluxes were prepared " \
+                    f"for inconsistent points in time."
                 raise RuntimeError(msg)
             #
             #-- can savely overwrite in spatial domain,
             #   each month gets same emission rate
             #
-            da_data[:,ilatmin:ilatmax+1,ilonmin:ilonmax+1] = ovr_data[np.newaxis,:,:]
+            if nyr_ovr==1:
+                da_data[:,ilatmin:ilatmax+1,ilonmin:ilonmax+1] = ovr_data[np.newaxis,:,:]
+            else:
+                for iyr in range(nyr_ovr):
+                    imon_start = iyr*12
+                    imon_last  = imon_start + 12
+                    da_data[imon_start:imon_last,ilatmin:ilatmax+1,ilonmin:ilonmax+1] = ovr_data[iyr,:,:]
         else:
             msg = f"fluxes with temporal resolution for " \
                 f"default={ds.attrs['time_coverage_resolution']} and " \
