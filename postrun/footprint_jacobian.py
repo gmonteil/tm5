@@ -2074,7 +2074,88 @@ def subcmd_compare_ojac_obs1D(args):
         f"{ojacdif_glb.min()}/{ojacdif_glb.mean()}/{ojacdif_glb.max()}"
     logger.info(msg)
 
+
+def subcmd_mmojac_propagate(args):
+    """
+    """
+    obsjac_filepath = args.obsjac_filepath
+    emis_filepath = args.emis_filepath
+    figsize = args.__dict__.get('figsize',(10,6))
+    dpi     = args.__dict__.get('dpi', 150)
+
     #
+    #--
+    #
+    emis_tokens = emis_filepath.stem.split('_')
+    emis_tag = emis_tokens[0]
+    ds_ojac = xr.open_dataset(obsjac_filepath)
+    ds_emis = xr.open_dataset(emis_filepath)
+    # ds_emis['emis_time'] = [Timestamp(*ds_emis.time.loc[imon,:].values) for imon in ds_emis.nmon]
+    # ds_ojac['emis_time'] = [Timestamp(*ds_ojac.emismon_calendar.loc[imon,:].values) for imon in ds_ojac.nemismon]
+    # ds_emis = ds_emis.assign(emis_time=[Timestamp(*ds_emis.time.loc[imon,:].values) for imon in ds_emis.nmon])
+    # print(ds_emis)
+    # sys.exit(0)
+    #
+    #-- ensure emissions start from same month as emission senstivities
+    #
+    ojac_emismon = ds_ojac.emismon_calendar.values
+    emis_emismon = ds_emis.time.values
+    ntc = min(ojac_emismon.shape[1],emis_emismon.shape[1])
+    assert np.all(ojac_emismon[0,:ntc]==emis_emismon[0,:ntc])
+    #
+    #-- ensure consistent dimensions
+    #
+    nobs,nmon,ng = ds_ojac.obs_jacobian.shape
+    _nmon,_ng   = ds_emis.emission.shape
+    assert ng==_ng
+    assert nmon<=_nmon
+    emis = ds_emis.emission.values[:nmon,:]
+    emis1D = emis.reshape(ng*nmon)
+    #
+    #--
+    #
+    for sta in ds_ojac.station_id.values:
+        cur_ojac = ds_ojac.where(ds_ojac.station==sta, drop=True)
+        cur_nobs = len(cur_ojac.nobs.values)
+        msg = f"@{sta}, compute simulated concentrations, cur_nobs={cur_nobs}..."
+        logger.info(msg)
+        iniconc = cur_ojac.iniconc.values
+        obs     = cur_ojac.obs.values
+        obstime = cur_ojac.obstime.values
+        ojac2D = cur_ojac.obs_jacobian.values.reshape(cur_nobs,ng*nmon)
+        csimu = np.matmul(ojac2D, emis1D) + iniconc
+        # for iobs in range(cur_nobs):
+        #     print(f"...{sta}/{obstime[iobs]}: simulated/observed {csimu[iobs]}/{obs[iobs]}")
+        obstime = [Timestamp(_) for _ in obstime]
+        conc_dict = {'time': obstime,
+                     'csimu': csimu,
+                     'obs': obs }
+        cur_df = DataFrame.from_dict(conc_dict).set_index('time')
+        fig, ax = subplots(1, 1, figsize=figsize)
+        cur_df.plot(y='obs', ax=ax, kind='line',
+                    color='black', ls='', marker='D', markersize=4, label='observed')
+        cur_df.plot(y='csimu', ax=ax, kind='line',
+                    color='red', ls='-', marker='+', markersize=4, label='simulated')
+        title = f"{sta.upper()}, observed/simulated concentration ({emis_tag} emissions)"
+        ax.set_title(title)
+        ax.set_ylabel(f"[ppb]")
+        ax.grid(which='major', axis='both',color='grey', alpha=0.5)
+        trange_tag = f"{obstime[0].strftime('%Y%m%d')}-{obstime[-1].strftime('%Y%m%d')}"
+        emis_ftag = f"{emis_tag}-mm-emissions"
+        outname_tokens = [sta, 'ch4-concentration', trange_tag, emis_ftag]
+        outname = Path('_'.join(outname_tokens) + '.png')
+        if args.outdir!=None:
+            outname = args.outdir / outname
+        outname.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(outname, dpi=dpi, bbox_inches='tight')
+        plt.close()
+        msg = f"...generated ***{str(outname)}***"
+        logger.info(msg)
+        # print(cur_ojac)
+        # print(f"="*30)
+    sys.exit(0)
+    
+
 ################################################################################
 #
 #                   p a r s e r
@@ -2326,6 +2407,25 @@ sparser.add_argument('--outdir',
 sparser.add_argument('--outname',
                     help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
 
+#
+#--       mmojac_propagate
+#
+sparser = subparsers.add_parser('mmojac_propagate',
+                                help="""compute concentrations by matrix multiplication of observational Jacobian with a monthly emission field.""")
+sparser.add_argument('obsjac_filepath',
+                     type=Path,
+                     help="""NetCDF file providing observational Jacobian as well as observed and inicial concentrations.""")
+sparser.add_argument('emis_filepath',
+                     type=Path,
+                     help="""NetCDF file providing monthly emissions (must cover the range within the observational Jacobian and be on the same grid.""")
+sparser.add_argument('--outdir',
+                     type=Path,
+                     help="""top-level directory for any generated outputs..""")
+sparser.add_argument('--outname',
+                    help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
+
+
+
 
 ################################################################################
 #
@@ -2361,6 +2461,9 @@ def main(args):
 
     if args.subcmds=='compare_ojac_obs1D':
         subcmd_compare_ojac_obs1D(args)
+
+    if args.subcmds=='mmojac_propagate':
+        subcmd_mmojac_propagate(args)
 
     #
     te = Timestamp.utcnow()
