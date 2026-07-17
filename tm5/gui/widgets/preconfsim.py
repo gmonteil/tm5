@@ -273,6 +273,9 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.widgets['station_selector'].visible = False
         self.widgets['borders'] = gf.borders()
 
+        # TEMPORARY:
+        self.namelist = {}
+
     def __panel__(self):
         header_pane = pn.pane.Markdown('# Preconfigured experiments')
         expdesc_pane = pn.pane.Markdown(
@@ -337,7 +340,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
         settings = {
             'emis': self.experiment,
-            'task': task
+            'task': task,
+            'namelist': self.namelist
         }
 
         r = requests.post(url, data={'conf': OmegaConf.to_yaml(settings)})
