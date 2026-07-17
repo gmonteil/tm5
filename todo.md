@@ -2,6 +2,7 @@
 - GUI (setup)
     - [x] (1) GM to apply script (to remove halos from the Jacobian and emission files) to the files we are using on the VM
     - [x] (1) MV to integrate script into environment that creates the Jacobian
+    - [ ] example GUI element for namelist parameters: "Resolution of Emission space" fixed patters/full grid
     - [ ] (3a) GM to get namelist to be passed from GUI to VM
     - [ ] (2) GM to improve performance on emission plots, potentially also seasonal cycles, or bar plot ... 
     - [ ] (3) GM to "combine the two tabs "setup simulation" and "preconfigured simulation"
