@@ -232,7 +232,7 @@ def tm5emisdir_load_emissions2D( emisdir : str | Path, emis_prefix : str, day_ra
         emis_list = []
         for reg in regions:
             #-- TODO:: 'CH4' is still hard-coded here!
-            fpath = Path(day.strftime(f'{emis_prefix}.CH4.{reg}.%Y%m%d.nc'))
+            fpath = Path(emisdir) / day.strftime(f'{emis_prefix}.CH4.{reg}.%Y%m%d.nc')
             if not fpath.exists():
                 msg = f"expected emissions file ***{str(fpath)}*** not found on system."
                 raise FileNotFoundError(msg)
