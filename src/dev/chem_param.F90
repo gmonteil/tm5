@@ -57,7 +57,11 @@ module chem_param
     integer :: ntrace       ! number of tracers for chemistry
     integer :: ntrace_chem  ! number of non-transported tracers
     integer :: maxtrace     ! total number of tracers
-    integer, parameter :: tracer_name_len = 20
+    !-- MVO, changed 2026-07-19::increased naem length from 20 to 24
+    !                            needed to address longer observation identifiers to extend flask observation identifiers
+    !                            to also include hour of day, e.g. JFJ_3570_202101190450
+    
+    integer, parameter :: tracer_name_len = 24
 
     ! components numbers
 !    integer, parameter :: ico2 = 1
