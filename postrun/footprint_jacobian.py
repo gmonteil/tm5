@@ -29,7 +29,7 @@ from tm5.post.footprint_io import load_adjoint_fwd #-- this was for earlier diag
 from tm5.post.footprint_io import region_table, _init_region_table
 from tm5.post.footprint_io import tm5rundir_obstable, tm5rundir_iniconc_1obs
 from tm5.post.footprint_io import regions1D_info
-from tm5.post.footprint_io import tm5rundir_jacobian3D
+from tm5.post.footprint_io import tm5rundir_jacobian3D, tm5rundir_simustart
 from tm5.post.footprint_io import tm5rundir_jacobian3D_old, tm5_fitic_adjoint_corrected_halos
 from tm5.post.footprint_io import tm5rundir_emissions2D, tm5emisdir_load_emissions2D
 from tm5.post.footprint_io import jacobian_redistribute_glb6x4_to_avengers_zoom
@@ -117,7 +117,8 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
                                    remove_halo : bool = True,
                                    obsid : list|None = None,
                                    obsdir : Path|None = None,
-                                   refdir : Path|None = None) -> SimpleNamespace:
+                                   refdir : Path|None = None,
+                                   outdir : Path|None = None) -> SimpleNamespace:
 
     """Routine to collect results from (a series of) TM5 adjoint footprint simulations
     that were run for observations within a dedicated domain.
@@ -166,7 +167,8 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
     emis_latc1D = None
     emis_reg1D  = None
     rundir_list = []
-    obsxinfo_dict = {}
+    obs_extrainfo_dict = {} #-- to collect hour of observation and time-window length
+    simu_start = None
     for iday,obsday in enumerate(obsday_range):
         #
         #-- naming pattern used by Guillaume: footprints_<domain_tag>_%Y%m%d
@@ -188,6 +190,17 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
                 f"found ==>{cur_rundir_list}<=="
             raise RuntimeError(msg)
         rundir = cur_rundir_list[0]
+        #
+        #--
+        #
+        cur_simu_start = tm5rundir_simustart(rundir)
+        if iday==0:
+            simu_start = cur_simu_start
+        else:
+            if cur_simu_start!=simu_start:
+                msg = f"expected simulation start {simu_start} but found " \
+                    f"{cur_simu_start} (@***{rundir}***)"
+                raise RuntimeError(msg)
         #
         #-- all footprint run directories should contain (a copy of) the
         #   yaml configuration file involved
@@ -272,7 +285,8 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
             #       and extract the observation averaged over the station-specific time-window.
             #     
             #
-            if args.obsdir==None: #-- flask measurements
+            #
+            if args.obsdir==None:
                 _obsid_data = obsinfo_curday.loc[_obsid,:]
                 stalist_curday.append(_obsid)
                 obslist_curday.append(_obsid_data.mixing_ratio)
@@ -280,12 +294,19 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
                 obslatlist_curday.append(_obsid_data.lat)
                 obsaltlist_curday.append(_obsid_data.alt)
                 obstime_1D.append(_obsid_data.time)
-                if not _obsid in obsxinfo_dict:
-                    obsxinfo_dict[_obsid] = {
+                #
+                #-- record hour of observation and time-window
+                #   (make sure these do not change over time)
+                #
+                if not _obsid in obs_extrainfo_dict:
+                    obs_extrainfo_dict[_obsid] = {
                         'obshour': _obsid_data.time.hour,
                         'time_window_length': _obsid_data.time_window_length
                     }
-            else:
+                else:
+                    assert obs_extrainfo_dict[_obsid]['obshour']==_obsid_data.time.hour
+                    assert obs_extrainfo_dict[_obsid]['time_window_length']==_obsid_data.time_window_length
+            else: #-- generally this should not be used but it is/was required for the early continuous footprint simulations where the point_input.nc4 files contained dummy and not real obspack observations.
                 #
                 #-- cumbersome case: extract averaged observation from original observation file
                 #
@@ -453,9 +474,20 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
             emis_latc1D = jac_info.latc1D
             emis_reg1D  = jac_info.reg1D
     #
+    #-- loop over obs days terminated
+    #
     nobs = len(obsmix_1D)
     msg = f"...collected {nobs} observations overall."
     logger.info(msg)
+    #
+    #-- turn lists into arrays
+    #
+    stationid_1D = np.array(stationid_1D)
+    stationid_uniq = np.unique(stationid_1D)
+    msg = f"...collected inputs for {len(stationid_uniq)} stations " \
+        f"(-->{stationid_uniq}<--"
+    logger.debug(msg)
+    obstime_1D = np.array(obstime_1D)
     # print(f"stationid_1D -->{stationid_1D}<--")
     # print(f"obstime_1D -->{obstime_1D}<--")
     # print(f"obsmix_1D -->{obsmix_1D}<--")
@@ -467,8 +499,10 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
     #-- instantiate namespace to be returned
     #
     input4inv = SimpleNamespace(
+        simu_start=simu_start,
         rundir_list=rundir_list,
-        stationid_1D=np.array(stationid_1D),
+        obs_extrainfo=obs_extrainfo_dict,
+        stationid_1D=stationid_1D,
         obstime_1D=obstime_1D,
         obslon_1D=obslon_1D,
         obslat_1D=obslat_1D,
@@ -484,69 +518,104 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
     #-- verification
     #
     if refdir!=None:
-        if obsid==None or len(obsid)!=1:
-            msg = f"...verification currently only supported in case one single " \
-                f"station is being processed."
-            raise RuntimeError(msg)
-        staid = obsid[0]
-        assert staid in obsxinfo_dict
-        obs_hr  = obsxinfo_dict[staid]['obshour']
-        obs_twl = obsxinfo_dict[staid]['time_window_length']
-        msg = f"...@{staid} (obs_hr={obs_hr}, obs_twl={obs_twl}, " \
-            f"starting verification against reference run."
-        logger.debug(msg)
-        #
-        #-- emissions used in reference run
-        #
-        refemisdir = refdir / 'emissions'
-        msg = f"reading emissions from reference run directory ***{refemisdir}***..."
-        logger.info(msg)
-        refemis_info = tm5emisdir_load_emissions2D(refemisdir, 'ch4emis', emisday_range, region_list, remove_halo=remove_halo)
-        refemis2D = refemis_info.emis2D
-        msg = f"...refemis2D read, (shape={refemis2D.shape})"
-        logger.debug(msg)
-        msg = f"jac_da.shape = {jac_da.shape}"
-        logger.debug(msg)
-        if jac_da.shape[1:]!=refemis2D.shape:
-            msg = f"...inconsistent shape of observational Jacobian!"
-            raise RuntimeError(msg)
-        _nobs,_nemis,_ng = jac_da.shape
-        refemis1D = refemis2D.reshape(_nemis*_ng)
-        ojac2D    = jac_da.values.reshape(_nobs,_nemis*_ng)
-        lindconc = np.dot(ojac2D, refemis1D)
-        linsimu_conc = lindconc + inic_array1D #-- yields nobs values
-        #
-        #--
-        #
-        obstime_tag = obstime_1D[0].strftime('%Y%m%d') + '-' + obstime_1D[-1].strftime('%Y%m%d')
-        cmp_filepath = f"obsjac-verification_{staid.replace('_','-')}_{obstime_tag}.txt"
-        fp_cmp = open(cmp_filepath, 'w')
-        msg = f"...loading concentration at {obsid} from reference run"
-        logger.info(msg)
-        refconc = tm5refdir_load_stationconc(refdir, staid)
-        for iday,obstime in enumerate(obstime_1D):
-            _ostart = obstime - Timedelta(seconds=obs_twl)
-            _oend   = obstime + Timedelta(seconds=obs_twl)
-            cnd_day = (refconc['time']>=_ostart)&(refconc['time']<=_oend)
-            refconc_tw = refconc.loc[cnd_day,'conc']
-            # msg = f"...refconc --> {refconc_tw.values} ({_ostart} -- {_oend})"
+        # if obsid==None or len(obsid)!=1:
+        #     msg = f"...verification currently only supported in case one single " \
+        #         f"station is being processed."
+        #     raise RuntimeError(msg)
+        # staid = obsid[0]
+        # assert staid in obs_extrainfo_dict
+        for staid in  stationid_uniq:
+            idxs_staid = np.where(stationid_1D==staid)[0]
+            noday = len(idxs_staid)
+            # msg = f"...verification@{staid}, nobs={noday}"
             # logger.debug(msg)
-            refconc_day = refconc_tw.mean()
-            lindconc_day = lindconc[iday]
-            linconc_day = linsimu_conc[iday]
-            iniconc_day = inic_array1D[iday]
-            obsconc_day = obsmix_1D[iday]
-            msg = f"...@{staid}/{obstime.strftime('%Y%m%dT%H')} " \
-                f"refconc/linconc/iniconc = {refconc_day}/{linconc_day}/{iniconc_day}"
+            #
+            #--
+            #
+            cur_inic    = inic_array1D[idxs_staid]
+            cur_obstime = obstime_1D[idxs_staid]
+            cur_obsc    = obsmix_1D[idxs_staid]
+            _nobs,_nemis,_ng = jac_da.shape
+            cur_ojac2D = jac_da.values.reshape(_nobs,_nemis*_ng)
+            cur_ojac2D = cur_ojac2D[idxs_staid,:]
+            #
+            #--
+            #
+            obs_hr  = obs_extrainfo_dict[staid]['obshour']
+            obs_twl = obs_extrainfo_dict[staid]['time_window_length']
+            msg = f"...@{staid} (obs_hr={obs_hr}, obs_twl={obs_twl}, " \
+                f"starting verification against reference run."
+            logger.debug(msg)
+            #
+            #-- emissions used in reference run
+            #
+            refemisdir = refdir / 'emissions'
+            msg = f"reading emissions from reference run directory ***{refemisdir}***..."
             logger.info(msg)
-            msg = f"...@{obstime.strftime('%Y%m%d')}, " \
-                f"refconc/lindeltaconc/linconc/iniconc / obsconc = " \
-                f"{refconc_day}/{lindconc_day}/{linconc_day}/{iniconc_day} " \
-                f"/ {obsconc_day}"
-            fp_cmp.write(msg + '\n')
-        fp_cmp.close()
-        msg = f"...generated comparison file ***{cmp_filepath}***"
-        logger.debug(msg)
+            refemis_info = tm5emisdir_load_emissions2D(refemisdir, 'ch4emis', emisday_range, region_list, remove_halo=remove_halo)
+            refemis2D = refemis_info.emis2D
+            msg = f"...refemis2D read, (shape={refemis2D.shape})"
+            logger.debug(msg)
+            msg = f"jac_da.shape = {jac_da.shape}"
+            logger.debug(msg)
+            if refemis2D.shape!=jac_da.shape[1:]:
+                msg = f"...inconsistent shape of observational Jacobian!"
+                raise RuntimeError(msg)
+            refemis1D = refemis2D.reshape(_nemis*_ng)
+            #
+            #-- load reference concentrations
+            #
+            refconc = tm5refdir_load_stationconc(refdir, staid)           
+            #
+            #-- propagate emissions with linear model
+            #
+            lindconc = np.dot(cur_ojac2D, refemis1D)
+            linsimu_conc = lindconc + cur_inic #-- yields nobs values
+            #
+            #--
+            #
+            obstime_tag = cur_obstime[0].strftime('%Y%m%d') + '-' + cur_obstime[-1].strftime('%Y%m%d')
+            allobstime_tag = min(obstime_1D).strftime('%Y%m%d') + '-' + max(obstime_1D).strftime('%Y%m%d')
+            msg = f"...loading concentration at {obsid} from reference run"
+            logger.info(msg)
+            logger.debug(f"noday={noday}, cur_obstime={cur_obstime}")
+            cmp_df = DataFrame.from_dict(
+                {
+                    'time': cur_obstime,
+                    'refconc': [np.nan,]*noday,
+                    'lindeltaconc': [np.nan,]*noday,
+                    'linconc': [np.nan,]*noday,
+                    'iniconc': [np.nan,]*noday,
+                    'obsconc': [np.nan,]*noday
+                    }
+                )
+            cmp_df = cmp_df.set_index('time')
+            for iday,obstime in enumerate(cur_obstime):
+                _ostart = obstime - Timedelta(seconds=obs_twl)
+                _oend   = obstime + Timedelta(seconds=obs_twl)
+                cnd_day = (refconc['time']>=_ostart)&(refconc['time']<=_oend)
+                refconc_tw = refconc.loc[cnd_day,'conc']
+                # msg = f"...refconc --> {refconc_tw.values} ({_ostart} -- {_oend})"
+                # logger.debug(msg)
+                refconc_day = refconc_tw.mean()
+                lindconc_day = lindconc[iday]
+                linconc_day = linsimu_conc[iday]
+                iniconc_day = cur_inic[iday]
+                obsconc_day = cur_obsc[iday]
+                cmp_df.loc[obstime,:] = [refconc_day, lindconc_day, linconc_day, iniconc_day, obsconc_day]
+                msg = f"...@{staid}/{obstime.strftime('%Y%m%dT%H')} " \
+                    f"refconc/linconc/iniconc = {refconc_day}/{linconc_day}/{iniconc_day}"
+                logger.info(msg)
+            #
+            #-- write comparions to csv (done per station)
+            #
+            outname =  f"obsjac-verification_{staid.replace('_','-')}_simustart-{simu_start.strftime('%Y%m%d')}_{allobstime_tag}.csv"
+            if outdir!=None:
+                outname = outdir / outname
+                outname.parent.mkdir(parents=True, exist_ok=True)
+            cmp_df.to_csv(outname, index=True)
+            msg = f"...generated comparison file ***{outname}***"
+            
     #
     #-- return collected results
     #
@@ -1006,7 +1075,7 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
     for imon,curobsdayf in enumerate(obsmon_range):
         curobsdayl = (curobsdayf + Timedelta(days=32)).replace(day=1) - Timedelta(days=1)
         curobsday_range = date_range(curobsdayf, curobsdayl, freq='1D')
-        #--> allow shorter time-span when debugging
+        # #-- define shorter time-span when debugging
         # dayf = max(curobsdayf, obsdayf)
         # dayl = min(curobsdayl, obsdayl)
         # curobsday_range = date_range(dayf, dayl, freq='1D')
@@ -1020,7 +1089,8 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
                                                   remove_halo=args.remove_halo,
                                                   obsid=args.obsid,
                                                   obsdir=args.obsdir,
-                                                  refdir=args.refdir)
+                                                  refdir=args.refdir,
+                                                  outdir=args.outdir)
         # #-- 
         curjacdaily_da = input4inv.jac_da
         curnobs,curnemisday,_ = curjacdaily_da.shape
