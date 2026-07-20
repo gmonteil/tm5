@@ -280,6 +280,16 @@ def tm5emisdir_load_emissions2D( emisdir : str | Path, emis_prefix : str, day_ra
                            emisdir=emisdir)
 
 
+def tm5rundir_simustart(outpath : str | Path) -> Timestamp:
+    yamlfile = Path(outpath) / 'tm5.yaml'
+    if not yamlfile.exists():
+        msg = f"yaml configuration file ***{str(yamlfile)}*** not found on system."
+        raise FileNotFoundError(msg)
+    conf = OmegaConf.load(yamlfile)
+    simu_start = Timestamp(conf.run.start)
+    return simu_start
+
+
 def tm5rundir_obstable( outpath : str | Path, drop_missing_value : bool = False ) -> DataFrame:
     yamlfile = Path(outpath) / 'tm5.yaml'
     if not yamlfile.exists():
