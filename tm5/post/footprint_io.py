@@ -1241,7 +1241,7 @@ def emisvector_to_global1x1( filepath_emis : str | Path, varname : str = 'emissi
             emis_data = ncemis[:][:,cnd_reg]
             nmon,_ng = emis_data.shape
             daemis = xr.DataArray(
-                emis_data = emis_data.reshape(nt,grid.nlat,grid.nlon),
+                emis_data.reshape(nmon,grid.nlat,grid.nlon),
                 dims=('time','lat','lon'),
                 coords = {'lon': grid.lonc, 'lat': grid.latc, 'time': np.arange(1,nmon+1)  }
             )
