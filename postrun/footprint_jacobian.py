@@ -20,8 +20,10 @@ from types import SimpleNamespace
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.pyplot import subplots,colorbar
+import matplotlib.patches as mpatches
 from cartopy import crs
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
+import cartopy.feature as cfeature
 from tm5.fitic import read_obs_table
 from tm5.gridtools import TM5Grids
 from tm5.observations import read_obspack_file
@@ -2283,7 +2285,274 @@ def subcmd_mmojac_propagate(args):
         # print(cur_ojac)
         # print(f"="*30)
     sys.exit(0)
-    
+
+
+def subcmd_ojacverify_analysis(args):
+    #--
+    figsize = args.figsize
+    dpi     = args.dpi
+    ojac_list = list(args.obsjacverify_dir.glob(f"fitic-inversion-input*.nc"))
+
+    if len(ojac_list)!=1:
+        raise RuntimeError("one single fitic inversion input file expected.")
+    else:
+        ds = xr.open_dataset(ojac_list[0])
+        remove_halo = (ds.attrs['removed_halos']==1)
+        station_table = ds[['station_id','station_lon','station_lat','station_alt']].to_dataframe()
+        station_table = station_table.set_index('station_id')
+        station_table = station_table.rename({'station_lon':'lon', 'station_lat':'lat', 'station_alt':'alt'}, axis=1)
+    nsta = len(station_table)
+    msg = f"...verification for {nsta} stations (-->{list(station_table.index)}<--)."
+    logger.info(msg)
+    #
+    #-- get domain information
+    #
+    region_list = ['glb600x400','eur300x200','gns100x100']
+    reginfo = regions1D_info(region_list, remove_halo=remove_halo)
+    region_table = reginfo.table
+    gns_grid = region_table['gns100x100'].grid
+    eur_grid = region_table['eur300x200'].grid
+    gns_domain = [gns_grid.west, gns_grid.east, gns_grid.south, gns_grid.north]
+    gns_domain_nohalo = [gns_grid.west+eur_grid.dlon, gns_grid.east-eur_grid.dlon, gns_grid.south+eur_grid.dlat, gns_grid.north-eur_grid.dlat]
+    #
+    #-- determine which stations are in HALO part
+    #
+    station_table['in_halo'] = [False,]*nsta
+    for staid,row in station_table.iterrows():
+        cur_lon = row['lon']
+        cur_lat = row['lat']
+        cnd_not_halo = gns_domain_nohalo[0]<=cur_lon<=gns_domain_nohalo[1] and \
+             gns_domain_nohalo[2]<=cur_lat<=gns_domain_nohalo[3]
+        msg = f"{staid}, lon/lat={cur_lon}/{cur_lat}  cnd_not_halo={cnd_not_halo}"
+        logger.debug(msg)
+        station_table.loc[staid, 'in_halo'] = (not cnd_not_halo)
+    nhalo = station_table['in_halo'].sum()
+    msg = f"...{nhalo} stations are in HALO part of zoom domain"
+    logger.debug(msg)
+    #
+    #--
+    #
+    for staid,row in station_table.iterrows():
+        sta_lon = row.lon
+        sta_lat = row.lat
+        sta_alt = row.alt
+        in_halo = row.in_halo
+        #-- requires renaming
+        staid_ftag = staid.replace('_','-')
+        file_list = sorted(args.obsjacverify_dir.glob(f"obsjac-verification_{staid_ftag}_*.csv"))
+        df_list = []
+        for filepath in file_list:
+            df = pd.read_csv(filepath)
+            df = df.set_index('time')
+            df_list.append(df)
+        ddf = pd.concat(df_list)
+        ddf.loc[:,'lindconc-refconc'] = ddf.loc[:,'lindeltaconc']- ddf.loc[:,'refconc']
+        # fig, axs = subplots(2, 1, figsize=figsize)
+        # ax1,axs = axs
+        fig, ax1 = subplots(1, 1, figsize=figsize)
+        ax2 = ax1.twinx()
+        ddf.plot(y='refconc', ax=ax1, kind='line',
+                 color='black', ls='-', marker='+', markersize=4, label='ref')
+        ddf.plot(y='lindeltaconc', ax=ax1, kind='line',
+                 color='red', ls='-', marker='+', markersize=4, label='lindelta')
+        ax1.legend(fontsize=10, loc='best', markerscale=1.5)
+        # ax1.set_xticklabels(ddf.index, rotation=45)#, ha='right')
+        title = f"{staid} (lon/lat/alt: {sta_lon}/{sta_lat}/{sta_alt}, " \
+            f"in_halo: {in_halo}), CH4 concentrations and differences"
+        concdiff = ddf['lindconc-refconc'].values
+        cdifmin = concdiff.min()
+        cdifmax = concdiff.max()
+        abscdifavg = np.mean(np.abs(concdiff))
+        title += '\n' \
+            f"dif min/max={cdifmin:.6f}/{cdifmax:.6f}, " \
+            f"absdif_avg={abscdifavg:.6f}"
+        ax1.set_title(title)
+        msg = f"@{staid},in_halo={in_halo} difmin/difmax/absdifavg = " \
+            f"{cdifmin}/{cdifmax}/{abscdifavg}"
+        logger.debug(msg)
+        # ax2.set_title(f"{staid}, concentration differences")
+        # ax1.autoscale(enable=True, axis='x', tight=True)
+        # ax2.autoscale(enable=True, axis='x', tight=True)
+        ddf.plot(y='lindconc-refconc', ax=ax2, kind='line', color='blue', ls='-', label='lindelta-ref')
+        ax2.legend(fontsize=10, loc='lower right', markerscale=1.5)
+        for ax in [ax1,ax2]:#in plt.gcf().axes:
+            plt.sca(ax)
+            plt.xticks(ax.get_xticks(), rotation=45)
+        outname_tokens = [staid_ftag, 'refconc-vs-lindconc']
+        outname = Path('_'.join(outname_tokens) + '.png')
+        if args.outdir!=None:
+            outname = args.outdir / outname
+        outname.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(outname, dpi=dpi, bbox_inches='tight')
+        plt.close()
+        msg = f"...generated ***{str(outname)}***"
+        logger.info(msg)
+
+
+def subcmd_ojac_stationmap(args):
+    """
+    """
+    obsjac_filepath = args.obsjac_filepath
+    figsize = args.figsize
+    dpi     = args.dpi
+    markersize = args.markersize
+
+    ds = xr.open_dataset(obsjac_filepath)
+    remove_halo = (ds.attrs['removed_halos']==1)
+    station_table = ds[['station_id','station_lon','station_lat','station_alt']].to_dataframe()
+    station_table = station_table.set_index('station_id')
+    station_table = station_table.rename({'station_lon':'lon', 'station_lat':'lat', 'station_alt':'alt'}, axis=1)
+    nsta = len(station_table)
+    lonmin = station_table['lon'].min()
+    lonmax = station_table['lon'].max()
+    latmin = station_table['lat'].min()
+    latmax = station_table['lat'].max()
+    domain_tag = f"{lonstr(lonmin)}-{lonstr(lonmax)}x{latstr(latmin)}-{latstr(latmax)}"
+    msg = f"detected {nsta} stations located in domain {domain_tag}"
+    logger.info(msg)
+
+    #
+    #-- get domain information
+    #
+    region_list = ['glb600x400','eur300x200','gns100x100']
+    reginfo = regions1D_info(region_list, remove_halo=remove_halo)
+    region_table = reginfo.table
+    gns_grid = region_table['gns100x100'].grid
+    eur_grid = region_table['eur300x200'].grid
+    gns_domain = [gns_grid.west, gns_grid.east, gns_grid.south, gns_grid.north]
+    gns_domain_nohalo = [gns_grid.west+eur_grid.dlon, gns_grid.east-eur_grid.dlon, gns_grid.south+eur_grid.dlat, gns_grid.north-eur_grid.dlat]
+    #-- GNS + offset of ngoffset times parent grid resolution
+    ngoffset = 1
+    map_extent = [gns_grid.west-ngoffset*eur_grid.dlon, gns_grid.east+ngoffset*eur_grid.dlon, gns_grid.south-ngoffset*eur_grid.dlat, gns_grid.north+ngoffset*eur_grid.dlat]
+    map_domain_tag = f"{lonstr(map_extent[0])}-{lonstr(map_extent[1])}x{latstr(map_extent[2])}-{latstr(map_extent[3])}"
+    #
+    #-- determine which stations are in HALO part
+    #
+    station_table['in_halo'] = [False,]*nsta
+    for staid,row in station_table.iterrows():
+        cur_lon = row['lon']
+        cur_lat = row['lat']
+        cnd_not_halo = gns_domain_nohalo[0]<=cur_lon<=gns_domain_nohalo[1] and \
+             gns_domain_nohalo[2]<=cur_lat<=gns_domain_nohalo[3]
+        msg = f"{staid}, lon/lat={cur_lon}/{cur_lat}  cnd_not_halo={cnd_not_halo}"
+        logger.debug(msg)
+        station_table.loc[staid, 'in_halo'] = (not cnd_not_halo)
+    nhalo = station_table['in_halo'].sum()
+    msg = f"...{nhalo} stations are in HALO part of zoom domain"
+    logger.debug(msg)
+    #
+    #-- start plotting
+    #
+    # # Set the domain for defining the second plot region.
+    # latN = 70
+    # latS = 30.2
+    # lonW = -10
+    # lonE = 50
+    # cLat = (latN + latS) / 2
+    # cLon = (lonW + lonE) / 2
+    # projLccEur = crs.LambertConformal(central_longitude=cLon, central_latitude=cLat)
+    # import matplotlib.patheffects as PathEffects
+
+    # for country in countries:
+
+    #     if country.attributes['SOVEREIGNT'] == "Bulgaria":
+    #         g = ax.add_geometries(country.geometry, ccrs.PlateCarree(), facecolor=(0, 1, 0), label="A")
+
+    #         x = country.geometry.centroid.x        
+    #         y = country.geometry.centroid.y
+
+    #         ax.text(x, y, 'A', color='red', size=15, ha='center', va='center', transform=ccrs.PlateCarree(), 
+    #                 path_effects=[PathEffects.withStroke(linewidth=5, foreground="k", alpha=.8)])
+
+    #     else:
+    #         ax.add_geometries(country.geometry, ccrs.PlateCarree(), facecolor=(1, 1, 1), label = country.attributes['SOVEREIGNT'])
+    f, ax = subplots(1, 1, figsize=args.figsize, subplot_kw=dict(projection=crs.PlateCarree()))
+    ax.set_extent(map_extent, crs=crs.PlateCarree())
+    ax.stock_img()
+    ax.coastlines()
+    ax.add_feature(cfeature.BORDERS)
+    ax.add_feature(cfeature.NaturalEarthFeature('physical', 'lakes', '50m', edgecolor='none', facecolor=cfeature.COLORS['water']), alpha=0.5)
+    halo_labels = []
+    for staid,row in station_table.iterrows():
+        cur_lon = row['lon']
+        cur_lat = row['lat']
+        in_halo = row['in_halo']
+        if in_halo:
+            cur_color = 'red'
+            cur_label = 'in halo'
+        else:
+            cur_color = 'green'
+            cur_label = 'not in halo'
+        if cur_label in halo_labels:
+            ax.plot(cur_lon, cur_lat, color=cur_color,
+                    marker='o', markersize=markersize,
+                    transform=crs.PlateCarree())
+        else:
+            halo_labels.append(cur_label)
+            ax.plot(cur_lon, cur_lat, color=cur_color,
+                    label=cur_label,
+                    marker='o', markersize=markersize,
+                    transform=crs.PlateCarree())
+        ax.text(cur_lon, cur_lat, staid,
+                color='k', size=10, ha='left', va='center',
+                transform=crs.PlateCarree())
+    ax.legend()
+    title = f"{nsta} stations from obs Jacobian ({nhalo} within HALO domain)"
+    ax.set_title(f"{title}")
+    #
+    #-- visualisation of zoom domain
+    #
+    west, east, south, north = gns_domain
+    width = east - west
+    height = north - south
+    ax.add_patch(mpatches.Rectangle(xy=[west,south], width=width, height=height,
+                                    facecolor=None, edgecolor='k',
+                                    transform=crs.PlateCarree()))
+    ax.add_patch(mpatches.Rectangle(xy=[west,south], width=width, height=height,
+                                    facecolor='grey', edgecolor=None, alpha=0.1,
+                                    transform=crs.PlateCarree()))
+    #
+    #-- visualisation of zoom domain with HALO part removed
+    #
+    west, east, south, north = gns_domain_nohalo
+    width = east - west
+    height = north - south
+    ax.add_patch(mpatches.Rectangle(xy=[west,south], width=width, height=height,
+                                    facecolor=None, edgecolor='k',
+                                    transform=crs.PlateCarree()))
+    ax.add_patch(mpatches.Rectangle(xy=[west,south], width=width, height=height,
+                                    facecolor='white', edgecolor=None, alpha=0.25,
+                                    transform=crs.PlateCarree()))
+    #-- add gridlines
+    west = eur_grid.west
+    east = eur_grid.east
+    south = eur_grid.south
+    north = eur_grid.north
+    dlon = eur_grid.dlon
+    dlat = eur_grid.dlat
+    gl = ax.gridlines(crs=crs.PlateCarree(), draw_labels=True, linewidth=0.5, color='gray')
+    gl.top_labels = False
+    gl.xformatter = LONGITUDE_FORMATTER
+    gl.yformatter = LATITUDE_FORMATTER
+    xlabsiz = args.__dict__.get('xlabsiz',6)
+    ylabsiz = args.__dict__.get('ylabsiz',6)
+    gl.xlabel_style = {'size': xlabsiz, 'color':'gray'}
+    gl.ylabel_style = {'size': ylabsiz, 'color':'gray'}
+    xlocs = np.hstack((np.arange(west, east, dlon),east))
+    ylocs = np.hstack((np.arange(south, north, dlat),north))
+    gl.xlocator = mpl.ticker.FixedLocator(xlocs)
+    gl.ylocator = mpl.ticker.FixedLocator(ylocs)
+    #
+    #-- create file
+    #
+    outname_tokens = [f'fitic-{nsta}-stations', map_domain_tag,]
+    outname = '_'.join(outname_tokens) + '.png'
+    outname = set_outname(args, outname)
+    plt.tight_layout()
+    plt.savefig(str(outname), dpi=args.dpi)
+    plt.close()
+    logger.info(f"generated ***{outname}***")
+
 
 ################################################################################
 #
@@ -2559,6 +2828,56 @@ sparser.add_argument('--outname',
                     help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
 
 
+#
+#--       ojac_verify
+#
+sparser = subparsers.add_parser('ojacverify_analysis',
+                                help="""analysis of concentration differences.""")
+sparser.add_argument('obsjacverify_dir',
+                     type=Path,
+                     help="""directory that contains (per station) csv files with simulated and observed concentrations.""")
+sparser.add_argument('--figsize',
+                     type=float,
+                     nargs=2,
+                     default=(20,10),
+                     help="""figure size [inches] (default: %(default)s).""")
+sparser.add_argument('--dpi',
+                     type=int,
+                     default=150,
+                     help="""dots-per-inch  (default: %(default)s).""")
+sparser.add_argument('--outdir',
+                     type=Path,
+                     help="""top-level directory for any generated outputs..""")
+
+
+#
+#--       ojac_stationmap
+#
+sparser = subparsers.add_parser('ojac_stationmap',
+                                help="""visualisation of stations for which the obs Jacobian was built.""")
+sparser.add_argument('obsjac_filepath',
+                     type=Path,
+                     help="""obs Jacobian file in NetCDF format.""")
+sparser.add_argument('--figsize',
+                     type=float,
+                     nargs=2,
+                     default=(20,10),
+                     help="""figure size [inches] (default: %(default)s).""")
+sparser.add_argument('--dpi',
+                     type=int,
+                     default=150,
+                     help="""dots-per-inch  (default: %(default)s).""")
+sparser.add_argument('--markersize',
+                     type=int,
+                     default=4,
+                     help="""marker size for station locations (default: %(default)s).""")
+sparser.add_argument('--outname',
+                     type=Path,
+                     help="""user selected name for generated file""")
+sparser.add_argument('--outdir',
+                     type=Path,
+                     help="""top-level directory for any generated outputs..""")
+
 
 
 ################################################################################
@@ -2598,6 +2917,12 @@ def main(args):
 
     if args.subcmds=='mmojac_propagate':
         subcmd_mmojac_propagate(args)
+
+    if args.subcmds=='ojacverify_analysis':
+        subcmd_ojacverify_analysis(args)
+
+    if args.subcmds=='ojac_stationmap':
+        subcmd_ojac_stationmap(args)
 
     #
     te = Timestamp.utcnow()
