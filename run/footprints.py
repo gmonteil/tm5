@@ -33,6 +33,9 @@ parser.add_argument('--obsfile',
                     help="""whether to override the observations file used to create the departures for the adjoint run.""")
 parser.add_argument('--outdir',
                     help="""override top-level experiment (output) directory as defined in configuration file.""")
+parser.add_argument('--skip_emis_gen',
+                    action='store_true',
+                    help="""whether to skip emissions generation (use this option in case the emissions tag in the yaml configuration file points to a directory that already contains TM5 compliant daily emission files.""")
 parser.add_argument('--tm5exec',
                     help="""specify an already compiled TM5 executablea as an *absolute* path, user is responsible to ensure it is consistent with the spatial settings of the provided yaml configuration file. NOTE, that the provided executable will *not* be used in case one of the options '--build' or --build-only' war provided, too!""")
 parser.add_argument('config_file')
@@ -133,8 +136,8 @@ tm.setup_system()
 tm.setup_tracers()
 tm.setup_output()
 tm.setup_iniconc()
-logger.info("start emissions preparation...")
-tm.setup_emissions2()
+logger.info("start emissions preparation...(skip_emis_gen={args.skip_emis_gen})")
+tm.setup_emissions2(skip_emis_gen=args.skip_emis_gen)
 logger.info("...emissions done.")
 
 
