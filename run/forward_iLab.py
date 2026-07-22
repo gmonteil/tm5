@@ -11,6 +11,7 @@ from omegaconf import OmegaConf
 from argparse import ArgumentParser
 from pathlib import Path
 from loguru import logger
+from pandas import Timestamp, Timedelta
 import tm5
 from tm5.system import runcmd
 from tm5.fitic import read_obs_table
@@ -38,6 +39,9 @@ parser.add_argument('--obsfile',
                     help="""whether to override the observations file used to create the departures for the adjoint run.""")
 parser.add_argument('--tm5exec',
                     help="""specify an already compiled TM5 executablea as an *absolute* path, user is responsible to ensure it is consistent with the spatial settings of the provided yaml configuration file. NOTE, that the provided executable will *not* be used in case one of the options '--build' or --build-only' war provided, too!""")
+parser.add_argument('--skip_emis_gen',
+                    action='store_true',
+                    help="""whether to skip emissions generation (use this option in case the emissions tag in the yaml configuration file points to a directory that already contains TM5 compliant daily emission files.""")
 parser.add_argument('config_file')
 args = parser.parse_args(sys.argv[1:])
 
@@ -50,7 +54,7 @@ if not yaml_file.exists():
     raise RuntimeError(msg)
 
 #=====================================================
-# -1. read configuration, potentiall override part of the settings
+# -1. read configuration, potentially override part of the settings
 #=====================================================
 machine = args.host
 platform = get_hostname()
@@ -106,6 +110,15 @@ if args.tm5exec!=None:
         else:
             dconf.run.paths['tm5exec'] = str(exe)
 
+#
+#-- adapt obsfile
+#
+# if 'observations' in dconf:
+# if dconf.observations.file.find('%Y-%m-%d')>0:
+    # date_end = Timestamp(dconf.run.end) #-- end-of-simulation (yyyymmddT00:00:00)
+    # date_obs = date_end - Timedelta(days=1)
+    # dconf.observations.file = date_obs.strftime(dconf.observations.file)
+
 # OmegaConf.save(config=dconf, f='xxx.yml')
 # sys.exit(0)
 
@@ -118,7 +131,9 @@ tm = tm5.TM5(dconf, host=args.host)
 # 1. Build the model
 #=====================================================
 if args.build or args.build_only and not args.rcfile_only:
-    tm.build()
+    #-- NOTE: if a TM5 executable was specified on invocation
+    #         (option --tm5exec) this will be handled within tm.build
+    tm.build() #-- 
     if args.build_only:
         logger.info(f"TM5 compilation done, exiting now")
         sys.exit()
@@ -159,8 +174,8 @@ tm.setup_iniconc()
 
 # Set the emissions
 #tm.setup_emissions()
-logger.info(f"start emissions preparation...")
-tm.setup_emissions2()
+logger.info(f"start emissions preparation...(skip_emis_gen={args.skip_emis_gen})")
+tm.setup_emissions2(skip_emis_gen=args.skip_emis_gen)
 logger.info(f"...emissions done.")
 
 #=====================================================
