@@ -120,6 +120,7 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
                                    obsid : list|None = None,
                                    obsdir : Path|None = None,
                                    refdir : Path|None = None,
+                                   refemisdir : Path|None = None,
                                    outdir : Path|None = None) -> SimpleNamespace:
 
     """Routine to collect results from (a series of) TM5 adjoint footprint simulations
@@ -520,12 +521,11 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
     #-- verification
     #
     if refdir!=None:
-        # if obsid==None or len(obsid)!=1:
-        #     msg = f"...verification currently only supported in case one single " \
-        #         f"station is being processed."
-        #     raise RuntimeError(msg)
-        # staid = obsid[0]
-        # assert staid in obs_extrainfo_dict
+        #--
+        if refemisdir==None:
+            msg = f"...reference run directory specified ***{str(refdir)}*** " \
+                f"but refemisdir was not provided!"
+            raise RuntimeError(msg)
         for staid in  stationid_uniq:
             idxs_staid = np.where(stationid_1D==staid)[0]
             noday = len(idxs_staid)
@@ -551,10 +551,40 @@ def collect_input4inversion_obs1D( topdir : Path, domain_tag : str,
             #
             #-- emissions used in reference run
             #
-            refemisdir = refdir / 'emissions'
+            emisprefix = 'ch4emis' #-- should not be hard-coded here!!
+            #
+            # MVO-AAAA:
+            # - we must NOT
+            # _refemisdir =  refdir / 'emissions'
+            # _rcfile = refdir / 'forward.rc'
+            # if _refemisdir.exists():
+            #     refemisdir = _refemisdir
+            # elif _rcfile.exists():
+            #     _emiskey = 'emissions.CH4.prefix'
+            #     _refemisdir = None
+            #     with open(_rcfile) as fp:
+            #         for line in fp:
+            #             if line.startswith(_emiskey):
+            #                 tokens = line.replace('\n','').split(':')
+            #                 _emistoken = tokens[1].strip()
+            #                 _emispath = Path(_emistoken)
+            #                 emisprefix = _emispath.name
+            #                 _refemisdir = _emispath.parents[0]
+            #                 break
+            #     #
+            #     if _refemisdir==None:
+            #         msg = f"key for emissions prefix -->{_emiskey}<-- " \
+            #             "could not be found in ***{str(_rcfile)}***"
+            #         raise RuntimeError(msg)
+            #     else:
+            #         refemisdir = _refemisdir
+            # else:
+            #     msg = f"neither 'emissions' directory nor forward.rc found in " \
+            #         f"reference directory ***{str(refdir)}***"
+            #     raise RuntimeError(msg)
             msg = f"reading emissions from reference run directory ***{refemisdir}***..."
             logger.info(msg)
-            refemis_info = tm5emisdir_load_emissions2D(refemisdir, 'ch4emis', emisday_range, region_list, remove_halo=remove_halo)
+            refemis_info = tm5emisdir_load_emissions2D(refemisdir, emisprefix, emisday_range, region_list, remove_halo=remove_halo)
             refemis2D = refemis_info.emis2D
             msg = f"...refemis2D read, (shape={refemis2D.shape})"
             logger.debug(msg)
@@ -1080,6 +1110,8 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
         # #-- define shorter time-span when debugging
         # dayf = max(curobsdayf, obsdayf)
         # dayl = min(curobsdayl, obsdayl)
+        # dayf = Timestamp(2021,12,30)
+        # dayl = Timestamp(2021,12,31)
         # curobsday_range = date_range(dayf, dayl, freq='1D')
         curemisdayf = emisday_first
         curemisdayl = (curobsdayf + Timedelta(days=32)).replace(day=1) - Timedelta(days=1)
@@ -1092,6 +1124,7 @@ def subcmd_monthly_obsjacobian_for_inversion(args  : ArgumentNamespace) -> None:
                                                   obsid=args.obsid,
                                                   obsdir=args.obsdir,
                                                   refdir=args.refdir,
+                                                  refemisdir=args.refemisdir,
                                                   outdir=args.outdir)
         # #-- 
         curjacdaily_da = input4inv.jac_da
@@ -2287,23 +2320,132 @@ def subcmd_mmojac_propagate(args):
     sys.exit(0)
 
 
+def _plot_concdf( sta_info : SimpleNamespace, concdf : DataFrame,
+                  plot_cfg : SimpleNamespace ) -> None:
+    """
+    """
+    staid = sta_info.staid
+    sta_lon = sta_info.lon
+    sta_lat = sta_info.lat
+    sta_alt = sta_info.alt
+    in_halo = sta_info.in_halo
+    staid_ftag = staid.replace('_','-')
+
+    figsize = plot_cfg.figsize
+    dpi = plot_cfg.dpi
+    outdir = plot_cfg.outdir
+    dayf = Timestamp(concdf.index[0]).strftime('%Y%m%d')
+    dayl = Timestamp(concdf.index[-1]).strftime('%Y%m%d')
+    days_tag = f"{dayf}--{dayl}"
+    #
+    #--
+    #
+    outname_tokens = [staid_ftag, 'concentrations', days_tag,]
+    outname = Path('_'.join(outname_tokens) + '.csv')
+    if outdir!=None:
+        outname = outdir / outname
+    outname.parent.mkdir(parents=True, exist_ok=True)
+    concdf.to_csv(outname, index=True)
+    #
+    #--       r e f - vs - l i n d e l t a
+    #
+    fig, ax1 = subplots(1, 1, figsize=figsize)
+    ax2 = ax1.twinx()
+    concdf.plot(y='refconc', ax=ax1, kind='line',
+             color='black', ls='-', marker='+', markersize=4, label='ref')
+    concdf.plot(y='lindeltaconc', ax=ax1, kind='line',
+             color='red', ls='-', marker='+', markersize=4, label='lindelta')
+    ax1.legend(fontsize=10, loc='best', markerscale=1.5)
+    # ax1.set_xticklabels(concdf.index, rotation=45)#, ha='right')
+    title = f"{staid} (lon/lat/alt: {sta_lon}/{sta_lat}/{sta_alt}, " \
+        f"in_halo: {in_halo}), CH4 concentrations and differences"
+    concdiff = concdf['lindconc-refconc'].values
+    cdifmin = concdiff.min()
+    cdifmax = concdiff.max()
+    abscdifavg = np.mean(np.abs(concdiff))
+    title += '\n' \
+        f"dif min/max={cdifmin:.6f}/{cdifmax:.6f}, " \
+        f"absdif_avg={abscdifavg:.6f}"
+    ax1.set_title(title)
+    ax1.grid(which='major', axis='both',color='grey', alpha=0.5)
+    # date_locator   = mpl.dates.DayLocator(interval=5)
+    # date_formatter = mpl.dates.DateFormatter('%Y-%m-%d')
+    # ax1.xaxis.set_major_locator(date_locator)
+    # ax1.xaxis.set_major_formatter(date_formatter)
+    msg = f"@{staid},in_halo={in_halo} difmin/difmax/absdifavg = " \
+        f"{cdifmin}/{cdifmax}/{abscdifavg}"
+    logger.debug(msg)
+    # # ax2.set_title(f"{staid}, concentration differences")
+    # # ax1.autoscale(enable=True, axis='x', tight=True)
+    # # ax2.autoscale(enable=True, axis='x', tight=True)
+    concdf.plot(y='lindconc-refconc', ax=ax2, kind='line', color='blue', ls='-', label='lindelta-ref')
+    ax2.legend(fontsize=10, loc='lower right', markerscale=1.5)
+    # for ax in [ax1,ax2]:#in plt.gcf().axes:
+    #     plt.sca(ax)
+    #     plt.xticks(ax.get_xticks(), rotation=45)
+    outname_tokens = [staid_ftag, 'refconc-vs-lindconc', days_tag, ]
+    outname = Path('_'.join(outname_tokens) + '.png')
+    if outdir!=None:
+        outname = outdir / outname
+    outname.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(outname, dpi=dpi, bbox_inches='tight')
+    plt.close()
+    msg = f"...generated ***{str(outname)}***"
+    logger.info(msg)
+    #
+    #--       l i n - i n i c - o b s
+    #
+    fig, ax1 = subplots(1, 1, figsize=figsize)
+    concdf.plot(y='obsconc', ax=ax1, kind='line',
+             color='black', ls='-', marker='+', markersize=4, label='obs')
+    concdf.plot(y='linconc', ax=ax1, kind='line',
+             color='red', ls='-', marker='+', markersize=4, label='linsimu')
+    concdf.plot(y='iniconc', ax=ax1, kind='line',
+             color='blue', ls='-', marker='+', markersize=4, label='inic')
+    ax1.legend(fontsize=10, loc='best', markerscale=1.5)
+    title = f"{staid} (lon/lat/alt: {sta_lon}/{sta_lat}/{sta_alt}, " \
+        f"in_halo: {in_halo}), CH4 concentrations"
+    ax1.set_title(title)
+    ax1.grid(which='major', axis='both',color='grey', alpha=0.5)
+    ax1.set_ylabel(f"[ppb]")
+    outname_tokens = [staid_ftag, 'obs-linsimu-iniconc', days_tag, ]
+    outname = Path('_'.join(outname_tokens) + '.png')
+    if outdir!=None:
+        outname = outdir / outname
+    outname.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(outname, dpi=dpi, bbox_inches='tight')
+
+
 def subcmd_ojacverify_analysis(args):
     #--
     figsize = args.figsize
     dpi     = args.dpi
-    ojac_list = list(args.obsjacverify_dir.glob(f"fitic-inversion-input*.nc"))
 
-    if len(ojac_list)!=1:
-        raise RuntimeError("one single fitic inversion input file expected.")
+    if args.obsjacfile!=None:
+        ojacfile = args.obsjacfile
     else:
-        ds = xr.open_dataset(ojac_list[0])
-        remove_halo = (ds.attrs['removed_halos']==1)
-        station_table = ds[['station_id','station_lon','station_lat','station_alt']].to_dataframe()
-        station_table = station_table.set_index('station_id')
-        station_table = station_table.rename({'station_lon':'lon', 'station_lat':'lat', 'station_alt':'alt'}, axis=1)
+        ojac_list = list(args.obsjacverify_dir.glob(f"fitic-inversion-input*.nc"))
+        if len(ojac_list)!=1:
+            raise RuntimeError("one single fitic inversion input file expected.")
+        else:
+            ojacfile = ojac_list[0]
+    #
+    #-- load station informations
+    #
+    ds = xr.open_dataset(ojacfile)
+    remove_halo = (ds.attrs['removed_halos']==1)
+    station_table = ds[['station_id','station_lon','station_lat','station_alt']].to_dataframe()
+    station_table = station_table.set_index('station_id')
+    station_table = station_table.rename({'station_lon':'lon', 'station_lat':'lat', 'station_alt':'alt'}, axis=1)
     nsta = len(station_table)
     msg = f"...verification for {nsta} stations (-->{list(station_table.index)}<--)."
     logger.info(msg)
+    if args.staid!=None:
+        station_table = station_table.loc[args.staid,:]
+        nsta = len(station_table)
+        msg = f"...restricting comparison to {nsta} stations " \
+            f"(-->{args.staid}<--)"
+        logger.info(msg)
     #
     #-- get domain information
     #
@@ -2315,7 +2457,7 @@ def subcmd_ojacverify_analysis(args):
     gns_domain = [gns_grid.west, gns_grid.east, gns_grid.south, gns_grid.north]
     gns_domain_nohalo = [gns_grid.west+eur_grid.dlon, gns_grid.east-eur_grid.dlon, gns_grid.south+eur_grid.dlat, gns_grid.north-eur_grid.dlat]
     #
-    #-- determine which stations are in HALO part
+    #-- determine which stations are in the HALO part of inner domains
     #
     station_table['in_halo'] = [False,]*nsta
     for staid,row in station_table.iterrows():
@@ -2333,6 +2475,8 @@ def subcmd_ojacverify_analysis(args):
     #--
     #
     for staid,row in station_table.iterrows():
+        # if staid!='cbw_207':
+        #     continue
         sta_lon = row.lon
         sta_lat = row.lat
         sta_alt = row.alt
@@ -2340,6 +2484,12 @@ def subcmd_ojacverify_analysis(args):
         #-- requires renaming
         staid_ftag = staid.replace('_','-')
         file_list = sorted(args.obsjacverify_dir.glob(f"obsjac-verification_{staid_ftag}_*.csv"))
+        # for f in file_list:
+        #     print(f)
+        if len(file_list)==0:
+            msg = f"@{staid}, no obsjac-verification csv files found!"
+            logger.warning(msg)
+            continue
         df_list = []
         for filepath in file_list:
             df = pd.read_csv(filepath)
@@ -2347,46 +2497,18 @@ def subcmd_ojacverify_analysis(args):
             df_list.append(df)
         ddf = pd.concat(df_list)
         ddf.loc[:,'lindconc-refconc'] = ddf.loc[:,'lindeltaconc']- ddf.loc[:,'refconc']
-        # fig, axs = subplots(2, 1, figsize=figsize)
-        # ax1,axs = axs
-        fig, ax1 = subplots(1, 1, figsize=figsize)
-        ax2 = ax1.twinx()
-        ddf.plot(y='refconc', ax=ax1, kind='line',
-                 color='black', ls='-', marker='+', markersize=4, label='ref')
-        ddf.plot(y='lindeltaconc', ax=ax1, kind='line',
-                 color='red', ls='-', marker='+', markersize=4, label='lindelta')
-        ax1.legend(fontsize=10, loc='best', markerscale=1.5)
-        # ax1.set_xticklabels(ddf.index, rotation=45)#, ha='right')
-        title = f"{staid} (lon/lat/alt: {sta_lon}/{sta_lat}/{sta_alt}, " \
-            f"in_halo: {in_halo}), CH4 concentrations and differences"
-        concdiff = ddf['lindconc-refconc'].values
-        cdifmin = concdiff.min()
-        cdifmax = concdiff.max()
-        abscdifavg = np.mean(np.abs(concdiff))
-        title += '\n' \
-            f"dif min/max={cdifmin:.6f}/{cdifmax:.6f}, " \
-            f"absdif_avg={abscdifavg:.6f}"
-        ax1.set_title(title)
-        msg = f"@{staid},in_halo={in_halo} difmin/difmax/absdifavg = " \
-            f"{cdifmin}/{cdifmax}/{abscdifavg}"
-        logger.debug(msg)
-        # ax2.set_title(f"{staid}, concentration differences")
-        # ax1.autoscale(enable=True, axis='x', tight=True)
-        # ax2.autoscale(enable=True, axis='x', tight=True)
-        ddf.plot(y='lindconc-refconc', ax=ax2, kind='line', color='blue', ls='-', label='lindelta-ref')
-        ax2.legend(fontsize=10, loc='lower right', markerscale=1.5)
-        for ax in [ax1,ax2]:#in plt.gcf().axes:
-            plt.sca(ax)
-            plt.xticks(ax.get_xticks(), rotation=45)
-        outname_tokens = [staid_ftag, 'refconc-vs-lindconc']
-        outname = Path('_'.join(outname_tokens) + '.png')
-        if args.outdir!=None:
-            outname = args.outdir / outname
-        outname.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(outname, dpi=dpi, bbox_inches='tight')
-        plt.close()
-        msg = f"...generated ***{str(outname)}***"
-        logger.info(msg)
+        #
+        #-- drop hour for plotting
+        #
+        ddf.index = [_[:10] for _ in ddf.index]
+        ddf.index.name = 'time'
+
+        #
+        #--
+        #
+        plot_cfg = SimpleNamespace(figsize=figsize, dpi=dpi, outdir=args.outdir)
+        sta_info = SimpleNamespace(staid=staid, lon=sta_lon, lat=sta_lat, alt=sta_alt, in_halo=in_halo)
+        _plot_concdf(sta_info, ddf, plot_cfg)
 
 
 def subcmd_ojac_stationmap(args):
@@ -2554,6 +2676,118 @@ def subcmd_ojac_stationmap(args):
     logger.info(f"generated ***{outname}***")
 
 
+def subcmd_compareplot_stationconc(args):
+    """
+    """
+    stationtable_filepath = args.station_table
+    simudir1, simudir2 = args.simulation_dirs
+    simudesc1, simudesc2 = args.simulation_desc
+    # #
+    # #-- load station informations
+    # #
+    # ds = xr.open_dataset(obsjac_filepath)
+    # remove_halo = (ds.attrs['removed_halos']==1)
+    # station_table = ds[['station_id','station_lon','station_lat','station_alt']].to_dataframe()
+    # station_table = station_table.set_index('station_id')
+    # station_table = station_table.rename({'station_lon':'lon', 'station_lat':'lat', 'station_alt':'alt'}, axis=1)
+    # nsta = len(station_table)
+    # msg = f"...verification for {nsta} stations (-->{list(station_table.index)}<--)."
+    # logger.info(msg)
+    # station_table.to_csv('fitic_icos-stattions.csv', index=True)
+    station_table = pd.read_csv(stationtable_filepath)
+    station_table = station_table.set_index('station_id')
+    nsta = len(station_table)
+    if args.staid!=None:
+        station_table = station_table.loc[args.staid,:]
+        nsta = len(station_table)
+        msg = f"...restricting comparison to {nsta} stations " \
+            f"(-->{args.staid}<--)"
+        logger.info(msg)
+    station_ids = list(station_table.index)
+    #
+    #-- get domain information
+    #
+    region_list = ['glb600x400','eur300x200','gns100x100']
+    reginfo = regions1D_info(region_list, remove_halo=True)
+    region_table = reginfo.table
+    gns_grid = region_table['gns100x100'].grid
+    eur_grid = region_table['eur300x200'].grid
+    gns_domain = [gns_grid.west, gns_grid.east, gns_grid.south, gns_grid.north]
+    gns_domain_nohalo = [gns_grid.west+eur_grid.dlon, gns_grid.east-eur_grid.dlon, gns_grid.south+eur_grid.dlat, gns_grid.north-eur_grid.dlat]
+#
+    #-- determine which stations are in HALO part
+    #
+    station_table['in_halo'] = [False,]*nsta
+    for staid,row in station_table.iterrows():
+        cur_lon = row['lon']
+        cur_lat = row['lat']
+        cnd_not_halo = gns_domain_nohalo[0]<=cur_lon<=gns_domain_nohalo[1] and \
+             gns_domain_nohalo[2]<=cur_lat<=gns_domain_nohalo[3]
+        msg = f"{staid}, lon/lat={cur_lon}/{cur_lat}  cnd_not_halo={cnd_not_halo}"
+        logger.debug(msg)
+        station_table.loc[staid, 'in_halo'] = (not cnd_not_halo)
+    #
+    #--
+    #
+    simu_table = {}
+    for staid,station_info in station_table.iterrows():
+        #--
+        #
+        sta_lon = station_info.lon
+        sta_lat = station_info.lat
+        sta_alt = station_info.alt
+        in_halo = station_info.in_halo
+        #
+        #-- read concentrations
+        #
+        df_simu1 = tm5refdir_load_stationconc(simudir1, staid)
+        df_simu2 = tm5refdir_load_stationconc(simudir2, staid)
+        simu_dict = {'time': df_simu1.time,
+                     simudesc1: df_simu1.conc,
+                     simudesc2: df_simu2.conc }
+        simu_df = DataFrame.from_dict(simu_dict)
+        simu_df = simu_df.set_index('time')
+        simu_table[staid] = simu_df
+        #
+        dayf = simu_df.index[0].strftime('%Y%m%d')
+        dayl = simu_df.index[-1].strftime('%Y%m%d')
+        days_tag = f"{dayf}--{dayl}"
+        #
+        #--
+        #
+        #
+        #--
+        #
+        fig, ax = subplots(1, 1, figsize=args.figsize)
+        simu_df.plot(y=f'{simudesc1}', ax=ax, kind='line',
+                     color='black', ls='-', marker=None, label=f'{simudesc1}')
+        simu_df.plot(y=f'{simudesc2}', ax=ax, kind='line',
+                     color='red', ls='-', marker=None, label=f'{simudesc2}')
+        ax.legend(fontsize=10, loc='best', markerscale=1.5)
+        title = f"{staid}, {simudesc1} vs {simudesc2} " \
+            f"(lon/lat/alt = {sta_lon}/{sta_lat}/{sta_alt} in_halo={in_halo}"
+        concbias = simu_df[simudesc1]-simu_df[simudesc2]
+        minbias = concbias.min()
+        maxbias = concbias.max()
+        meanbias = concbias.mean()
+        title += '\n' \
+            f"bias min/mean/max={minbias:.6f}/{meanbias:.6f}/{maxbias:.6f}"
+        ax.set_title(title)
+        ax.grid(which='major', axis='both',color='grey', alpha=0.5)
+        ax.set_ylabel('[ppb]')
+        #
+        staid_ftag = staid.replace('_','')
+        outname_tokens = [staid_ftag, f'{simudesc1}-vs-{simudesc2}', days_tag]
+        outname = Path('_'.join(outname_tokens) + '.png')
+        if args.outdir!=None:
+            outname = args.outdir / outname
+        outname.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(outname, dpi=args.dpi, bbox_inches='tight')
+        plt.close()
+        msg = f"...generated ***{str(outname)}***"
+        logger.info(msg)
+        
+
 ################################################################################
 #
 #                   p a r s e r
@@ -2700,7 +2934,10 @@ sparser.add_argument('--difalt_max',
                      help="""measurement altitude may be varying per observation, in case their differences are below this threshold a single value is associated to only the station in the NetCDF file (default: %(default)s[m]).""")
 sparser.add_argument('--refdir',
                      type=Path,
-                     help="""TM5 forward simulation, can be used to verify the Jacobian approach.""") 
+                     help="""full TM5 forward simulation to be used for (potential) verification. ATTENTION: this simulation must have been carried out on the 'smaller' FIT-IC zoom configuration where the original HALO parts have been remvoed!""")
+sparser.add_argument('--refemisdir',
+                     type=Path,
+                     help="""emissions directory compatible for those used for the reference simulation. ATTENTION:here we need emissions compatible for the obs Jacobian, i.e. those prepared for the original zoom configuration.""")
 sparser.add_argument('--outdir',
                      type=Path,
                      help="""top-level directory for any generated outputs..""")
@@ -2836,6 +3073,12 @@ sparser = subparsers.add_parser('ojacverify_analysis',
 sparser.add_argument('obsjacverify_dir',
                      type=Path,
                      help="""directory that contains (per station) csv files with simulated and observed concentrations.""")
+sparser.add_argument('--obsjacfile',
+                     type=Path,
+                     help="""explicitly pass an observational Jacobian file (which will be used to extract the relevant station information). ATTENTION: normally this should be found in the obsjac verification directory passed!!.""")
+sparser.add_argument('--staid',
+                     nargs='+',
+                     help="""restrict to selected stations.""")
 sparser.add_argument('--figsize',
                      type=float,
                      nargs=2,
@@ -2879,6 +3122,43 @@ sparser.add_argument('--outdir',
                      help="""top-level directory for any generated outputs..""")
 
 
+#
+#--       compareplot_stationconc
+#
+sparser = subparsers.add_parser('compareplot_stationconc',
+                                help="""visualisation of simulated concentrations at stations for which the obs Jacobian was built.""")
+sparser.add_argument('station_table',
+                     type=Path,
+                     help="""csv file with stations.""")
+sparser.add_argument('simulation_dirs',
+                     nargs=2,
+                     help="""TM5 generated forward simulation directories.""")
+sparser.add_argument('--simulation_desc',
+                     nargs=2,
+                     default=['file1', 'file2'],
+                     help="""short descriptor for both simulations (default: %(default)s).""")
+sparser.add_argument('--staid',
+                     nargs='+',
+                     help="""restrict to these selected station identifiers.""")
+sparser.add_argument('--figsize',
+                     type=float,
+                     nargs=2,
+                     default=(20,10),
+                     help="""figure size [inches] (default: %(default)s).""")
+sparser.add_argument('--dpi',
+                     type=int,
+                     default=150,
+                     help="""dots-per-inch  (default: %(default)s).""")
+sparser.add_argument('--markersize',
+                     type=int,
+                     default=4,
+                     help="""marker size for station locations (default: %(default)s).""")
+sparser.add_argument('--outname',
+                     type=Path,
+                     help="""user selected name for generated file""")
+sparser.add_argument('--outdir',
+                     type=Path,
+                     help="""top-level directory for any generated outputs..""")
 
 ################################################################################
 #
@@ -2923,6 +3203,9 @@ def main(args):
 
     if args.subcmds=='ojac_stationmap':
         subcmd_ojac_stationmap(args)
+
+    if args.subcmds=='compareplot_stationconc':
+        subcmd_compareplot_stationconc(args)
 
     #
     te = Timestamp.utcnow()
