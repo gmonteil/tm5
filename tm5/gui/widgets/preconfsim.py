@@ -57,12 +57,12 @@ def simulation_read_targets(output_path: Path) -> Tuple[np.ndarray, DataFrame]:
     #-- prior
     #
     tfile = output_path / 'output' / 't0.dat'
-    msg = f"reading from ***{tfile.name}***"
-    logger.debug(msg)
     if not tfile.exists():
         msg = f"expected prior target file ***{tfile.name}*** not present"
         raise RuntimeError(msg)
     else:
+        msg = f"reading from ***{tfile.name}***"
+        logger.debug(msg)
         dft = read_csv(tfile, sep=r"\s+|\t+", engine='python')
         # dft.to_csv('tgt-apri.csv')
         # msg = f"prior targets -->{dft}<--"
@@ -72,12 +72,12 @@ def simulation_read_targets(output_path: Path) -> Tuple[np.ndarray, DataFrame]:
     #-- posterior
     #
     tfile = output_path / 'output' / 't.dat'
-    msg = f"reading from ***{tfile.name}***"
-    logger.debug(msg)
     if not tfile.exists():
         msg = f"expected prior target file ***{tfile.name}*** not present"
         raise RuntimeError(msg)
     else:
+        msg = f"reading from ***{tfile.name}***"
+        logger.debug(msg)
         dft = read_csv(tfile, sep=r"\s+|\t+", engine='python')
         # dft.to_csv('tgt-apos.csv')
         # msg = f"prior targets -->{dft}<--"
@@ -87,12 +87,12 @@ def simulation_read_targets(output_path: Path) -> Tuple[np.ndarray, DataFrame]:
     #-- posterior uncertainty
     #
     tfile = output_path / 'output' / 'ct.dat'
-    msg = f"reading from ***{tfile.name}***"
-    logger.debug(msg)
     if not tfile.exists():
         msg = f"expected prior target file ***{tfile.name}*** not present"
         raise RuntimeError(msg)
     else:
+        msg = f"reading from ***{tfile.name}***"
+        logger.debug(msg)
         dft = read_csv(tfile, sep=r"\s+|\t+", engine='python')
         # dft.to_csv('tgtunc-apos.csv')
         for itgt, tgt in enumerate(tgt.targets):
@@ -208,7 +208,13 @@ def load_forward_concentrations(path: Path, label: str) -> xr.Dataset:
 
 def extract_emis_map(ds, region: str) -> xr.DataArray:
     ds = ds.sel(ng = ds.region == region)
-    emis_in = ds.emission
+    #-- MVO-20260728::
+    #   fe.nc:      data variable is 'emissions'
+    #   fepost.nc:  data variables are 'emission_prior' *and* 'emission_post'
+    if 'emission' in ds:
+        emis_in = ds['emission']
+    elif 'emission_post' in ds:
+        emis_in = ds['emission_post']
     assert emis_in.attrs['units'] in ['kgCH4/cell',"kgCH4/cell/month"], \
         f"unexpected emission units -->{emis_in.attrs['units']}<--"
     emis_out = (emis_in / ds.area).values
@@ -221,7 +227,7 @@ def extract_emis_map(ds, region: str) -> xr.DataArray:
                         attrs={'units':'kgCH4/m2'})
     emis['lat'] = ('lat', sorted(set(ds.lat.values)))
     emis['lon'] = ('lon', sorted(set(ds.lon.values)))
-#    logger.info(f"@{region}, emis={emis}")
+    # logger.debug(f"@{region}, emis={emis}")
     return emis
 
 
@@ -285,7 +291,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         logger.debug(f"==>{self.gui_settings.keys()}<==")
         
         show_emismap = self.gui_settings.get('show_emismap', False)
-        logger.debug(f"show_emismap = {show_emismap}")
+        # logger.debug(f"show_emismap = {show_emismap}")
         if show_emismap:
             return pn.Column(
                 header_pane,
@@ -356,6 +362,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.alert = ''
 
         output_path = Path(payload['output'])
+        # msg = f"@task={task} for {self.experiment} yields output_path ***{str(output_path)}***"
+        # logger.debug(msg)
         if task == 'inversion':
             self.cache_inv[self.experiment] = output_path
         else:
@@ -375,11 +383,21 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     @param.depends('run_inv', watch=True)
     def _run_inv(self):
         output_path = self._get_output_path('inversion')
+        # msg = f"...output_path ***{output_path}*** ('output_path is not None': {output_path is not None})"
+        # logger.debug(msg)
         self.simul_type = 'inv'
         if output_path is not None:
+            # msg = f"...start reading concentrations"
+            # logger.debug(msg)
             self._read_concentrations(output_path, 'inversion')
+            # msg = f"...start reading emissions"
+            # logger.debug(msg)
             self.emissions = load_emissions(output_path)
+            # msg = f"...computing conc statistics"
+            # logger.debug(msg)
             self.stats4conc = conc_statistics(self.conc, get_exp_label(self.experiment))
+            # msg = f"...reading simulation targets from directory ***{str(output_path)}***"
+            # logger.debug(msg)
             self.tgt_table = simulation_read_targets(output_path)
 
     def _read_concentrations(self, path: Path, task: str):
