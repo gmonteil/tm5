@@ -204,13 +204,6 @@ def tm5emisdir_load_emissions2D( emisdir : str | Path, emis_prefix : str, day_ra
     The emissions array will be 2D with only one single dimension in the spatial domain,
     and concatenating the contributions from each region in the spatial domain as well.
     """
-    # #
-    # #-- make sure region table is set-up
-    # #
-    # if len(region_table)==0:
-    #     msg = f"...initialise region table"
-    #     logger.info(msg)
-    #     _init_region_table()
     nday = len(day_range)
     #
     #-- get spatial information as 1D vector
@@ -256,9 +249,10 @@ def tm5emisdir_load_emissions2D( emisdir : str | Path, emis_prefix : str, day_ra
                 msk = region_table[reg].nohalo_mask
                 emtot = emtot[msk]
                 if iday==0:
-                    msg = f"@{reg}/{day}: applied remove_halo mask reduces #gridcells from " \
-                        f"{ngtot} to {len(emtot)}"
-                    logger.debug(msg)
+                    # msg = f"@{reg}/{day}: applied remove_halo mask reduces #gridcells from " \
+                    #     f"{ngtot} to {len(emtot)}"
+                    # logger.debug(msg)
+                    pass
             elif clip_child:
                 #--
                 if reg=='gns100x100':
@@ -473,9 +467,9 @@ def tm5rundir_jacobian3D( outpath : str | Path, emisday_range : DatetimeIndex|No
         nobs = len(obsid)
         itrac_list = [ allobsid_list.index(_) for _ in obsid ]
         footp_obsids = obsid
-    msg = f"...preparing Jacobian for emissions for " \
+    msg = f"...@{str(outpath)}, start preparation of Jacobian for " \
         f"{nobs} observation locations ({footp_obsids}), " \
-        f"{nemisday} emission days and ng={ng} emission grid-cells (per day)."
+        f"{nemisday} emission days and ng={ng} emission grid-cells."
     logger.debug(msg)
     #
     #-- initialise Jacobian to zero
@@ -604,6 +598,8 @@ def tm5rundir_jacobian3D( outpath : str | Path, emisday_range : DatetimeIndex|No
                 #
                 jacobian3D.loc[dict(obs=obs_cur,emisday=emisday,ng=idxs_region)] = jacvalues[:]
             ds.close()
+    msg = f"......@{str(outpath)}, Jacobian done."
+    logger.debug(msg)
     #
     #--
     #
