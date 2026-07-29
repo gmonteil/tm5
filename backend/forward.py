@@ -31,23 +31,28 @@ if not outpath.exists():
 
 #
 #-- required links from the datapath
-#   - both exectuables
+#   - required exectuables
 #   - observational and target Jacobian
 #   - emissions and emission uncertainties
 #
-(outpath / 'forward').symlink_to(datapath / 'forward')
-(outpath / 'inversion').symlink_to(datapath / 'inversion')
+#-- only link executable required for task ('forward','inversion')
+#
+(outpath / args.task).symlink_to(datapath / args.task)
 (outpath / 'foj.nc').symlink_to(datapath / 'foj.nc')
+#-- target Jacobian required also for task==forward (Fortran routine 'setdim2')
 (outpath / 'ftj.nc').symlink_to(datapath / 'ftj.nc')
 (outpath / 'fe.nc').symlink_to(datapath / emfile)
-(outpath / 'fesigma.nc').symlink_to(datapath / 'fesigma.nc')
+#
+#-- target Jacobian
+if args.task=='inversion':
+    (outpath / 'fesigma.nc').symlink_to(datapath / 'fesigma.nc')
+
 #
 #-- Fortran inversion system outputs go to dedicated subdirectory
 #
 ftn_outdir = 'output'
 outdir = outpath / f'{ftn_outdir}'
 outdir.mkdir(parents=True, exist_ok=True)
-
 #
 #-- required NetCDF inputs depend on task
 #
