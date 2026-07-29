@@ -70,8 +70,13 @@ with open(outpath / 'output/forward.txt', 'w') as fid:
     fid.writelines(p.stdout.decode())
 
 if args.task == 'inversion':
-    shutil.copy(outpath / 'fc.nc', outpath / 'fc_apri.nc')
+    #-- MVO,20260729:
+    #   - Fortran code writes prior and posterior concentration to file 'fcpost.nc'
+    #   - there is no longer need to copy (and the copy to fc_apos.nc even did not
+    #     contain the posterior but still the prior concentrations)
+    #
+    # shutil.copy(outpath / 'fc.nc', outpath / 'fc_apri.nc')
     p = subprocess.run('./inversion', check=True, capture_output=True, cwd=outpath)
     with open(outpath / 'output/inversion.txt', 'w') as fid:
         fid.writelines(p.stdout.decode())
-        shutil.move(outpath / 'fc.nc', outpath / 'fc_apos.nc')
+        # shutil.move(outpath / 'fc.nc', outpath / 'fc_apos.nc')
