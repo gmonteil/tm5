@@ -29,47 +29,62 @@ if not outpath.exists():
     msg = f"...expected output directory {str(outpath)} not found on system!"
     raise RuntimeError(msg)
 
+#
+#-- required links from the datapath
+#   - both exectuables
+#   - observational and target Jacobian
+#   - emissions and emission uncertainties
+#
 (outpath / 'forward').symlink_to(datapath / 'forward')
 (outpath / 'inversion').symlink_to(datapath / 'inversion')
 (outpath / 'foj.nc').symlink_to(datapath / 'foj.nc')
 (outpath / 'ftj.nc').symlink_to(datapath / 'ftj.nc')
 (outpath / 'fe.nc').symlink_to(datapath / emfile)
 (outpath / 'fesigma.nc').symlink_to(datapath / 'fesigma.nc')
-
 #
-#-- Fortran inversion system will write to this directory
+#-- Fortran inversion system outputs go to dedicated subdirectory
 #
 ftn_outdir = 'output'
 outdir = outpath / f'{ftn_outdir}'
 outdir.mkdir(parents=True, exist_ok=True)
+
+#
+#-- required NetCDF inputs depend on task
+#
+if args.task=='forward':
+    mapping_dict = {
+        'fc.nc':     'foj.nc',
+    }
+elif args.task=='inversion':
+    mapping_dict = {
+        'fepost.nc': 'fe.nc',
+        'fcpost.nc': 'foj.nc',
+    }
+
+
 #
 #-- Fortran system operates on existing files for I/O,
-#   we want them in the output folder, but Fortran expects those in the
-#   current run direcgt
-#
-shutil.copy(outpath / 'foj.nc', outdir / 'fc.nc')
-shutil.copy(outpath / 'fe.nc', outdir / 'fepost.nc')
-shutil.copy(outpath / 'foj.nc', outdir / 'fcpost.nc')
-#-- and these files must be available in current working directory!
-# (outpath / 'fc.nc').symlink_to(outdir / 'fc.nc')
-# (outpath / 'fcpost.nc').symlink_to(outdir / 'fcpost.nc')
-# (outpath / 'fepost.nc').symlink_to(outdir / 'fepost.nc')
-#
-#-- prefer "local" links (e.g. fc.nc -> output/fc.nc)
+#   we want them in the output folder,
+#   but the Fortran code expects those in the current run directory
+#   and we set symbolic links
 #
 dir_fd = os.open(str(outpath), os.O_RDONLY)
-for p in ['fc.nc', 'fepost.nc', 'fcpost.nc',]:
-    src = f"{ftn_outdir}/{p}"
-    dst = p
-    os.symlink(src=src, dst=dst, dir_fd=dir_fd)
+for dstfile,srcfile in mapping_dict.items():
+    shutil.copy(outpath / srcfile, outdir / dstfile)
+    #
+    #-- prefer "local" links in run directory (e.g. fc.nc -> output/fc.nc)
+    #
+    srcfile_loc = (Path(ftn_outdir) / dstfile)
+    os.symlink(src=str(srcfile_loc), dst=dstfile, dir_fd=dir_fd)
 
 
 # Run the code
-p = subprocess.run('./forward', check=True, capture_output=True, cwd=outpath)
-with open(outpath / 'output/forward.txt', 'w') as fid:
-    fid.writelines(p.stdout.decode())
+if args.task=='forward':
+    p = subprocess.run('./forward', check=True, capture_output=True, cwd=outpath)
+    with open(outpath / 'output/forward.txt', 'w') as fid:
+        fid.writelines(p.stdout.decode())
 
-if args.task == 'inversion':
+elif args.task == 'inversion':
     #-- MVO,20260729:
     #   - Fortran code writes prior and posterior concentration to file 'fcpost.nc'
     #   - there is no longer need to copy (and the copy to fc_apos.nc even did not
