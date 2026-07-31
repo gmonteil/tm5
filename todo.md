@@ -2,10 +2,11 @@
 - GUI (setup)
     - [x] (1) GM to apply script (to remove halos from the Jacobian and emission files) to the files we are using on the VM
     - [x] (1) MV to integrate script into environment that creates the Jacobian
-    - [ ] example GUI element for namelist parameters: "Resolution of Emission space" fixed patters/full grid
-    - [ ] (3a) GM to get namelist to be passed from GUI to VM
-    - [ ] (2) GM to improve performance on emission plots, potentially also seasonal cycles, or bar plot ... 
-    - [ ] (3) GM to "combine the two tabs "setup simulation" and "preconfigured simulation"
+    - [ ] (1) GM to check (and hopefully correct) the origin of the mismatch between linearised and full forward model that Thomas had (potentially erroneoulsy) attributed to linearisation around wrong concentration trajectory due to footprint calculation with 0 emissions.
+    - [ ] (2) GM to check (and hopefully correct) the origin of the mismatch between linearised and full forward model in particular for sites in Halo
+    - [ ] (3) GM to include an example GUI element for namelist parameters: "Resolution of Emission space" fixed patters/full grid
+    - [ ] (5) GM to improve performance on emission plots, potentially also seasonal cycles, or bar plot ... 
+    - [ ] (4) GM to "combine the two tabs "setup simulation" and "preconfigured simulation"
 - GUI (analysis)
     - [x partly] Add Chi2 with sigma = sqrt (sigma_obs**2 + sigma_model **2), and sigma model from a crude approximation derived from short scale variability of the obs, or the variability of the meteo (representation error approximation from slopes may also be there ...
     - [ ] (8) GM: Integrate some visualisation of the emission budget in configuration part of the GUI (to allow perform a quick sanity check)
