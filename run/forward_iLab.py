@@ -133,7 +133,11 @@ tm = tm5.TM5(dconf, host=args.host)
 if args.build or args.build_only and not args.rcfile_only:
     #-- NOTE: if a TM5 executable was specified on invocation
     #         (option --tm5exec) this will be handled within tm.build
-    tm.build() #-- 
+    tm.build() #--
+    #-- save yaml file (to allow backtracing how the built was done)
+    dst = Path(tm.dconf.build.directory) / 'tm5.yaml'
+    OmegaConf.save(config=dconf, f=str(dst))
+    
     if args.build_only:
         logger.info(f"TM5 compilation done, exiting now")
         sys.exit()
