@@ -2,8 +2,10 @@
 - GUI (setup)
     - [x] (1) GM to apply script (to remove halos from the Jacobian and emission files) to the files we are using on the VM
     - [x] (1) MV to integrate script into environment that creates the Jacobian
-    - [ ] (1) GM to check (and hopefully correct) the origin of the mismatch between linearised and full forward model that Thomas had (potentially erroneoulsy) attributed to linearisation around wrong concentration trajectory due to footprint calculation with 0 emissions.
-    - [ ] (2) GM to check (and hopefully correct) the origin of the mismatch between linearised and full forward model in particular for sites in Halo
+    - [ ] (1) GM to check (and hopefully correct) the origin of the mismatch between linearised and full forward model that Thomas had (erroneoulsy) attributed to linearisation around wrong concentration trajectory due to footprint calculation with 0 emissions. For a longer run (at least 3-4 extra months, i.e. Oct 2020 to June or so).
+    - [ ] (2) GM to check (and hopefully correct) the origin of the mismatch between linearised and full forward model in particular for sites in Halo. For a longer run (at least 3-4 extra months, i.e. Oct 2020 to June or so).
+    - [ ] (1) MV to trace back differences in response to initial concentration
+    - [ ] (2) MV to apply Guillaume's script to compare full and linearised models to Michael's footprint directories, and hopefully detect and correct potential error in the postprocessing
     - [ ] (3) GM to include an example GUI element for namelist parameters: "Resolution of Emission space" fixed patters/full grid
     - [ ] (5) GM to improve performance on emission plots, potentially also seasonal cycles, or bar plot ... 
     - [ ] (4) GM to "combine the two tabs "setup simulation" and "preconfigured simulation"
