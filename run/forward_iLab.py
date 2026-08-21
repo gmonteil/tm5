@@ -11,7 +11,7 @@ from omegaconf import OmegaConf
 from argparse import ArgumentParser
 from pathlib import Path
 from loguru import logger
-from pandas import Timestamp, Timedelta
+from pandas import Timestamp, Timedelta, date_range, concat
 import tm5
 from tm5.system import runcmd
 from tm5.fitic import read_obs_table
@@ -142,9 +142,14 @@ if args.build or args.build_only and not args.rcfile_only:
 # 1.5 Setup the observations
 # =====================================================
 if 'observations' in tm.dconf:
-    observations_table = read_obs_table(tm.dconf.observations.file)
+    observations_table = []
+    for day in date_range(tm.start, tm.end, freq='1D'):
+        obsfile = day.strftime(tm.dconf.observations.file)
+        if Path(obsfile).exists():
+            observations_table.append(read_obs_table(obsfile))
+    observations_table = concat(observations_table).sort_values('time')
     tm.setup_observations(observations_table)
-
+    # observations_table.to_parquet('obstable.pq')
     
 #=====================================================
 # 2. Setup input files:
