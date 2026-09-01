@@ -92,7 +92,7 @@ from tm5.post.utilities import lonstr,latstr,set_outname,create_sha512
 #     }
 
 
-def subcmd_prepare_daily_obsjacobian(args : ArgumentNamespace) -> None: 
+def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None: 
     """
     """
     complevel = args.__dict__.get('complevel',4)
