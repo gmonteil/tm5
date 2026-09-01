@@ -6,6 +6,122 @@ from omegaconf import DictConfig
 from pandas import DataFrame
 import numpy as np
 from loguru import logger
+from collections import OrderedDict
+from types import SimpleNamespace
+#-- library packages
+from tm5.gridtools import TM5Grids
+
+#
+#-- table of FIT-IC regions
+#   - their will be one (global) instance for all queries
+#   TODO: should not be hard-coded here!
+#
+fitic_region_table = OrderedDict()
+def _fitic_region_table_init():
+    global fitic_region_table
+    if len(fitic_region_table)>0:
+        return #-- already initialised
+    #
+    #-- create grid instances
+    #
+    glb_grid = TM5Grids.from_corners(west=-180, east=180, south=-90, north=90, dlon=6, dlat=4)
+    eur_grid = TM5Grids.from_corners(west=-36, east=54, south=22, north=74, dlon=3, dlat=2)
+    gns_grid = TM5Grids.from_corners(west=0, east=18, south=42, north=58, dlon=1, dlat=1)
+    #
+    #-- initial attributes (per region)
+    #
+    fitic_region_table['glb600x400'] = SimpleNamespace(
+        grid=glb_grid,
+        rlat=4, rlon=6,
+        child='eur300x200', parent=None)
+    fitic_region_table['eur300x200'] = SimpleNamespace(
+        grid=eur_grid,
+        rlat=2, rlon=3,
+        child='gns100x100', parent='glb600x400')
+    fitic_region_table['gns100x100'] = SimpleNamespace(
+        grid=gns_grid,
+        rlat=1, rlon=1,
+        child=None, parent='eur300x200')
+    #
+    #-- extending attributes
+    #   - 1D flattened arrays of coordinates
+    #   - prepare for filtering out child domain within in parent
+    #
+    for reg,reg_info in fitic_region_table.items():
+        grid = reg_info.grid
+        area1D = grid.area.ravel()
+        #
+        lonmesh,latmesh = np.meshgrid(grid.lonc,grid.latc)
+        fitic_region_table[reg].lonmesh = lonmesh
+        fitic_region_table[reg].latmesh = latmesh
+        #
+        #--
+        #
+        grid_mask = xr.DataArray(
+            np.ones((grid.nlat, grid.nlon), dtype='i1'),
+            dims = ('lat','lon'),
+            coords = { 'lon' : grid.lonc,
+                       'lat' : grid.latc },
+            name = 'mask'
+        )
+        if reg=='glb600x400':
+            #-- drop the HALO corrected child domain
+            child_info = fitic_region_table[reg_info.child]
+            child_grid = child_info.grid
+            #
+            lon_min = child_grid.west + grid.dlon
+            lon_max = child_grid.east - grid.dlon
+            lat_min = child_grid.south + grid.dlat
+            lat_max = child_grid.north - grid.dlat
+            drop_mask = (
+                (grid_mask.lat >= lat_min) &
+                (grid_mask.lat <= lat_max) &
+                (grid_mask.lon >= lon_min) &
+                (grid_mask.lon <= lon_max)
+                )
+        elif reg=='eur300x200':
+            #-- drop the HALO corrected child domain
+            child_grid = fitic_region_table[reg_info.child].grid
+            #
+            lon_min = child_grid.west + grid.dlon
+            lon_max = child_grid.east - grid.dlon
+            lat_min = child_grid.south + grid.dlat
+            lat_max = child_grid.north - grid.dlat
+            drop_mask1 = (
+                (grid_mask.lat >= lat_min) &
+                (grid_mask.lat <= lat_max) &
+                (grid_mask.lon >= lon_min) &
+                (grid_mask.lon <= lon_max)
+                )
+            #-- drop HALO part of domain itself
+            parent_grid = fitic_region_table[reg_info.parent].grid
+            drop_mask2 = (
+                (grid_mask.lat<=grid.south + parent_grid.dlat) |
+                (grid_mask.lat>=grid.north - parent_grid.dlat) |
+                (grid_mask.lon<=grid.west + parent_grid.dlon) |
+                (grid_mask.lon>=grid.east - parent_grid.dlon)
+            )
+            drop_mask = drop_mask1 | drop_mask2
+        elif reg=='gns100x100':
+            #-- drop HALO part of domain itself
+            parent_grid = fitic_region_table[reg_info.parent].grid
+            drop_mask = (
+                (grid_mask.lat<=grid.south + parent_grid.dlat) |
+                (grid_mask.lat>=grid.north - parent_grid.dlat) |
+                (grid_mask.lon<=grid.west + parent_grid.dlon) |
+                (grid_mask.lon>=grid.east - parent_grid.dlon)
+            )
+        #
+        #-- set drop_mask
+        #
+        fitic_region_table[reg].drop_mask = drop_mask
+
+def get_fitic_region_table():
+    if len(fitic_region_table)==0:
+        msg = f"...initialise region table"
+        logger.info(msg)
+        _fitic_region_table_init()
+    return fitic_region_table
 
 
 def read_obs_table(filename: Path | str, drop_missing_value : bool = False) -> DataFrame:
