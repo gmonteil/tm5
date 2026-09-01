@@ -3,7 +3,7 @@
 import xarray as xr
 from pathlib import Path
 from omegaconf import DictConfig
-from pandas import DataFrame
+from pandas import DataFrame, DatetimeIndex
 import numpy as np
 from loguru import logger
 from collections import OrderedDict
@@ -116,12 +116,101 @@ def _fitic_region_table_init():
         #
         fitic_region_table[reg].drop_mask = drop_mask
 
+
 def get_fitic_region_table():
     if len(fitic_region_table)==0:
         msg = f"...initialise region table"
         logger.info(msg)
         _fitic_region_table_init()
     return fitic_region_table
+
+
+def tm5emisdir_load_emissions2D( emisdir : str | Path, emis_prefix : str, day_range : DatetimeIndex, regions : list, drop : bool = False ) -> SimpleNamespace:
+    """Read in daily emissions as prepared for TM5 for the selected temporal range
+    and regions.
+    The emissions array will be 2D with only one single dimension in the spatial domain,
+    and concatenating the contributions from each region in the spatial domain as well.
+    """
+    nday = len(day_range)
+    #
+    #-- get spatial information as 1D vector
+    #
+    region_table = get_fitic_region_table()
+    ng = 0
+    regionid_1D = []
+    lon_1D = None
+    lat_1D = None
+    area_1D = None
+    for region,region_info in region_table.items():
+        if drop:
+            keep_mask = ~region_info.drop_mask
+            ng_reg = np.count_nonzero(keep_mask)
+            lon_reg = region_info.lonmesh[keep_mask]
+            lat_reg = region_info.latmesh[keep_mask]
+            area_reg = region_info.grid.area[keep_mask]
+        else:
+            ng_reg = region_info.grid.nlat*region_info.grid.nlon
+            lon_reg = region_info.lonmesh.ravel()
+            lat_reg = region_info.latmesh.ravel()
+            area_reg = region_info.grid.area.ravel()
+        ng += ng_reg
+        regionid_1D += [region,]*ng_reg
+        if lon_1D is None:
+            lon_1D = lon_reg
+        else:
+            lon_1D= np.hstack((lon_1D,lon_reg))
+        if lat_1D is None:
+            lat_1D = lat_reg
+        else:
+            lat_1D= np.hstack((lat_1D,lat_reg))
+        if area_1D is None:
+            area_1D = area_reg
+        else:
+            area_1D= np.hstack((area_1D,area_reg))
+    msg = f"...preparing emissions for nday={nday} and ng={ng}"
+    logger.info(msg)
+    #
+    #-- prepare emissions field
+    #
+    missval = -99999.
+    emissions2D = np.full((nday,ng), missval)
+    for iday,day in enumerate(day_range):
+        emis_list = []
+        for reg in regions:
+            #-- TODO:: 'CH4' is still hard-coded here!
+            fpath = Path(emisdir) / day.strftime(f'{emis_prefix}.CH4.{reg}.%Y%m%d.nc')
+            if not fpath.exists():
+                msg = f"expected emissions file ***{str(fpath)}*** not found on system."
+                raise FileNotFoundError(msg)
+            #
+            #-- open emissions file for current region
+            #
+            em = xr.open_dataset(fpath)
+            #
+            #-- sum-up total emissions
+            #
+            emtot = em.to_array().sum('variable').values
+            #
+            #-- turn lat/lon into 1D vector (lat major ordering)
+            #
+            if drop:
+                drop_mask = region_table[reg].drop_mask
+                keep_mask = ~drop_mask
+                emtot = emtot[keep_mask]
+            else:
+                emtot = emtot.ravel()
+            emis_list.append(emtot)
+        #-- add concatenated emissions
+        emissions2D[iday,:] = np.hstack(emis_list)
+    #-- consistency: emissions should be filled completely!
+    assert np.count_nonzero(emissions2D==missval)==0
+    
+    return SimpleNamespace(emis2D=emissions2D,
+                           reg1D=np.array(regionid_1D),
+                           lonc1D=lon_1D, latc1D=lat_1D,
+                           area1D=area_1D,
+                           region_table=region_table,
+                           emisdir=emisdir)
 
 
 def read_obs_table(filename: Path | str, drop_missing_value : bool = False) -> DataFrame:
