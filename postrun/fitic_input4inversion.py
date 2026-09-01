@@ -346,7 +346,7 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
             msg = f"{col}: min/mean/max = " \
                 f"{dfcmp[col].min()}/{dfcmp[col].mean()}/{dfcmp[col].max()}"
             logger.info(msg)
-        outname_tokens = [f"obsjac-forward-comparison", obsday_tag, emis_tag]
+        outname_tokens = [f"obsjac-forward-comparison", obsid_tag, domain_tag, obsday_tag, emis_tag]
         outname = '_'.join(outname_tokens) + '.csv'
         if args.outdir!=None:
             outname = args.outdir / outname
