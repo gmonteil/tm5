@@ -31,6 +31,7 @@ from tm5.fitic import read_obs_table
 from tm5.gridtools import TM5Grids
 from tm5.observations import read_obspack_file
 from tm5.post.footprint_io import load_adjoint_fwd #-- this was for earlier diagnostics
+from tm5.fitic import tm5emisdir_load_emissions2D
 from tm5.fitic import get_fitic_region_table
 # from tm5.post.footprint_io import tm5rundir_obstable, tm5rundir_iniconc_1obs
 # from tm5.post.footprint_io import regions1D_info
@@ -304,20 +305,10 @@ def subcmd_prepare_daily_obsjacobian(args : ArgumentNamespace) -> None:
     if args.emission_dir!=None:
         msg = f"start reading emissions from ***{str(args.emission_dir)}***..."
         logger.info(msg)
-        emis2D = np.full((nemisday,ng), missval)
-        for idate, date in enumerate(emisday_range):
-            emis_list = []
-            for region in regions:
-                drop_mask = region_table[region].drop_mask
-                filepath = args.emission_dir / f"ch4emis.CH4.{region}.{date.strftime('%Y%m%d')}.nc"
-                ds = xr.open_dataset(filepath)
-                cur_emis = ds.to_array().sum("variable").values # [kgCH4/cell/s]
-                cur_emis = cur_emis[~drop_mask]
-                emis_list.append(cur_emis)
-            emis2D[idate,:] = np.hstack(emis_list)
-        nmiss = np.count_nonzero(emis2D==missval)
+        emis_info = tm5emisdir_load_emissions2D(args.emission_dir, 'ch4emis', emisday_range, regions, drop=True)
+        emis2D = emis_info.emis2D
         nnan = np.count_nonzero(np.isnan(emis2D))
-        msg = f"...reading emissions done (nmiss={nmiss}, nnan={nnan})"
+        msg = f"...reading emissions done nnan={nnan})"
         logger.info(msg)
         emis2D_mm = np.full((nemismon,ng), missval)
         for imon,emismondayf in enumerate(emismon_range):
@@ -574,6 +565,162 @@ def subcmd_prepare_daily_obsjacobian(args : ArgumentNamespace) -> None:
     logger.info(msg)
 
     
+def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
+    """
+    Preparation of monthly averaged emissions suitable as input for (Fortran based)
+    inversion system.
+    """
+    tm5emisdir = args.tm5emisdir
+    time_start, time_end = args.time_range
+    regions = args.regions
+    complevel = args.__dict__.get('complevel',4)
+
+    #
+    #--
+    #
+    mon_range = date_range(time_start, time_end, freq='MS')
+    monend_range = date_range(time_start, time_end, freq='ME')
+    nmon = len(mon_range)
+    ntc = 3 #-- recording year/month/day
+    time_data = np.full((nmon,ntc), -1)
+    for imon,mon in enumerate(mon_range):
+        time_data[imon,:] = [mon.year, mon.month, mon.day] #-- deliberately take first day
+    day_first = mon_range[0]
+    day_last  = monend_range[-1]
+    month_tag = f"{day_first.strftime('%Y%m%d')}--{day_last.strftime('%Y%m%d')}"
+    day_range = date_range(day_first, day_last, freq='1D')
+
+    #
+    #-- initialise array for emissions
+    #
+    nsecday = 86400
+    emis_miss = -99999.
+    emis_data = None
+    reginfo = None
+    ng = None
+    #
+    #-- monthly total emissions [kgCH4/cell/month
+    #
+    for imon,dayf in enumerate(mon_range):
+        dayl = (dayf + Timedelta(days=32)).replace(day=1) - Timedelta(days=1)
+        day_range = date_range(dayf,dayl)
+        msg = f"...loading emissions for {dayf.strftime('%Y%m%d')} to {dayl.strftime('%Y%m%d')}"
+        logger.info(msg)
+        #-- load daily emissions for every day in month
+        emis_info = tm5emisdir_load_emissions2D(tm5emisdir, 'ch4emis', day_range, regions, drop=True)
+        #-- collect ancillary infos, allocate array
+        if imon==0:
+            _,ng = emis_info.emis2D.shape
+            emis_data = np.full((nmon,ng), emis_miss)
+            reginfo = emis_info
+        #-- convert daily emission rates [kgCH4/cell/s] to [kgCH4/cell/month]
+        emis_mm =  np.sum(emis_info.emis2D*nsecday, axis=0)
+        #-- insert current month into buffer[mon,grid]
+        emis_data[imon,:] = emis_mm[:]
+        
+    msg = f"...monthly emission data ready."
+    logger.info(msg)
+
+    #
+    #-- output preparation
+    #
+    region_tag = "-".join(regions)
+    outname_tokens = [f"fitic-monthly-emissions", month_tag, region_tag,]
+    outname = '_'.join(outname_tokens) + '.nc'
+    outname = set_outname(args, outname)
+    msg = f"writing emission inputs for inversion inputs to file ***{outname}***..."
+    logger.info(msg)
+    #
+    #-- spatial dimensions
+    #
+    fp = Dataset(outname, 'w')
+    n_strlen = 32
+    fp.createDimension('ntc', ntc)
+    fp.createDimension('nstrlen', n_strlen)
+    fp.createDimension('ng', ng)
+    fp.createDimension('nmon', nmon)
+    #-- time variable
+    ncvar = fp.createVariable('time', 'i4', ('nmon','ntc',))
+    ncvar.long_name = "date_of_first_day_in_month"
+    ncvar.units = ''
+    ncvar[:] = time_data[:]
+    #
+    #-- longitude
+    #
+    ncvar = fp.createVariable('lon', 'f8', ('ng',),
+                              compression='zlib', complevel=complevel)
+    ncvar.long_name = 'longitude'
+    ncvar.units = 'degrees_east'
+    ncvar.comment = 'references center of grid-cell in underlying domain'
+    ncvar[:] = reginfo.lonc1D
+    #
+    #-- latitude
+    #
+    ncvar = fp.createVariable('lat', 'f8', ('ng',),
+                              compression='zlib', complevel=complevel)
+    ncvar.long_name = 'latitude'
+    ncvar.units = 'degrees_north'
+    ncvar.comment = 'references center of grid-cell in underlying domain'
+    ncvar[:] = reginfo.latc1D
+    #
+    #-- area
+    #
+    ncvar = fp.createVariable('area', 'f8', ('ng',),
+                              compression='zlib', complevel=complevel)
+    ncvar.long_name = 'gridcell_area'
+    ncvar.units = 'm2'
+    ncvar[:] = reginfo.area1D
+    #
+    #-- region identifier
+    #
+    ncvar = fp.createVariable('region', reginfo.reg1D.dtype, ('ng',))
+    ncvar.long_name = f"gridcell_region_identifier"
+    ncvar.units = ''
+    ncvar[:] = reginfo.reg1D[:]
+    #
+    #-- region identifier (Fortran compliant)
+    #
+    ncvar = fp.createVariable('region_ftn', 'S1', ('ng','nstrlen'))
+    ncvar.long_name = f"gridcell_region_identifier"
+    ncvar.comment = f"region identifer in a format which is suitable " \
+        f"for Fortran based I/O"
+    ncvar.units = ''
+    ncvar[:] = stringtochar(reginfo.reg1D[:], n_strlen=n_strlen)
+    #
+    #-- emission variable
+    #
+    if nmon>1:
+        ncvar = fp.createVariable('emission', 'f8', ('nmon','ng'),
+                                  compression='zlib', complevel=complevel)
+        ncvar[:] = emis_data[:]
+    else:
+        ncvar = fp.createVariable('emission', 'f8', ('ng',),
+                                  compression='zlib', complevel=complevel)
+        ncvar[:] = emis_data[month-1,:]
+    ncvar.long_name = "CH4 emissions"
+    ncvar.units = 'kgCH4/cell/month'
+
+    #
+    #-- global attributes
+    #
+    fp.emission_directory = str(tm5emisdir)
+    fp.time_coverage_start = day_first.strftime('%Y-%m-%d')
+    fp.time_coverage_end   = day_last.strftime('%Y-%m-%d')
+    fp.time_coverage_resolution = "P1M"
+    try:
+        fp.processing_platform = f"{os.environ['USER']}@{os.environ['HOSTNAME']}"
+    except KeyError:
+        pass
+    fp.history = f"{' '.join(sys.argv)}"
+    fp.date_created = Timestamp.now('UTC').isoformat()
+    #
+    #-- close
+    #
+    fp.close()
+    msg = f"generated file ***{outname}***"
+    logger.info(msg)
+
+
 ################################################################################
 #
 #                   p a r s e r
@@ -590,9 +737,10 @@ subparsers = parser.add_subparsers( title='Available Subcommands',
                                     help='')
 
 #
-#--       prepare_daily_obsjacobian
+#--       prepare_obsjacobian
 #
-sparser = subparsers.add_parser('prepare_daily_obsjacobian')
+sparser = subparsers.add_parser('prepare_obsjacobian',
+                                help="""preparation of NetCDF file providing an observational Jacobian and further inputs required for FIT-IC inversion system.""")
 sparser.add_argument('pickle_filepath',
                     type=Path,
                     help="""use serialized footprint information from previous run (and don't reparse footprints.""")
@@ -616,6 +764,27 @@ sparser.add_argument('--outdir',
                      type=Path,
                      help="""destination directory for all generated outputs.""")
 
+#
+#--       monthly_emissions_for_inversion
+#
+sparser = subparsers.add_parser('monthly_emissions_for_inversion',
+                                help="""test preparation of inputs for Fortran inversion system.""")
+sparser.add_argument('tm5emisdir',
+                     help="""name of directory containing daily emissions files as prepared for TM5 simulations plus the initial part of the file name pattern.""")
+sparser.add_argument('--time_range',
+                     type=Timestamp,
+                     nargs=2,
+                     default=[Timestamp(2021,1,1), Timestamp(2021,12,31)],
+                     help="""temporal range, only year and month are significant (default: %(default)s).""")
+sparser.add_argument('--regions',
+                     nargs='+',
+                     choices=['glb600x400','eur300x200','gns100x100',],
+                     default=['glb600x400','eur300x200','gns100x100',],
+                     help="""selected regions (default: %(default)s), better only change for test purposes.""")
+sparser.add_argument('--outdir',
+                    help="""top-level directory for any generated outputs..""")
+sparser.add_argument('--outname',
+                    help="""explictly specifed name of output file (might be ignored in case the request yields multiple files).""")
 
 
 ################################################################################
@@ -626,8 +795,11 @@ def main(args):
 
     ts = Timestamp.now('UTC')
 
-    if args.subcmds=='prepare_daily_obsjacobian':
-        subcmd_prepare_daily_obsjacobian(args)
+    if args.subcmds=='prepare_obsjacobian':
+        subcmd_prepare_obsjacobian(args)
+
+    if args.subcmds=='monthly_emissions_for_inversion':
+        subcmd_monthly_emissions_for_inversion(args)
 
     #
     te = Timestamp.now('UTC')
