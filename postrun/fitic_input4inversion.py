@@ -27,6 +27,9 @@ import matplotlib.patches as mpatches
 from cartopy import crs
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 import cartopy.feature as cfeature
+import hvplot.pandas
+import holoviews as hv
+
 from tm5.fitic import read_obs_table
 from tm5.gridtools import TM5Grids
 from tm5.observations import read_obspack_file
@@ -335,6 +338,7 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
         #
         cmp_dict = {'time':obstime_1D,
                     'station':obsid_1D,
+                    'iniconc':iniconc_1D,
                     'tm5fwd': tm5fwd_1D,
                     'linfwd':linfwd_1D,
                     'linfwd_mm':linfwd_1D_mm,
@@ -352,6 +356,58 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
             outname = args.outdir / outname
             outname.parent.mkdir(parents=True, exist_ok=True)
         dfcmp.to_csv(outname, index=False)
+        msg = f"generated ***{str(outname)}***"
+        logger.info(msg)
+        #
+        #-- and now plotting
+        #
+        rename_dict = {'linfwd':'linfwd_daily', 'linfwd_mm':'linfwd_monthly',
+                       'diff_lin-full':'linfwd-tm5fwd',
+                       'diff_linmm-lin':'linfwd_monthly-daily'}
+        dfcmp = dfcmp.rename(rename_dict,axis=1)
+        cols_fwd = ['tm5fwd', 'iniconc','linfwd_daily','linfwd_monthly']
+        cols_diff = ['linfwd-tm5fwd','linfwd_monthly-daily']
+        min_fwd = dfcmp.loc[:,cols_fwd].min().min()
+        max_fwd = dfcmp.loc[:,cols_fwd].max().max()
+        min_diff = dfcmp.loc[:,cols_diff].min().min()
+        max_diff = dfcmp.loc[:,cols_diff].max().max()
+        #
+        outname = '_'.join(outname_tokens) + '.html'
+        if args.outdir!=None:
+            outname = args.outdir / outname
+            outname.parent.mkdir(parents=True, exist_ok=True)
+        p = (
+            dfcmp.hvplot(x='time', y=cols_fwd, groupby='station', width=1500, height=600, grid=True, ylim=(min_fwd,max_fwd)) +
+            dfcmp.hvplot(x='time', y=cols_diff, groupby='station', width=1500, height=600, ylim=(min_diff,max_diff))
+        ).cols(1)
+        hv.save(p, outname)
+        msg = f"generated ***{str(outname)}***"
+        logger.info(msg)
+        #>> only forward
+        xoutname_tokens = [f"obsjac-forward", obsid_tag, domain_tag, obsday_tag, emis_tag]
+        outname = '_'.join(xoutname_tokens) + '.html'
+        if args.outdir!=None:
+            outname = args.outdir / outname
+            outname.parent.mkdir(parents=True, exist_ok=True)
+        p = (
+            dfcmp.hvplot(x='time', y=cols_fwd, groupby='station', width=1500, height=600, grid=True)
+        )
+        hv.save(p, outname)
+        msg = f"generated ***{str(outname)}***"
+        logger.info(msg)
+        #>> only differences
+        xoutname_tokens = [f"obsjac-differences", obsid_tag, domain_tag, obsday_tag, emis_tag]
+        outname = '_'.join(xoutname_tokens) + '.html'
+        if args.outdir!=None:
+            outname = args.outdir / outname
+            outname.parent.mkdir(parents=True, exist_ok=True)
+        p = (
+            dfcmp.hvplot(x='time', y=cols_diff, groupby='station', width=1500, height=600, grid=True)
+        )
+        hv.save(p, outname)
+        msg = f"generated ***{str(outname)}***"
+        logger.info(msg)
+
     ##################################################
     #
     #--       o u t p u t   g e n e r a t i o n
