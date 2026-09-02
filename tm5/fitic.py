@@ -49,7 +49,6 @@ def _fitic_region_table_init():
     #
     for reg,reg_info in fitic_region_table.items():
         grid = reg_info.grid
-        area1D = grid.area.ravel()
         #
         lonmesh,latmesh = np.meshgrid(grid.lonc,grid.latc)
         fitic_region_table[reg].lonmesh = lonmesh
