@@ -19,41 +19,22 @@ def experiment_desc( exp : str ) -> str:
                 f"wetlands, mineral-soils, and anthropogenic sources " \
                 f"over the European domain are taken from dedicated datasets " \
                 f"generated in AVENGERS WP2."
-        case 'regional_no-agri':
+        case 'regional_no-agri' | 'regional_anthro-no-agri' | 'regional-anthro-no-agri':
             desc = f"Emissions similar to the regional case, " \
                 f"but without emissions from the agriculture sector " \
                 f"over the European domain."
-        case 'regional_anthro-no-agri':
-            desc = f"Emissions similar to the regional case, " \
-                f"but without emissions from the agriculture sector " \
-                f"over the European domain."
-        case 'regional_no-fossil':
+        case 'regional_no-fossil' | 'regional_anthro-no-fossil' | 'regional-anthro-no-fossil':
             desc = f"Emissions similar to the regional case, " \
                 f"but without emissions from the fossil sector " \
                 f"over the European domain."
-        case 'regional_anthro-no-fossil':
-            desc = f"Emissions similar to the regional case, " \
-                f"but without emissions from the fossil sector " \
-                f"over the European domain."
-        case 'regional_no-waste':
+        case 'regional_no-waste' | 'regional_anthro-no-waste' | 'regional-anthro-no-waste':
             desc = f"Emissions similar to the regional case, " \
                 f"but without emissions from the waste sector " \
                 f"over the European domain."
-        case 'regional_anthro-no-waste':
-            desc = f"Emissions similar to the regional case, " \
-                f"but without emissions from the waste sector " \
-                f"over the European domain."
-        case 'regional_no-anthro-france':
+        case 'regional_no-anthro-france' | 'regional_anthro-no-france' | 'regional-anthro-no-france':
             desc = f"Emissions similar to the regional case, " \
                 f"but without anthropogenic emissions over France."
-        case 'regional_anthro-no-france':
-            desc = f"Emissions similar to the regional case, " \
-                f"but without anthropogenic emissions over France."
-        case 'regional_no-anthro-netherlands':
-            desc = f"Emissions similar to the regional case, " \
-                f"but without anthropogenic emissions over " \
-                f"the Netherlands."
-        case 'regional_anthro-no-netherlands':
+        case 'regional_no-anthro-netherlands' | 'regional_anthro-no-netherlands' | 'regional-anthro-no-netherlands':
             desc = f"Emissions similar to the regional case, " \
                 f"but without anthropogenic emissions over " \
                 f"the Netherlands."
