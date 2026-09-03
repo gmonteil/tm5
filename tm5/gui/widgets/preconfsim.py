@@ -206,15 +206,16 @@ def load_forward_concentrations(path: Path, label: str) -> xr.Dataset:
     return conc
 
 
-def extract_emis_map(ds, region: str) -> xr.DataArray:
-    ds = ds.sel(ng = ds.region == region)
-    #-- MVO-20260728::
-    #   fe.nc:      data variable is 'emissions'
-    #   fepost.nc:  data variables are 'emission_prior' *and* 'emission_post'
-    if 'emission' in ds:
-        emis_in = ds['emission']
-    elif 'emission_post' in ds:
-        emis_in = ds['emission_post']
+def extract_emis_map(ds, region: str, varname : str) -> xr.DataArray:
+    ds = ds.sel(ng = (ds.region == region))
+    # #-- MVO-20260728::
+    # #   fe.nc:      data variable is 'emissions'
+    # #   fepost.nc:  data variables are 'emission_prior' *and* 'emission_post'
+    # if 'emission' in ds:
+    #     emis_in = ds['emission']
+    # elif 'emission_post' in ds:
+    #     emis_in = ds['emission_post']
+    emis_in = ds[varname]
     assert emis_in.attrs['units'] in ['kgCH4/cell',"kgCH4/cell/month"], \
         f"unexpected emission units -->{emis_in.attrs['units']}<--"
     emis_out = (emis_in / ds.area).values
@@ -232,15 +233,28 @@ def extract_emis_map(ds, region: str) -> xr.DataArray:
 
 
 def load_emissions(path: Path) -> Dict[str, xr.Dataset]:
-    apri = xr.open_dataset(path / 'fe.nc').isel(nmon=0)
+    apri = xr.open_dataset(path / 'fe.nc')
     apos = xr.open_dataset(path / 'fepost.nc')
-    apos['area'] = apri['area']  # "area" seems missing in the posterior file ... copy it from the prior
+    #-- deliberately selecting last month
+    ilastmon = apri.nmon.values[-1]
+    apri = apri.isel(nmon=ilastmon)
+    apos = apos.isel(nmon=ilastmon)
+    emis_mon = Timestamp(*apri.time.values)
+    # logger.debug(f"emis_mon ->{emis_mon}<-")
+    #-- meanwhile 'area' available in fepost.nc:
+    if not 'area' in apos:
+        # "area" seems missing in the posterior file ... copy it from the prior
+        apos['area'] = apri['area']
+    
     emis = {}
     for region in ['glb600x400', 'eur300x200', 'gns100x100']:
-        emis[region] = xr.Dataset(dict(
-            apri = extract_emis_map(apri, region), 
-            apos = extract_emis_map(apos, region)
-        ))
+        emis[region] = xr.Dataset(
+            dict(
+                apri = extract_emis_map(apri, region, 'emission'), 
+                apos = extract_emis_map(apos, region, 'emission_post')
+            ),
+            attrs={'emis_month':emis_mon.strftime("%b %Y")}
+        )
     return emis
 
 
@@ -349,7 +363,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             'task': task,
             'namelist': self.namelist
         }
-
+        logger.debug(f"self.namelist ==>{self.namelist}<==")
         r = requests.post(url, data={'conf': OmegaConf.to_yaml(settings)})
         if not r.ok:
             self.alert = f"{task} run failed: backend returned {r.status_code} for emis={self.experiment} at {url}. Body: {r.text[:500]}"
@@ -390,7 +404,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             # msg = f"...start reading concentrations"
             # logger.debug(msg)
             self._read_concentrations(output_path, 'inversion')
-            # msg = f"...start reading emissions"
+            # msg = f"...start reading emissions from -->{output_path}<--"
             # logger.debug(msg)
             self.emissions = load_emissions(output_path)
             # msg = f"...computing conc statistics"
@@ -585,6 +599,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         #     self.emissions['glb600x400'].apos.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection, xlim=xlim, ylim=ylim)
         #     )
         emis_units = self.emissions['glb600x400'].apos.attrs['units']
+        emis_month = self.emissions['glb600x400'].attrs['emis_month']
         logger.debug(f"emis_units ==>{emis_units}<==")
         mode = 'guillaume'
         if mode=='glb600x400':
@@ -631,21 +646,21 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                 self.emissions['eur300x200'].apos.hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
                 self.emissions['gns100x100'].apos.hvplot.quadmesh(cmap=cmap, clim=clim, coastline=True, xlim=xlim, ylim=ylim, projection=projection)
             )
-            plotcfg = opts.Overlay(title=f'posterior emissions ({get_exp_label(self.experiment)})', ylabel=f"[{emis_units}]" )
+            plotcfg = opts.Overlay(title=f'posterior emissions ({emis_month}, {get_exp_label(self.experiment)})', ylabel=f"[{emis_units}]" )
             ppost.opts(plotcfg)
             pprior = (
                 self.emissions['glb600x400'].apri.hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
                 self.emissions['eur300x200'].apri.hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
                 self.emissions['gns100x100'].apri.hvplot.quadmesh(cmap=cmap, clim=clim, coastline=True, xlim=xlim, ylim=ylim, projection=projection)
                 )
-            plotcfg = opts.Overlay(title=f'prior emissions ({get_exp_label(self.experiment)})' )
+            plotcfg = opts.Overlay(title=f'prior emissions ({emis_month}, {get_exp_label(self.experiment)})' )
             pprior.opts(plotcfg)
             pdiff = (
                 (self.emissions['glb600x400'].apos - self.emissions['glb600x400'].apri).hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
                 (self.emissions['eur300x200'].apos - self.emissions['eur300x200'].apri).hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
                 (self.emissions['gns100x100'].apos - self.emissions['gns100x100'].apri).hvplot.quadmesh(cmap=cmap, clim=clim, coastline=True, xlim=xlim, ylim=ylim, projection=projection)
                 )
-            plotcfg = opts.Overlay(title=f'posterior-prior emissions ({get_exp_label(self.experiment)})')
+            plotcfg = opts.Overlay(title=f'posterior-prior emissions ({emis_month}, {get_exp_label(self.experiment)})')
             pdiff.opts(plotcfg)
             
             prow = (
