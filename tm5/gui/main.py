@@ -244,7 +244,8 @@ class FitIC_UI(pn.viewable.Viewer):
         loglev = self.conf.get('loglevel', "CRITICAL")
         logger.remove()
         if loglev.upper() in ['DEBUG','TRACE',]:
-            logger.add('fitic.log', level=loglev.upper())
+            logger.add('fitic.log', level=loglev.upper(),
+                       diagnose=True, backtrace=True)
             logger.add(sys.stdout, level=loglev.upper(),
                         diagnose=True, backtrace=True)
         else:
