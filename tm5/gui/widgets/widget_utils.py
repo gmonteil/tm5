@@ -48,7 +48,7 @@ def experiment_desc( exp : str ) -> str:
                 f"(6E-15E,47N-55N)."
         case 'no-gns':
             desc = "Emissions similar to the default case, " \
-                f"but without emissions over the innermost zoom domain " \
+                f"but without emissions over the target domain " \
                 f"(0E-18E,42N-58N) covering Germany, Netherlands, and Switzerland."
         case 'no-northamerica':
             desc = "Emissions similar to the default case, " \
