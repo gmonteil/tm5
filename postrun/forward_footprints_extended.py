@@ -300,7 +300,7 @@ if args.pickle_filepath==None:
     if args.stations!=None:
         outname_tokens += [station_tag,]
     # outname = '_'.join(outname_tokens) + f".xz"
-    outname = '_'.join(outname_tokens) + 'pickle'
+    outname = '_'.join(outname_tokens) + '.pickle'
     if args.outdir!=None:
         outname = args.outdir / outname
         outname.parent.mkdir(parents=True, exist_ok=True)
