@@ -39,6 +39,7 @@ from tm5.observations import read_obspack_file
 from tm5.post.footprint_io import load_adjoint_fwd #-- this was for earlier diagnostics
 from tm5.fitic import tm5emisdir_load_emissions2D
 from tm5.fitic import get_fitic_region_table
+from tm5.fitic import ojac_glb6x4_redistribute_to_fitic
 # from tm5.post.footprint_io import tm5rundir_obstable, tm5rundir_iniconc_1obs
 # from tm5.post.footprint_io import regions1D_info
 # from tm5.post.footprint_io import tm5rundir_jacobian3D, tm5rundir_simustart
@@ -166,7 +167,7 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
     elif len(obsid_values[0].split('_'))==3:
         obstable.loc[:,'obs_stationid'] = ['_'.join(_.split('_')[:2]) for _ in obsid_values]
     #
-    #-- assume coordinates and alitude do not depend on time
+    #-- assume coordinates and altitude do not depend on time
     #
     station_table = obstable.sort_values('obs_stationid')[['obs_stationid','time','lon','lat','alt',]].groupby('obs_stationid').first()
     staname_list = list(station_table.index)
@@ -196,9 +197,10 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
     emismon_range = date_range(emis_start, obs_lastday, freq='MS')
     nemismon = len(emismon_range)
     #
-    #-- load region table
+    #-- load region table ***FIT-IC compliant***
     #
     region_table = get_fitic_region_table()
+    fitic_regions = list(region_table.keys())
     ng = 0
     regionid_1D = []
     lon_1D = None
@@ -250,7 +252,12 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
     #
     missval = -99999.0
     obs_jacobian_units = 'ppb/(kgCH4/cell/s)' #-- by TM5
-    obs_jacobian = np.zeros((nobs,nemisday,ng))
+    if domain_tag=='gns1x1':
+        obs_jacobian = np.zeros((nobs,nemisday,ng))
+    elif domain_tag=='glb6x4':
+        _nlat = region_table['glb600x400'].grid.nlat
+        _nlon = region_table['glb600x400'].grid.nlon
+        obs_jacobian = np.zeros((nobs,nemisday,_nlat,_nlon))
     iniconc_1D = np.full((nobs,), missval)
     obsconc_1D = np.full((nobs,), missval)
     tm5fwd_1D  = np.full((nobs,), missval)
@@ -273,18 +280,48 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
             stationid_1D.append(obs.obs_stationid)
             # print(f"iobs={iobs} for {obs.obsid}/{obs.time}")
             for idate, date in enumerate(date_range(emis_start, obs.time, freq='D')):
-                cur_footplist = []
-                for region in regions:
-                    cur_footp = footprints[obs.Index][region][idate,:]
-                    #-- restrict to relevant grid-cells
-                    drop_mask = region_table[region].drop_mask
-                    cur_footp = cur_footp[~drop_mask]
-                    cur_footplist.append(cur_footp)
-                obs_jacobian[iobs,idate,:] = np.hstack(cur_footplist)
+                if domain_tag=='gns1x1':
+                    cur_footplist = []
+                    for region in regions:
+                        cur_footp = footprints[obs.Index][region][idate,:]
+                        #-- restrict to relevant grid-cells
+                        drop_mask = region_table[region].drop_mask
+                        cur_footp = cur_footp[~drop_mask]
+                        cur_footplist.append(cur_footp)
+                    obs_jacobian[iobs,idate,:] = np.hstack(cur_footplist)
+                elif domain_tag=='glb6x4':
+                    cur_footp = footprints[obs.Index]['glb600x400'][idate,:]
+                    obs_jacobian[iobs,idate,:] = cur_footp[:]
     #--
     msg = f"...reading footprint data done."
     logger.info(msg)
      
+    ##################################################
+    #
+    #--       r e d i s t r i b u t i o n   o f   f l a s k   J a c o b i a n
+    #
+    if domain_tag=='glb6x4':
+        msg = f"flask footprints computed for {domain_tag} require " \
+            f"spatial re-distribution to FIT-IC grid-cells."
+        logger.info(msg)
+        #
+        #--
+        #
+        ojac6x4_da = xr.DataArray(
+            obs_jacobian,
+            dims=('obs','emisday','lat','lon'),
+            coords={'obs':obsid_1D,
+                    'emisday':emisday_range,
+                    'lat':region_table['glb600x400'].grid.latc,
+                    'lon':region_table['glb600x400'].grid.lonc
+                    },
+            attrs = {'units': 'ppb/(kgCH4/cell/s)'}
+            )
+        obs_jacobian_regridded = ojac_glb6x4_redistribute_to_fitic(ojac6x4_da, region_table)
+        #>>>>>>>>>>> testing with native 6x4 sensitivities
+        ng = region_table['glb600x400'].grid.nlat*region_table['glb600x400'].grid.nlon
+        obs_jacobian = obs_jacobian.reshape((nobs,nemisday,ng))
+
     ##################################################
     #
     #--       J a c o b i a n   w.r.t.   m o n t h l y   e m i s s i o n s
@@ -311,7 +348,10 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
     if args.emission_dir!=None:
         msg = f"start reading emissions from ***{str(args.emission_dir)}***..."
         logger.info(msg)
-        emis_info = tm5emisdir_load_emissions2D(args.emission_dir, 'ch4emis', emisday_range, regions, drop=True)
+        if domain_tag=='gns1x1':
+            emis_info = tm5emisdir_load_emissions2D(args.emission_dir, 'ch4emis', emisday_range, fitic_regions, drop=True)
+        elif domain_tag=='glb6x4':
+            emis_info = tm5emisdir_load_emissions2D(args.emission_dir, 'ch4emis', emisday_range, regions, drop=False)
         emis2D = emis_info.emis2D
         nnan = np.count_nonzero(np.isnan(emis2D))
         msg = f"...reading emissions done nnan={nnan})"
@@ -339,15 +379,26 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
         #
         #--
         #
-        cmp_dict = {'time':obstime_1D,
-                    'station':obsid_1D,
-                    'iniconc':iniconc_1D,
-                    'tm5fwd': tm5fwd_1D,
-                    'linfwd':linfwd_1D,
-                    'linfwd_mm':linfwd_1D_mm,
-                    'diff_lin-full':linfwd_1D-tm5fwd_1D,
-                    'diff_linmm-lin':linfwd_1D_mm-linfwd_1D
-                    }
+        if domain_tag=='gns1x1':
+            cmp_dict = {'time':obstime_1D,
+                        'station':obsid_1D,
+                        'iniconc':iniconc_1D,
+                        'tm5fwd': tm5fwd_1D,
+                        'linfwd':linfwd_1D,
+                        'linfwd_mm':linfwd_1D_mm,
+                        'diff_lin-full':linfwd_1D-tm5fwd_1D,
+                        'diff_linmm-lin':linfwd_1D_mm-linfwd_1D
+                        }
+        elif domain_tag=='glb6x4':
+             cmp_dict = {'time':obstime_1D,
+                        'station':stationid_1D,
+                        'iniconc':iniconc_1D,
+                        'tm5fwd': tm5fwd_1D,
+                        'linfwd':linfwd_1D,
+                        'linfwd_mm':linfwd_1D_mm,
+                        'diff_lin-full':linfwd_1D-tm5fwd_1D,
+                        'diff_linmm-lin':linfwd_1D_mm-linfwd_1D
+                        }
         dfcmp = DataFrame.from_dict(cmp_dict)
         for col in ['diff_lin-full','diff_linmm-lin',]:
             msg = f"{col}: min/mean/max = " \
@@ -411,6 +462,8 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
         msg = f"generated ***{str(outname)}***"
         logger.info(msg)
 
+    print(f"STOPPING AFTER VERIFICATION")
+    sys.exit(0)
     ##################################################
     #
     #--       o u t p u t   g e n e r a t i o n
@@ -894,7 +947,7 @@ def subcmd_prepare_tgtjacobian(args : ArgumentNamespace) -> None:
     #
     #-- target jacobian
     #
-    target_list = ['global', 'zoom_domain',] + list(tgt_country_table.keys())
+    target_list = ['global', 'target domain',] + list(tgt_country_table.keys())
     ntgt = len(target_list)
     tjac2D = zeros((ntgt,ng), dtype='f8')
     for itgt,tgt in enumerate(target_list):
@@ -905,7 +958,7 @@ def subcmd_prepare_tgtjacobian(args : ArgumentNamespace) -> None:
             #   *every* grid-cell must now be accounted.
             #
             tjac2D[itgt,:] = 1.
-        elif tgt=='zoom_domain':
+        elif tgt=='target domain':
             #
             #-- contribution of all grid-cells that are simulated at 1x1 degree
             #
@@ -966,14 +1019,14 @@ def subcmd_prepare_tgtjacobian(args : ArgumentNamespace) -> None:
                               compression='zlib', complevel=complevel)
     ncvar.long_name = 'longitude'
     ncvar.units = 'degrees_east'
-    ncvar.comment = 'references center of grid-cell in related zoom domain'
+    ncvar.comment = 'references center of grid-cell in related target domain'
     ncvar[:] = lon_1D
     #
     ncvar = fp.createVariable('lat', 'f8', ('ng',),
                               compression='zlib', complevel=complevel)
     ncvar.long_name = 'latitude'
     ncvar.units = 'degrees_north'
-    ncvar.comment = 'references center of grid-cell in related zoom domain'
+    ncvar.comment = 'references center of grid-cell in related target domain'
     ncvar[:] = lat_1D
     #
     ncvar = fp.createVariable('region', regionid_1D.dtype, ('ng',))
@@ -1155,7 +1208,7 @@ sparser.add_argument('--countryfrct_filepath',
                      help="""provide 1degree gridded NetCDF file with country fractions.""")
 sparser.add_argument('--countries',
                      nargs='+',
-                     help="""select list of countries (ISO3 identifier) which must be fully covered within the FIT-IC innermost zoom domain.""")
+                     help="""select list of countries (ISO3 identifier) which must be fully covered within the FIT-IC innermost target domain.""")
 sparser.add_argument('--emission_filepath',
                      type=Path,
                      help="""for debugging: provide a compliant emissions NetCDF file to check the target values.""")
