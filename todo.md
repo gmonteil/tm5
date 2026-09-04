@@ -32,6 +32,7 @@
     - [ ] properly setup github pages with mkdocs
 - Inversion
     - [ ] TXK/MV: draft a kind of tutorial guiding the user through one of the experiments
+    - [ ] TXK to exclude spinup from target Jacobian
     - [ ] GM (1) to revise global footprint calculation (back to Oct and network identifier ... see below)
     - [ ] MV (1) does the local footprints -> Need to be validated
     - [x] TK (1) prepare an example of a switch in the fortran (that the user should then be able to control via the GUI)
