@@ -552,8 +552,20 @@ if args.rcfile==None:
         adj_tend   = fwd_tstart
         #-- now using 1 hour
         if tpulse_utc - pd.Timedelta(days=1) >= fwd_tstart:
+            #-- MVO,20260907:
+            #   - initially all simulations were prepared such that the pulse was injected on the second day on each month,
+            #     and the adjoint ran back for 24 hours (thus minus 1 day below)
+            #   - for African candidate sites we extended to a 3 day simulation, injecting the pulse on day 3 of each month,
+            #     so we need to correct the adjoint to terminate on the hour of the pulse on day 1.
             adj_tend = tpulse_utc - pd.Timedelta(days=1)
+            adj_tend = fwd_tstart + pd.Timedelta(hours=tpulse_utc.hour)
             rc_dct['jobstep.timerange.start'] = adj_tend.strftime('%Y-%m-%d %H:%M:%S')
+    # print(f"fwd_tstart: {fwd_tstart}")
+    # print(f"fwd_tend:   {fwd_tend}")
+    # print(f"tpulse_utc: {tpulse_utc}")
+    # print(f"adj_tstart: {adj_tstart}")
+    # print(f"adj_tend: {adj_tend}")
+    # sys.exit(0)
     #
     #-- consistencty for time of pulse
     #
