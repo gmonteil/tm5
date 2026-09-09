@@ -14,7 +14,7 @@ import panel as pn
 import param
 import hvplot.xarray
 from holoviews import opts, Overlay
-from typing import Tuple, Dict
+from typing import Tuple, Dict, List
 import io
 from numpy import zeros
 
@@ -258,8 +258,394 @@ def load_emissions(path: Path) -> Dict[str, xr.Dataset]:
     return emis
 
 
+def plot_conc_timeseries(df: DataFrame, simul_type: str, cur_exp: str):
+    p = df.hvplot.points(x='time', y='obs', grid=True, c='k', label='obs', width=1200, height=400)
+    color_palette = itertools.cycle(Category10[10])
+    # print(cur_exp, dfc.columns)
+
+    # Find all "forward" experiments
+    if simul_type == 'fwd':
+        experiments = [c.split('_', maxsplit=1)[1] for c in df.columns if c.startswith('forward_')]
+        # print(experiments)
+        for iexp, exp in enumerate(experiments):
+            col = next(color_palette) # Category10[10][iexp]
+            # print(exp, iexp, col)
+            if exp == cur_exp:
+                p *= df.hvplot.line(x='time', y=f'forward_{exp}', c=col, label=exp, muted_alpha=0, line_width=4)
+            else:
+                p *= df.hvplot.line(x='time', y=f'forward_{exp}', c=col, label=exp, muted_alpha=0, line_width=2)
+
+    # Find all "inversion" experiments
+    elif simul_type == 'inv':
+        experiments = [c[5:] for c in df.columns if c.startswith('apri_')]
+        # Plot the experiments:
+        for iexp, exp in enumerate(experiments):
+            col = next(color_palette) # Category10[10][iexp]
+            if exp == cur_exp:
+                p *= df.hvplot.line(x='time', y=f'apri_{exp}', c=col, line_dash='dashed', label=f'prior_{exp}', line_width=4, muted_alpha=0)
+                p *= df.hvplot.line(x='time', y=f'apos_{exp}', c=col, label=f'posterior_{exp}', line_width=4, muted_alpha=0)
+            else:
+                p *= df.hvplot.line(x='time', y=f'apri_{exp}', c=col, line_dash='dashed', label=f'prior_{exp}', line_width=2, muted_alpha=0)
+                p *= df.hvplot.line(x='time', y=f'apos_{exp}', c=col, label=f'posterior_{exp}', line_width=2, muted_alpha=0)
+    return p
+
+
+def plot_stats_table(df: DataFrame, emis_dataset: str):
+    nc = len(df.columns)
+    formatters = [lambda x: f'{x:.2f}'] * nc
+    p = pn.pane.DataFrame(df, text_align='center', formatters=formatters)
+    title = f'# Fit statistics for all stations ({get_exp_label(emis_dataset)})'
+    return pn.Column(pn.pane.Markdown(title), p)
+
+
+def plot_emis_table_md(emis_datasets: List[str]):
+    lines = ['| **Emissions setup** | **Description** |']
+    lines.append('| --- | --- |')
+    for exp in emis_datasets:
+        exp = get_exp_label(exp)
+        if desc := experiment_desc(exp):
+            lines.append(f'| {exp} | {desc} |')
+    return '\n'.join(lines)
+
+
+def plot_emission_map(emissions: xr.Dataset, emis_dataset: str):
+    # print("computing emission map")
+    logger.debug("computing emission map")
+            
+    cmap = 'RdBu_r'
+    clim = (-0.005, 0.005)
+
+    projection = crs.RotatedPole(pole_longitude=185, pole_latitude=50)
+    xlim = (-15, 35)
+    ylim = (33, 73)
+
+    projections = {
+        'glb600x400': crs.PlateCarree(),
+        'eur300x200': crs.PlateCarree(),
+        'gns100x100': crs.PlateCarree()
+    }
+
+    xlims = {
+        'glb600x400': (-180, 180),
+        'eur300x200': (-36, 54),
+        'gns100x100': (0, 18)
+    }
+
+    ylims = {
+        'glb600x400': (-90, 90),
+        'eur300x200': (22, 74),
+        'gns100x100': (42, 58)
+    }
+        
+    logger.debug("...returning emissions map now!!!")
+    
+    emis_units = emissions['glb600x400'].apos.attrs['units']
+    emis_month = emissions['glb600x400'].attrs['emis_month']
+
+    logger.debug(f"emis_units ==>{emis_units}<==")
+
+    mode = 'guillaume'
+    if mode in ['glb100x100', 'eur300x200', 'gns100x100']:
+        prow = pn.Row(
+            emissions[mode].apos.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projections[mode], xlim=xlims[mode], ylim=ylims[mode]),
+            emissions[mode].apri.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projections[mode], xlim=xlims[mode], ylim=ylims[mode]),
+            (emissions[mode].apos - emissions[mode].apri).hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection[mode], xlim=xlims[mode], ylim=ylims[mode])
+        )
+        title = f"# emission maps (posterior, prior, posterior-prior) ({get_exp_label(emis_dataset)})"
+        p = pn.Column(pn.pane.Markdown(title), prow)
+    elif mode == 'row_merged':
+        prow = pn.Row(
+            emissions['glb600x400'].apos.hvplot.quadmesh(rasterize=True, geo=True, cmap=cmap, clim=clim, projection=projections['glb600x400'], xlim=xlims['glb600x400'], ylim=ylims['glb600x400']) *
+            emissions['eur300x200'].apos.hvplot.quadmesh(rasterize=True, geo=True, cmap=cmap, clim=clim) *
+            emissions['gns100x100'].apos.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim),
+            emissions['glb600x400'].apri.hvplot.quadmesh(rasterize=True, geo=True, cmap=cmap, clim=clim, projection=projections['glb600x400'], xlim=xlim['glb600x400'], ylim=ylim['glb600x400']) *
+            emissions['eur300x200'].apri.hvplot.quadmesh(rasterize=True, geo=True, cmap=cmap, clim=clim) *
+            emissions['gns100x100'].apri.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim),
+            (emissions['glb600x400'].apos - emissions['glb600x400'].apri).hvplot.quadmesh(rasterize=True, geo=True, cmap=cmap, clim=clim, projection=projections['glb600x400'], xlim=xlims['glb600x400'], ylim=ylims['glb600x400']) *
+            (emissions['eur300x200'].apos - emissions['eur300x200'].apri).hvplot.quadmesh(rasterize=True, geo=True, cmap=cmap, clim=clim) *
+            (emissions['gns100x100'].apos - emissions['gns100x100'].apri).hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim)
+        )
+        title = f"# emssions maps (posterior, prior, posterior-prior) ({get_exp_label(emis_dataset)})"
+        p = pn.Column(pn.pane.Markdown(title), prow)
+    elif mode == 'guillaume':
+        ppost = (
+            emissions['glb600x400'].apos.hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
+            emissions['eur300x200'].apos.hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
+            emissions['gns100x100'].apos.hvplot.quadmesh(cmap=cmap, clim=clim, coastline=True, xlim=xlim, ylim=ylim, projection=projection)
+        )
+        plotcfg = opts.Overlay(title=f'posterior emissions ({emis_month}, {get_exp_label(emis_dataset)})', ylabel=f"[{emis_units}]" )
+        ppost.opts(plotcfg)
+        pprior = (
+            emissions['glb600x400'].apri.hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
+            emissions['eur300x200'].apri.hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
+            emissions['gns100x100'].apri.hvplot.quadmesh(cmap=cmap, clim=clim, coastline=True, xlim=xlim, ylim=ylim, projection=projection)
+            )
+        plotcfg = opts.Overlay(title=f'prior emissions ({emis_month}, {get_exp_label(emis_dataset)})' )
+        pprior.opts(plotcfg)
+        pdiff = (
+            (emissions['glb600x400'].apos - emissions['glb600x400'].apri).hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
+            (emissions['eur300x200'].apos - emissions['eur300x200'].apri).hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
+            (emissions['gns100x100'].apos - emissions['gns100x100'].apri).hvplot.quadmesh(cmap=cmap, clim=clim, coastline=True, xlim=xlim, ylim=ylim, projection=projection)
+            )
+        plotcfg = opts.Overlay(title=f'posterior-prior emissions ({emis_month}, {get_exp_label(emis_dataset)})')
+        pdiff.opts(plotcfg)
+        
+        prow = (
+            ppost + pprior + pdiff
+        )
+        p = prow
+    return p
+    
+
+def plot_target_table(df: DataFrame, emis_dataset: str):
+    def get_csv_file():
+        # You can re-compute data here if it's dynamic
+        fid = io.BytesIO()
+        fid.write(df.to_csv(index=False).encode('utf-8'))
+        fid.seek(0)
+        return fid
+
+    nc = len(df.columns)
+    formatters = [lambda x: f'{x:.3f}'] * nc
+    # outname = f"targets_{get_exp_label(self.emis_dataset)}.csv"
+    # outname = f"targets.csv"
+    # button = pn.widgets.FileDownload(callback=get_csv_file, filename=outname, label="Download Data (CSV)", button_type="primary")
+    button = pn.widgets.FileDownload(callback=get_csv_file, filename="targets.csv", label="Download Data (CSV)", button_type="primary")
+
+    p = pn.Column(pn.pane.DataFrame(df, text_align='center', formatters=formatters), button)
+    # return self.tgt_table
+    #-- MVO-TODO::units [MtCH4] should not be hard-coded here
+    logger.debug("...returning target table now")
+    title = f'# Target emission quantities [MtCH4] ({get_exp_label(emis_dataset)})'
+    return pn.Column(pn.pane.Markdown(title), p)
+
+
+def plot_map_sites(df: DataFrame, current_site: str):
+    df.loc[:, 'cur_site'] = 0
+    df.loc[df.station == current_site, 'cur_site'] = 1
+    return df.hvplot.points(
+        x='station_lon', y='station_lat', color='cur_site', cmap=['LightSlateGray', 'red'],
+        geo=True, coastline=True, xlim=(-15, 35), ylim=(33, 73), colorbar=False, tiles='EsriTerrain'
+    )
+    #-- widgets-boarders currently make problems
+    #   on exploredata.icos-cp.eu,
+    #   disabled for NCGG10
+    return df.hvplot.points(
+        x='station_lon', y='station_lat', color='cur_site', cmap=['LightSlateGray', 'red'],
+        geo=True, coastline=True, xlim=(-15, 35), ylim=(33, 73), colorbar=False, tiles='EsriTerrain'
+    ) * self.widgets['borders']
+
+
 class PreconfExperimentGUI(pn.viewable.Viewer):
-    experiment = param.FileSelector(doc='Prior emission dataset')
+    emis_dataset = param.FileSelector(doc='Prior emission dataset')
+    run_forward = param.Event(doc='Do a forward run', label='Perform a forward simulation')
+    run_inv = param.Event(doc='Do an inversion', label='Perform an inversion')
+    alert = param.String(doc='Generic object for error messages or others ...', default='')
+    current_site = param.Selector(doc='Current site to be displayed', default=None)
+    sites_list = param.List(default=[], doc='List of observation sites available (for internal use ...)')
+    simul_type = param.Selector(objects=['fwd', 'inv'], allow_None=True, default=None)
+    correlation_switch = param.Boolean(doc='Switch to enable/disable correlated emission adjustments', default=False, label='Long distance correlations')
+
+    # Data containers:
+    conc        = param.ClassSelector(class_=xr.Dataset)
+    stats4conc  = param.DataFrame()
+    tgt_table   = param.DataFrame()
+    emissions   = param.Dict()
+
+    def __init__(self, gui_settings: DictConfig):
+
+        super().__init__()
+
+        self.cache_fwd = OrderedDict()
+        self.cache_inv = OrderedDict()
+
+        self._message = ''
+        self.gui_settings = gui_settings
+
+        # Load the file list
+        self.param.emis_dataset.path = self.gui_settings.emissions.glob_pattern
+        self.emis_dataset = self.param.emis_dataset.objects[0]
+
+        # Globally accessible widgets
+        self.widgets = {
+            'station_selector': pn.widgets.Select.from_param(self.param.current_site),
+            'borders': gf.borders()
+        }
+        self.widgets['station_selector'].visible = False
+
+    def __panel__(self):
+        header_pane = pn.pane.Markdown('# Preconfigured experiments')
+        expdesc_pane = pn.pane.Markdown(
+            plot_emis_table_md(self.param.emis_dataset.objects),
+            stylesheets=[preconfsim_stylesheet], 
+            css_classes=['precomp-right']
+        )
+
+        widgets = [
+            header_pane, 
+            pn.Row(pn.widgets.Select.from_param(self.param.emis_dataset), expdesc_pane),
+            pn.Row(
+                    pn.widgets.Button.from_param(self.param.run_forward),
+                    pn.Column(
+                        pn.widgets.Button.from_param(self.param.run_inv),
+                        pn.widgets.Switch.from_param(self.param.correlation_switch)
+                    ),
+            ),
+            self._alert,
+            self.widgets['station_selector'],
+            pn.Row(self.conc_plot, self.map_sites),
+            pn.Row(self.conc_stats_table, self.target_table)
+        ]
+        if self.gui_settings.get('show_emismap', False):
+            widgets.append(self.map_emissions)
+        return pn.Column(*widgets)
+
+    # ------------------------------------------------
+    # Interactive panels/widgets
+
+    @param.depends('run_forward', watch=True)
+    def _run_forward(self):
+        output_path = self._call_backend('forward')
+        self.simul_type = 'fwd'
+        if output_path is not None:
+            self._read_concentrations(output_path, 'forward')
+            self.stats4conc = None
+            self.tgt_table = None
+            self.emissions = None
+
+    @param.depends('run_inv', watch=True)
+    def _run_inv(self):
+        output_path = self._call_backend('inversion')
+        # msg = f"...output_path ***{output_path}*** ('output_path is not None': {output_path is not None})"
+        # logger.debug(msg)
+        self.simul_type = 'inv'
+        if output_path is not None:
+            # msg = f"...start reading concentrations"
+            # logger.debug(msg)
+            self._read_concentrations(output_path, 'inversion')
+            # msg = f"...start reading emissions from -->{output_path}<--"
+            # logger.debug(msg)
+            self.emissions = load_emissions(output_path)
+            # msg = f"...computing conc statistics"
+            # logger.debug(msg)
+            self.stats4conc = conc_statistics(self.conc, get_exp_label(self.emis_dataset))
+            # msg = f"...reading simulation targets from directory ***{str(output_path)}***"
+            # logger.debug(msg)
+            self.tgt_table = simulation_read_targets(output_path)
+
+    @param.depends('alert')
+    def _alert(self):
+        if self.alert == '':
+            return ''
+        return pn.pane.Alert(self.alert, alert_type='danger')
+
+    @param.depends('conc', 'current_site')
+    def conc_plot(self):
+        if self.conc is None:
+            return ''
+        if self.current_site is None:
+            return ''
+        cur_exp = get_exp_label(self.emis_dataset)
+        dfc = self.conc.to_dataframe()
+        dfc = dfc[dfc.station == self.current_site]
+        return plot_conc_timeseries(dfc, self.simul_type, cur_exp)
+
+    @param.depends('stats4conc')
+    def conc_stats_table(self):
+        if self.stats4conc is None:
+            return ''
+        return plot_stats_table(self.stats4conc, self.emis_dataset)
+
+    @param.depends('emissions')
+    def map_emissions(self):
+        if self.emissions is None:
+            # print("resetting emission map")
+            logger.debug("resetting emission map")
+            return 
+        return plot_emission_map(self.emissions, self.emis_dataset)
+
+    @param.depends('tgt_table')
+    def target_table(self):
+        if self.tgt_table is None:
+            logger.debug("returning None")
+            return ''
+        return plot_target_table(self.tgt_table, self.emis_dataset)
+
+    @param.depends('current_site', 'sites_list')
+    def map_sites(self):
+        if self.conc is None or self.current_site is None:
+            return ''
+        return plot_map_sites(
+            self.conc.to_dataframe().loc[:, ['station', 'station_lon', 'station_lat']].drop_duplicates(),
+            self.current_site
+        )
+
+    # ------------------------------------------------
+    # Internal methods (communication with the backend)
+
+    def _call_backend(self, task: str) -> Path | None :
+        """
+        Triggers an inversion on the VM, and return either the output path, or an error code:
+            - 100: something went wrong ...
+            - 101: result is not valid json
+        """
+        # if self.emis_dataset in self.cache_inv and task == 'inversion':
+        #     return self.cache_inv[self.emis_dataset]
+        # elif self.emis_dataset in self.cache_fwd and task == 'forward':
+        #     return self.cache_fwd[self.emis_dataset]
+
+        url = f"{self.gui_settings.backend_url}/forward"
+
+        settings = {
+            'emis': self.emis_dataset,
+            'task': task,
+            'namelist': {
+                'fix': self.correlation_switch
+            }
+        }
+        r = requests.post(url, data={'conf': OmegaConf.to_yaml(settings)})
+        if not r.ok:
+            self.alert = f"{task} run failed: backend returned {r.status_code} for emis={self.emis_dataset} at {url}. Body: {r.text[:500]}"
+            return
+        try:
+            payload = r.json()
+        except requests.exceptions.JSONDecodeError:
+            self.alert = f"{task} run failed: backend returned non-JSON for emis={self.emis_dataset} at {url}. Body: {r.text[:500]}"
+            return
+        self.alert = ''
+
+        output_path = Path(payload['output'])
+        # msg = f"@task={task} for {self.emis_dataset} yields output_path ***{str(output_path)}***"
+        # logger.debug(msg)
+        if task == 'inversion':
+            self.cache_inv[self.emis_dataset] = output_path
+        else:
+            self.cache_fwd[self.emis_dataset] = output_path
+        return output_path
+        
+    def _read_concentrations(self, path: Path, task: str):
+        label = get_exp_label(self.emis_dataset)
+        if task == 'inversion':
+            conc = load_inversion_concentrations(path, label)
+        else:
+            conc = load_forward_concentrations(path, label)
+
+        if self.conc is None:
+            self.conc = conc
+        else:
+            self.conc = xr.merge([self.conc, conc], compat='override')
+
+        # Now update the "sites_list", if needed:
+        sites_available = set(self.conc.station.values.reshape(-1))
+        if sites_available != set(self.sites_list):
+            self.sites_list = list(sites_available)
+            self.param.current_site.objects = set(self.conc.station.values.reshape(-1))
+            self.current_site = self.param.current_site.objects[0]
+            self.widgets['station_selector'].visible = True
+
+
+class PreconfExperimentGUI_(pn.viewable.Viewer):
+    emis_dataset = param.FileSelector(doc='Prior emission dataset')
     run_forward = param.Event(doc='Do a forward run', label='Perform a forward simulation')
     run_inv = param.Event(doc='Do an inversion', label='Perform an inversion')
     alert = param.String(doc='Generic object for error messages or others ...', default='')
@@ -281,8 +667,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.gui_settings = gui_settings
 
         # Load the file list
-        self.param.experiment.path = self.gui_settings.emissions.glob_pattern
-        self.experiment = self.param.experiment.objects[0]
+        self.param.emis_dataset.path = self.gui_settings.emissions.glob_pattern
+        self.emis_dataset = self.param.emis_dataset.objects[0]
         self.cache_fwd = OrderedDict()
         self.cache_inv = OrderedDict()
 
@@ -306,40 +692,27 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         
         show_emismap = self.gui_settings.get('show_emismap', False)
         # logger.debug(f"show_emismap = {show_emismap}")
+        widgets = [
+            header_pane,
+            pn.Row(pn.widgets.Select.from_param(self.param.emis_dataset), expdesc_pane),
+            pn.Row(
+                pn.widgets.Button.from_param(self.param.run_forward),
+                pn.widgets.Button.from_param(self.param.run_inv)
+            ),
+            self._alert,
+            # self.conc_plot,
+            self.widgets['station_selector'],
+            pn.Row(self.conc_plot, self.map_sites),
+            pn.Row(self.conc_stats_table, self.target_table)
+        ]
         if show_emismap:
-            return pn.Column(
-                header_pane,
-                pn.Row(pn.widgets.Select.from_param(self.param.experiment), expdesc_pane),
-                pn.Row(
-                    pn.widgets.Button.from_param(self.param.run_forward),
-                    pn.widgets.Button.from_param(self.param.run_inv)
-                ),
-                self._alert,
-                # self.conc_plot,
-                self.widgets['station_selector'],
-                pn.Row(self.conc_plot, self.map_sites),
-                pn.Row(self.conc_stats_table, self.target_table),
-                self.map_emissions
-            )
-        else:
-             return pn.Column(
-                header_pane,
-                pn.Row(pn.widgets.Select.from_param(self.param.experiment), expdesc_pane),
-                pn.Row(
-                    pn.widgets.Button.from_param(self.param.run_forward),
-                    pn.widgets.Button.from_param(self.param.run_inv)
-                ),
-                self._alert,
-                # self.conc_plot,
-                self.widgets['station_selector'],
-                pn.Row(self.conc_plot, self.map_sites),
-                pn.Row(self.conc_stats_table, self.target_table)
-            )
+            widgets.append(self.map_emissions)
+        return pn.Column(*widgets)
 
     def _emistable_md(self):
         lines = ['| **Emissions setup** | **Description** |']
         lines.append('| --- | --- |')
-        for exp in self.param.experiment.objects:
+        for exp in self.param.emis_dataset.objects:
             exp = get_exp_label(exp)
             if desc := experiment_desc(exp):
                 lines.append(f'| {exp} | {desc} |')
@@ -351,37 +724,37 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             - 100: something went wrong ...
             - 101: result is not valid json
         """
-        # if self.experiment in self.cache_inv and task == 'inversion':
-        #     return self.cache_inv[self.experiment]
-        # elif self.experiment in self.cache_fwd and task == 'forward':
-        #     return self.cache_fwd[self.experiment]
+        # if self.emis_dataset in self.cache_inv and task == 'inversion':
+        #     return self.cache_inv[self.emis_dataset]
+        # elif self.emis_dataset in self.cache_fwd and task == 'forward':
+        #     return self.cache_fwd[self.emis_dataset]
 
         url = f"{self.gui_settings.backend_url}/forward"
 
         settings = {
-            'emis': self.experiment,
+            'emis': self.emis_dataset,
             'task': task,
             'namelist': self.namelist
         }
         logger.debug(f"self.namelist ==>{self.namelist}<==")
         r = requests.post(url, data={'conf': OmegaConf.to_yaml(settings)})
         if not r.ok:
-            self.alert = f"{task} run failed: backend returned {r.status_code} for emis={self.experiment} at {url}. Body: {r.text[:500]}"
+            self.alert = f"{task} run failed: backend returned {r.status_code} for emis={self.emis_dataset} at {url}. Body: {r.text[:500]}"
             return
         try:
             payload = r.json()
         except requests.exceptions.JSONDecodeError:
-            self.alert = f"{task} run failed: backend returned non-JSON for emis={self.experiment} at {url}. Body: {r.text[:500]}"
+            self.alert = f"{task} run failed: backend returned non-JSON for emis={self.emis_dataset} at {url}. Body: {r.text[:500]}"
             return
         self.alert = ''
 
         output_path = Path(payload['output'])
-        # msg = f"@task={task} for {self.experiment} yields output_path ***{str(output_path)}***"
+        # msg = f"@task={task} for {self.emis_dataset} yields output_path ***{str(output_path)}***"
         # logger.debug(msg)
         if task == 'inversion':
-            self.cache_inv[self.experiment] = output_path
+            self.cache_inv[self.emis_dataset] = output_path
         else:
-            self.cache_fwd[self.experiment] = output_path
+            self.cache_fwd[self.emis_dataset] = output_path
         return output_path
 
     @param.depends('run_forward', watch=True)
@@ -409,13 +782,13 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             self.emissions = load_emissions(output_path)
             # msg = f"...computing conc statistics"
             # logger.debug(msg)
-            self.stats4conc = conc_statistics(self.conc, get_exp_label(self.experiment))
+            self.stats4conc = conc_statistics(self.conc, get_exp_label(self.emis_dataset))
             # msg = f"...reading simulation targets from directory ***{str(output_path)}***"
             # logger.debug(msg)
             self.tgt_table = simulation_read_targets(output_path)
 
     def _read_concentrations(self, path: Path, task: str):
-        label = get_exp_label(self.experiment)
+        label = get_exp_label(self.emis_dataset)
         if task == 'inversion':
             conc = load_inversion_concentrations(path, label)
         else:
@@ -446,7 +819,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             return ''
         if self.current_site is None:
             return ''
-        cur_exp = get_exp_label(self.experiment)
+        cur_exp = get_exp_label(self.emis_dataset)
         dfc = self.conc.to_dataframe()
         dfc = dfc[dfc.station == self.current_site]
         p = dfc.hvplot.points(x='time', y='obs', grid=True, c='k', label='obs', width=1200, height=400)
@@ -488,7 +861,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             nc = len(df.columns)
             formatters = [lambda x: f'{x:.2f}'] * nc
             p = pn.pane.DataFrame(df, text_align='center', formatters=formatters)
-            title = f'# Fit statistics for all stations ({get_exp_label(self.experiment)})'
+            title = f'# Fit statistics for all stations ({get_exp_label(self.emis_dataset)})'
             return pn.Column(pn.pane.Markdown(title), p)
 
     @param.depends('tgt_table')
@@ -508,7 +881,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
             nc = len(df.columns)
             formatters = [lambda x: f'{x:.3f}'] * nc
-            # outname = f"targets_{get_exp_label(self.experiment)}.csv"
+            # outname = f"targets_{get_exp_label(self.emis_dataset)}.csv"
             # outname = f"targets.csv"
             # button = pn.widgets.FileDownload(callback=get_csv_file, filename=outname, label="Download Data (CSV)", button_type="primary")
             button = pn.widgets.FileDownload(callback=get_csv_file, filename="targets.csv", label="Download Data (CSV)", button_type="primary")
@@ -517,7 +890,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             # return self.tgt_table
             #-- MVO-TODO::units [MtCH4] should not be hard-coded here
             logger.debug("...returning target table now")
-            title = f'# Target emission quantities [MtCH4] ({get_exp_label(self.experiment)})'
+            title = f'# Target emission quantities [MtCH4] ({get_exp_label(self.emis_dataset)})'
             return pn.Column(pn.pane.Markdown(title), p)
 
     @param.depends('current_site', 'sites_list')
@@ -608,7 +981,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                 self.emissions['glb600x400'].apri.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=proj_glb600x400, xlim=xlim_glb600x400, ylim=ylim_glb600x400),
                 (self.emissions['glb600x400'].apos-self.emissions['glb600x400'].apri).hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=proj_glb600x400, xlim=xlim_glb600x400, ylim=ylim_glb600x400,)
             )
-            title = f"# emssions maps (posterior, prior, posterior-prior) ({get_exp_label(self.experiment)})"
+            title = f"# emssions maps (posterior, prior, posterior-prior) ({get_exp_label(self.emis_dataset)})"
             p = pn.Column(pn.pane.Markdown(title), prow)
         elif mode=='eur300x200':
             prow_eur300x200 = pn.Row(
@@ -616,7 +989,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                 self.emissions['eur300x200'].apri.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=proj_eur300x200, xlim=xlim_eur300x200, ylim=ylim_eur300x200),
                 (self.emissions['eur300x200'].apos-self.emissions['eur300x200'].apri).hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=proj_eur300x200, xlim=xlim_eur300x200, ylim=ylim_eur300x200,)
             )
-            title = f"# emssions maps (posterior, prior, posterior-prior) ({get_exp_label(self.experiment)})"
+            title = f"# emssions maps (posterior, prior, posterior-prior) ({get_exp_label(self.emis_dataset)})"
             p = pn.Column(pn.pane.Markdown(title), prow)
         elif mode=='gns100x100':
             prow = pn.Row(
@@ -624,7 +997,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                 self.emissions['gns100x100'].apri.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=proj_gns100x100, xlim=xlim_gns100x100, ylim=ylim_gns100x100),
                 (self.emissions['gns100x100'].apos-self.emissions['gns100x100'].apri).hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=proj_gns100x100, xlim=xlim_gns100x100, ylim=ylim_gns100x100,)
             )
-            title = f"# emssions maps (posterior, prior, posterior-prior) ({get_exp_label(self.experiment)})"
+            title = f"# emssions maps (posterior, prior, posterior-prior) ({get_exp_label(self.emis_dataset)})"
             p = pn.Column(pn.pane.Markdown(title), prow)
         elif mode=='row_merged':
             prow = pn.Row(
@@ -638,7 +1011,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                 (self.emissions['eur300x200'].apos-self.emissions['eur300x200'].apri).hvplot.quadmesh(rasterize=True, geo=True, cmap=cmap, clim=clim, projection=proj_glb600x400, xlim=xlim_glb600x400, ylim=ylim_glb600x400) *
                 (self.emissions['gns100x100'].apos-self.emissions['gns100x100'].apri).hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=proj_glb600x400, xlim=xlim_glb600x400, ylim=ylim_glb600x400,)
             )
-            title = f"# emssions maps (posterior, prior, posterior-prior) ({get_exp_label(self.experiment)})"
+            title = f"# emssions maps (posterior, prior, posterior-prior) ({get_exp_label(self.emis_dataset)})"
             p = pn.Column(pn.pane.Markdown(title), prow)
         elif mode=='guillaume':
             ppost = (
@@ -646,21 +1019,21 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                 self.emissions['eur300x200'].apos.hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
                 self.emissions['gns100x100'].apos.hvplot.quadmesh(cmap=cmap, clim=clim, coastline=True, xlim=xlim, ylim=ylim, projection=projection)
             )
-            plotcfg = opts.Overlay(title=f'posterior emissions ({emis_month}, {get_exp_label(self.experiment)})', ylabel=f"[{emis_units}]" )
+            plotcfg = opts.Overlay(title=f'posterior emissions ({emis_month}, {get_exp_label(self.emis_dataset)})', ylabel=f"[{emis_units}]" )
             ppost.opts(plotcfg)
             pprior = (
                 self.emissions['glb600x400'].apri.hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
                 self.emissions['eur300x200'].apri.hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
                 self.emissions['gns100x100'].apri.hvplot.quadmesh(cmap=cmap, clim=clim, coastline=True, xlim=xlim, ylim=ylim, projection=projection)
                 )
-            plotcfg = opts.Overlay(title=f'prior emissions ({emis_month}, {get_exp_label(self.experiment)})' )
+            plotcfg = opts.Overlay(title=f'prior emissions ({emis_month}, {get_exp_label(self.emis_dataset)})' )
             pprior.opts(plotcfg)
             pdiff = (
                 (self.emissions['glb600x400'].apos - self.emissions['glb600x400'].apri).hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
                 (self.emissions['eur300x200'].apos - self.emissions['eur300x200'].apri).hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
                 (self.emissions['gns100x100'].apos - self.emissions['gns100x100'].apri).hvplot.quadmesh(cmap=cmap, clim=clim, coastline=True, xlim=xlim, ylim=ylim, projection=projection)
                 )
-            plotcfg = opts.Overlay(title=f'posterior-prior emissions ({emis_month}, {get_exp_label(self.experiment)})')
+            plotcfg = opts.Overlay(title=f'posterior-prior emissions ({emis_month}, {get_exp_label(self.emis_dataset)})')
             pdiff.opts(plotcfg)
             
             prow = (
