@@ -40,63 +40,9 @@ from tm5.post.footprint_io import load_adjoint_fwd #-- this was for earlier diag
 from tm5.fitic import tm5emisdir_load_emissions2D
 from tm5.fitic import get_fitic_region_table
 from tm5.fitic import ojac_glb6x4_redistribute_to_fitic
-# from tm5.post.footprint_io import tm5rundir_obstable, tm5rundir_iniconc_1obs
-# from tm5.post.footprint_io import regions1D_info
-# from tm5.post.footprint_io import tm5rundir_jacobian3D, tm5rundir_simustart
-# from tm5.post.footprint_io import tm5rundir_jacobian3D_old, tm5_fitic_adjoint_corrected_halos
-# from tm5.post.footprint_io import tm5rundir_emissions2D, tm5emisdir_load_emissions2D
-# from tm5.post.footprint_io import jacobian_redistribute_glb6x4_to_avengers_zoom
+from tm5.fitic import ojac_glb6x4_redistribute_to_fitic_sqm
 from tm5.post.plot_util import cnorm_set
 from tm5.post.utilities import lonstr,latstr,set_outname,create_sha512
-
-
-# #-- glb6x4
-# dom_glb6x4 = SimpleNamespace(name='glb6x4', west=-180, east=180, south=-90, north=90, dlon=6, dlat=4)
-# #-- eur3x2
-# dom_eur3x2 = SimpleNamespace(name='eur3x2', west=-36, east=54, south=22, north=74, dlon=3, dlat=2)
-
-
-
-# #
-# #-- drop 30W-48E x 26N-70N (glb6x4 indices 29-39, 25-38, end included)
-# #
-# glb6x4_dropmask = np.full((45,60), False)
-# glb6x4_dropmask[29:40,25:38] = True #-- 143 grid-cells
-# glb6x4_ndrop = np.count_nonzero(glb6x4_dropmask)
-# glb6x4_ng = (glb6x4_dropmask.size-glb6x4_ndrop)
-# msg = f"glb6x4: ndrop={glb6x4_ndrop} (of {glb6x4_dropmask.size}) ng={glb6x4_ng}"
-# print(msg)
-# #
-# #-- drop 3E-15E x 44N-56N  (eur3x2 indices 11-16,13-17)
-# #
-# eur3x2_dropmask = np.full((26,30), False)
-# eur3x2_dropmask[11:17,13:17] = True #-- 24 grid-cells
-# eur3x2_halomask = np.full((26,30), True)
-# eur3x2_halomask[2:26-2,2:30-2] = False
-# eur3x2_dropmask |= eur3x2_halomask
-# eur3x2_ndrop = np.count_nonzero(eur3x2_dropmask)
-# eur3x2_ng = (eur3x2_dropmask.size-eur3x2_ndrop)
-# msg = f"eur3x2: ndrop={eur3x2_ndrop} (of {eur3x2_dropmask.size}) ng={eur3x2_ng}"
-# print(msg)
-# #
-# #-- drop HALO part of gns1x1 domain
-# #
-# gns1x1_halomask = np.full((16,18), True)
-# gns1x1_halomask[2:16-2,3:18-3] = False
-# gns1x1_dropmask = gns1x1_halomask
-# gns1x1_ndrop = np.count_nonzero(gns1x1_dropmask)
-# gns1x1_ng = (gns1x1_dropmask.size-gns1x1_ndrop)
-# msg = f"gns1x1: ndrop={gns1x1_ndrop} (of {gns1x1_dropmask.size}) ng={gns1x1_ng}"
-# print(msg)
-# ng = glb6x4_ng + eur3x2_ng + gns1x1_ng
-# msg = f"number of grid-cells contributing to emissions and Jacobian, ng={ng}"
-# logger.info(msg)
-
-# drop_table = {
-#     'glb600x400': glb6x4_dropmask,
-#     'eur300x200': eur3x2_dropmask,
-#     'gns100x100': gns1x1_dropmask
-#     }
 
 
 def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None: 
@@ -199,13 +145,13 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
     #
     #-- load region table ***FIT-IC compliant***
     #
-    region_table = get_fitic_region_table()
-    fitic_regions = list(region_table.keys())
+    fitic_region_table = get_fitic_region_table()
+    fitic_regions = list(fitic_region_table.keys())
     ng = 0
     regionid_1D = []
     lon_1D = None
     lat_1D = None
-    for region,region_info in region_table.items():
+    for region,region_info in fitic_region_table.items():
         keep_mask = ~region_info.drop_mask
         ng_reg = np.count_nonzero(keep_mask)
         ng += ng_reg
@@ -255,9 +201,10 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
     if domain_tag=='gns1x1':
         obs_jacobian = np.zeros((nobs,nemisday,ng))
     elif domain_tag=='glb6x4':
-        _nlat = region_table['glb600x400'].grid.nlat
-        _nlon = region_table['glb600x400'].grid.nlon
-        obs_jacobian = np.zeros((nobs,nemisday,_nlat,_nlon))
+        _nlat = fitic_region_table['glb600x400'].grid.nlat
+        _nlon = fitic_region_table['glb600x400'].grid.nlon
+        ng_6x4 = _nlat*_nlon
+        obs_jacobian_6x4 = np.zeros((nobs,nemisday,_nlat,_nlon))
     iniconc_1D = np.full((nobs,), missval)
     obsconc_1D = np.full((nobs,), missval)
     tm5fwd_1D  = np.full((nobs,), missval)
@@ -285,13 +232,14 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
                     for region in regions:
                         cur_footp = footprints[obs.Index][region][idate,:]
                         #-- restrict to relevant grid-cells
-                        drop_mask = region_table[region].drop_mask
-                        cur_footp = cur_footp[~drop_mask]
+                        drop_mask = fitic_region_table[region].drop_mask
+                        keep_mask = ~drop_mask
+                        cur_footp = cur_footp[keep_mask]
                         cur_footplist.append(cur_footp)
                     obs_jacobian[iobs,idate,:] = np.hstack(cur_footplist)
                 elif domain_tag=='glb6x4':
                     cur_footp = footprints[obs.Index]['glb600x400'][idate,:]
-                    obs_jacobian[iobs,idate,:] = cur_footp[:]
+                    obs_jacobian_6x4[iobs,idate,:] = cur_footp[:]
     #--
     msg = f"...reading footprint data done."
     logger.info(msg)
@@ -308,19 +256,18 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
         #--
         #
         ojac6x4_da = xr.DataArray(
-            obs_jacobian,
+            obs_jacobian_6x4,
             dims=('obs','emisday','lat','lon'),
             coords={'obs':obsid_1D,
                     'emisday':emisday_range,
-                    'lat':region_table['glb600x400'].grid.latc,
-                    'lon':region_table['glb600x400'].grid.lonc
+                    'lat':fitic_region_table['glb600x400'].grid.latc,
+                    'lon':fitic_region_table['glb600x400'].grid.lonc
                     },
             attrs = {'units': 'ppb/(kgCH4/cell/s)'}
             )
-        obs_jacobian_regridded = ojac_glb6x4_redistribute_to_fitic(ojac6x4_da, region_table)
-        #>>>>>>>>>>> testing with native 6x4 sensitivities
-        ng = region_table['glb600x400'].grid.nlat*region_table['glb600x400'].grid.nlon
-        obs_jacobian = obs_jacobian.reshape((nobs,nemisday,ng))
+        # obs_jacobian = ojac_glb6x4_redistribute_to_fitic_sqm(ojac6x4_da, fitic_region_table)
+        obs_jacobian = ojac_glb6x4_redistribute_to_fitic(ojac6x4_da, fitic_region_table)
+        obs_jacobian_6x4 = obs_jacobian_6x4.reshape((nobs,nemisday,ng_6x4))
 
     ##################################################
     #
@@ -340,6 +287,22 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
         jac_dd = obs_jacobian[:,idxs_emismon,:]
         jac_mm =  jac_dd.sum(axis=1)/nsecmon
         obs_jacobian_mm[:,imon,:] = jac_mm[:]
+    if domain_tag=='glb6x4':
+        obs_jacobian_6x4_mm = np.zeros((nobs,nemismon,ng_6x4))
+        obs_jacobian_6x4_mm_units = "ppb/(kgCH4/cell/month)"
+        for imon,emismondayf in enumerate(emismon_range):
+            emismondayl = (emismondayf + Timedelta(days=32)).replace(day=1) - Timedelta(days=1)
+            monday_range = date_range(emismondayf, emismondayl)
+            #-- unit conversion [ppb/kgCH4/cell/s] --> [ppb/kgCH4/cell/month]
+            nsecmon = len(monday_range)*86400
+            cnd_emismon = (emisday_range>=emismondayf)&(emisday_range<=emismondayl)
+            ndpmon = np.count_nonzero(cnd_emismon)
+            nsecmon = ndpmon*86400 #-- 
+            idxs_emismon = np.where(cnd_emismon)[0]
+            jac_dd = obs_jacobian_6x4[:,idxs_emismon,:]
+            jac_mm =  jac_dd.sum(axis=1)/nsecmon
+            obs_jacobian_6x4_mm[:,imon,:] = jac_mm[:]
+        
         
     ##################################################
     #
@@ -348,11 +311,15 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
     if args.emission_dir!=None:
         msg = f"start reading emissions from ***{str(args.emission_dir)}***..."
         logger.info(msg)
-        if domain_tag=='gns1x1':
-            emis_info = tm5emisdir_load_emissions2D(args.emission_dir, 'ch4emis', emisday_range, fitic_regions, drop=True)
-        elif domain_tag=='glb6x4':
-            emis_info = tm5emisdir_load_emissions2D(args.emission_dir, 'ch4emis', emisday_range, regions, drop=False)
+        #
+        #-- emissions on FIT-IC grid-cells
+        #
+        msg = f"fitic_regions -->{fitic_regions}<--"
+        logger.debug(msg)
+        emis_info = tm5emisdir_load_emissions2D(args.emission_dir, 'ch4emis', emisday_range, fitic_regions, drop=True)
         emis2D = emis_info.emis2D
+        lonc1D_fitic = emis_info.lonc1D
+        latc1D_fitic = emis_info.latc1D
         nnan = np.count_nonzero(np.isnan(emis2D))
         msg = f"...reading emissions done nnan={nnan})"
         logger.info(msg)
@@ -364,6 +331,28 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
             cnd_emismon = (emisday_range>=emismondayf)&(emisday_range<=emismondayl)
             idxs_emismon = np.where(cnd_emismon)[0]
             emis2D_mm[imon,:] = np.sum(emis2D[idxs_emismon,:]*nsecday, axis=0)
+
+        if domain_tag=='glb6x4':
+            emis_info = tm5emisdir_load_emissions2D(args.emission_dir, 'ch4emis', emisday_range, regions, drop=False)
+            emis2D_6x4 = emis_info.emis2D
+            lonc1D_6x4 = emis_info.lonc1D
+            latc1D_6x4 = emis_info.latc1D
+            nnan = np.count_nonzero(np.isnan(emis2D_6x4))
+            msg = f"...reading emissions done nnan={nnan})"
+            logger.info(msg)
+            emis2D_6x4_mm = np.full((nemismon,ng_6x4), missval)
+            for imon,emismondayf in enumerate(emismon_range):
+                emismondayl = (emismondayf + Timedelta(days=32)).replace(day=1) - Timedelta(days=1)
+                monday_range = date_range(emismondayf, emismondayl)
+                nsecday = 86400
+                cnd_emismon = (emisday_range>=emismondayf)&(emisday_range<=emismondayl)
+                idxs_emismon = np.where(cnd_emismon)[0]
+                emis2D_6x4_mm[imon,:] = np.sum(emis2D_6x4[idxs_emismon,:]*nsecday, axis=0)
+                #--- DEBUG
+                msg = f"emissions@imon={imon}: fitic/glb6x4 = " \
+                    f"{emis2D_mm[imon,:].sum()}/{emis2D_6x4_mm[imon,:].sum()}" \
+                    f"[kgCH4/month]"
+                logger.debug(msg)
         #
         #-- propagate emissions forward with Jacobian
         #
@@ -376,6 +365,122 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
         obs_jac2D_mm = obs_jacobian_mm.reshape((nobs,nemismon*ng))
         emis1D_mm    = emis2D_mm.reshape(nemismon*ng)
         linfwd_1D_mm = np.dot(obs_jac2D_mm, emis1D_mm) + iniconc_1D
+        #
+        #-- propagation with raw 6x4 emissions
+        #
+        if domain_tag=='glb6x4':
+            obs_jac2D_6x4 = obs_jacobian_6x4.reshape((nobs,nemisday*ng_6x4))
+            emis1D_6x4    = emis2D_6x4.reshape(nemisday*ng_6x4)
+            linfwd_6x4_1D = np.dot(obs_jac2D_6x4, emis1D_6x4) + iniconc_1D
+            # monthly
+            obs_jac2D_6x4_mm = obs_jacobian_6x4_mm.reshape((nobs,nemismon*ng_6x4))
+            emis1D_6x4_mm    = emis2D_6x4_mm.reshape(nemismon*ng_6x4)
+            linfwd_6x4_1D_mm = np.dot(obs_jac2D_6x4_mm, emis1D_6x4_mm) + iniconc_1D
+            # ##################################################
+            # ### MVO-DEBUG tracing delta-concentration differences...
+            # ###
+            # iemisday = 0
+            # iobs = 0
+            # cur_emis2D_fitic = emis2D[iemisday,:]
+            # cur_ojac_fitic = obs_jacobian[iobs,iemisday,:]
+            # cur_emis2D_6x4 = emis2D_6x4[iemisday,:]
+            # cur_ojac_6x4 = obs_jacobian_6x4[iobs,iemisday,:]
+            # ### MVO-DEBUG
+            # dconc_6x4 = []
+            # dconc_fitic = []
+            # ngc_fitic = []
+            # idxs_fitic = np.array([],dtype='i4')
+            # for ig_6x4 in range(ng_6x4):
+            #     _lonc = lonc1D_6x4[ig_6x4]
+            #     _latc = latc1D_6x4[ig_6x4]
+            #     cnd_lon = (lonc1D_fitic>=_lonc-3)&(lonc1D_fitic<=_lonc+3)
+            #     cnd_lat = (latc1D_fitic>=_latc-2)&(latc1D_fitic<=_latc+2)
+            #     cur_idxs_fitic = np.where(cnd_lon&cnd_lat)[0]
+            #     idxs_fitic = np.hstack((idxs_fitic, cur_idxs_fitic))
+            #     _ng_fitic = len(cur_idxs_fitic)
+            #     ngc_fitic.append(_ng_fitic)
+            #     msg = f"@ig_6x4={ig_6x4} lon/lat = {_lonc}/{_latc}, iemisday={iemisday} " \
+            #         f" _ng_fitic={_ng_fitic}"
+            #     _emis_6x4 = cur_emis2D_6x4[ig_6x4]
+            #     _emis_fitic = cur_emis2D_fitic[cur_idxs_fitic]
+            #     _emis_fitic_sum = np.sum(_emis_fitic)
+            #     if max(_emis_6x4,_emis_fitic_sum) > 0:
+            #         _rdiff = abs(_emis_fitic_sum-_emis_6x4)/_emis_fitic_sum
+            #         if _rdiff>1e-10:
+            #             msg = f"@ig_6x4={ig_6x4} lon/lat = {_lonc}/{_latc}" \
+            #                 f"emission glb6x4/fitic/rdiff = {_emis_6x4}/{_emis_fitic_sum}/{_rdiff}"
+            #             print(msg)
+            #     else:
+            #         pass
+            #     _ojac_6x4 = cur_ojac_6x4[ig_6x4]
+            #     _ojac_fitic = cur_ojac_fitic[cur_idxs_fitic]
+            #     _ojac_fitic_sum = np.sum(_ojac_fitic)
+            #     _rdiff = abs(_ojac_fitic_sum-_ojac_6x4)
+            #     # msg = f"@ig_6x4={ig_6x4} lon/lat = {_lonc}/{_latc}" \
+            #     #     f"iobs/iemisday={iobs}/{iemisday}: " \
+            #     #     f"Jacobian values glb6x4/fitic = {_ojac_6x4}/{_ojac_fitic_sum}"
+            #     # print(msg)
+            #     _dconc_6x4 = _ojac_6x4*_emis_6x4
+            #     _dconc_fitic = np.sum(_ojac_fitic*_emis_fitic)
+            #     if _dconc_6x4!=_dconc_fitic:
+            #         msg = f"@ig_6x4={ig_6x4} lon/lat = {_lonc}/{_latc}" \
+            #             f"iobs/iemisday={iobs}/{iemisday}: " \
+            #             f"Jacobian values glb6x4/fitic = {_ojac_6x4}/{_ojac_fitic_sum}"
+            #         print(msg)
+            #         msg = f"@ig_6x4={ig_6x4} lon/lat = {_lonc}/{_latc}" \
+            #             f"iobs/iemisday={iobs}/{iemisday}: " \
+            #             f"_dconc_6x4/_dconc_fitic = {_dconc_6x4}/{_dconc_fitic}"
+            #         print(msg)
+            #         msg = f"...cur_idxs_fitic={cur_idxs_fitic}"
+            #         print(msg)
+            #     dconc_6x4.append(_dconc_6x4)
+            #     dconc_fitic.append(_dconc_fitic)
+            # #
+            # _data_dict = {'lonc_6x4': lonc1D_6x4,
+            #               'latc_6x4': latc1D_6x4,
+            #               'ngc_fitic': ngc_fitic,
+            #               'dconc_6x4':dconc_6x4,
+            #               'dconc_fitic':dconc_fitic,
+            #               }
+            # _df = pd.DataFrame.from_dict(_data_dict)
+            # _df.loc[:,'dconc_diff'] = _df.loc[:,'dconc_fitic'] - _df.loc[:,'dconc_6x4']
+            # print(_df[['dconc_6x4','dconc_fitic','dconc_diff']].describe())
+            # msg = f"iobs/iemisday={iobs}/{iemisday}: " \
+            #     f"ngc_fitic/dconc_fitic/dconc_6x4 = " \
+            #     f"{_df['ngc_fitic'].sum()}/{_df['dconc_fitic'].sum()}/{_df['dconc_6x4'].sum()}"
+            # print(msg)
+            # outname = f"dconc_debug-comparison_iobs{iobs}_iemisday{iemisday}.csv"
+            # _df.to_csv(outname, index=False)
+            # print(f"-"*50)
+            # print(f"-"*50)
+            # dconc_fitic = 0
+            # msg = f"len(idxs_fitic)={len(idxs_fitic)}"
+            # print(msg)
+            # for ig in idxs_fitic:
+            #     dconc_fitic += cur_ojac_fitic[ig]*cur_emis2D_fitic[ig]
+            # msg = f"loop-computed dconc_fitic = {dconc_fitic}"
+            # print(msg)
+            # print(f"-"*50)
+            # print(f"-"*50)
+            # msg = f"iemisday={iemisday}: " \
+            #     f"np.sum(cur_emis2D_fitic)={np.sum(cur_emis2D_fitic[:])}"
+            # print(msg)
+            # msg = f"iemisday={iemisday}: " \
+            #     f"np.sum(cur_emis2D_6x4[:])={np.sum(cur_emis2D_6x4[:])}"
+            # print(msg)
+            # msg = f"iobs/iemisday={iobs}/{iemisday}: " \
+            #     f"np.sum(cur_ojac_fitic[:])={np.sum(cur_ojac_fitic[:])}"
+            # print(msg)
+            # msg = f"iobs/iemisday={iobs}/{iemisday}: " \
+            #     f"np.sum(cur_ojac_6x4[:])={np.sum(cur_ojac_6x4[:])}"
+            # print(msg)
+            # dconc = np.sum(cur_ojac_fitic[:]*cur_emis2D_fitic[:])
+            # dconc_6x4 = np.sum(cur_ojac_6x4[:]*cur_emis2D_6x4[:])
+            # msg = f"iobs/iemisday={iobs}/{iemisday}: " \
+            #     f"dconc/dconc_6x4 = {dconc}/{dconc_6x4}"
+            # print(msg)
+            # ### MVO-DEBUG-END tracing delta-concentration differences...
+            # ##################################################
         #
         #--
         #
@@ -391,13 +496,17 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
                         }
         elif domain_tag=='glb6x4':
              cmp_dict = {'time':obstime_1D,
-                        'station':stationid_1D,
-                        'iniconc':iniconc_1D,
-                        'tm5fwd': tm5fwd_1D,
-                        'linfwd':linfwd_1D,
-                        'linfwd_mm':linfwd_1D_mm,
-                        'diff_lin-full':linfwd_1D-tm5fwd_1D,
-                        'diff_linmm-lin':linfwd_1D_mm-linfwd_1D
+                         'station':stationid_1D,
+                         'iniconc':iniconc_1D,
+                         'tm5fwd': tm5fwd_1D,
+                         'linfwd':linfwd_1D,
+                         'linfwd_mm':linfwd_1D_mm,
+                         'diff_lin-full':linfwd_1D-tm5fwd_1D,
+                         'diff_linmm-lin':linfwd_1D_mm-linfwd_1D,
+                         'linfwd_6x4': linfwd_6x4_1D,
+                         'linfwd_mm_6x4': linfwd_6x4_1D_mm,
+                         'diff_lin-full_6x4': linfwd_6x4_1D-tm5fwd_1D,
+                         'diff_linmm-lin_6x4': linfwd_6x4_1D_mm-linfwd_6x4_1D
                         }
         dfcmp = DataFrame.from_dict(cmp_dict)
         for col in ['diff_lin-full','diff_linmm-lin',]:
@@ -462,8 +571,6 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
         msg = f"generated ***{str(outname)}***"
         logger.info(msg)
 
-    print(f"STOPPING AFTER VERIFICATION")
-    sys.exit(0)
     ##################################################
     #
     #--       o u t p u t   g e n e r a t i o n
@@ -719,7 +826,8 @@ def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
         msg = f"...loading emissions for {dayf.strftime('%Y%m%d')} to {dayl.strftime('%Y%m%d')}"
         logger.info(msg)
         #-- load daily emissions for every day in month
-        emis_info = tm5emisdir_load_emissions2D(tm5emisdir, 'ch4emis', day_range, regions, drop=True)
+        drop = len(regions)>1
+        emis_info = tm5emisdir_load_emissions2D(tm5emisdir, 'ch4emis', day_range, regions, drop=drop)
         #-- collect ancillary infos, allocate array
         if imon==0:
             _,ng = emis_info.emis2D.shape
