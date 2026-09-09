@@ -20,8 +20,7 @@ import xesmf
 from types import SimpleNamespace
 #-- library packages
 from tm5.gridtools import TM5Grids
-from tm5.fitic import read_obs_table
-
+from tm5.fitic import read_obs_table, get_fitic_region_table
 
 #
 #-- table of FIT-IC regions
@@ -30,11 +29,13 @@ from tm5.fitic import read_obs_table
 #
 region_table = OrderedDict()
 
-
+#
+#
+#
 def _init_region_table():
     global region_table
     if len(region_table)>0:
-        return #-- should be already initialised
+        return #-- already initialised
     #
     #-- create grid instances
     #
@@ -66,6 +67,9 @@ def _init_region_table():
         area1D = grid.area.ravel()
         #
         lonmesh,latmesh = np.meshgrid(grid.lonc,grid.latc)
+        #
+        #--
+        #
         region_table[reg].ng1D = grid.nlat*grid.nlon
         region_table[reg].lonc1D = lonmesh.ravel()
         region_table[reg].latc1D = latmesh.ravel()
@@ -125,6 +129,7 @@ def _init_region_table():
             region_table[reg].nohalo_mask = nohalo_mask.ravel()
 
 
+           
 def regions1D_info( regions : list, remove_halo : bool = False, clip_child : bool = False ) -> SimpleNamespace:
     if remove_halo and clip_child:
         msg = f"options remove_halo and clip_child cannot be active at the same time"
@@ -198,7 +203,7 @@ def regiondomain_halo( region : str ) -> list:
     return [lonmin,lonmax,latmin,latmax,]
 
 
-def tm5emisdir_load_emissions2D( emisdir : str | Path, emis_prefix : str, day_range : DatetimeIndex, regions : list, remove_halo : bool = True, clip_child : bool = False ) -> SimpleNamespace:
+def tm5emisdir_load_emissions2D_depreceated( emisdir : str | Path, emis_prefix : str, day_range : DatetimeIndex, regions : list, remove_halo : bool = True, clip_child : bool = False ) -> SimpleNamespace:
     """Read in daily emissions as prepared for TM5 for the selected temporal range
     and regions.
     The emissions array will be 2D with only one single dimension in the spatial domain,
@@ -270,8 +275,7 @@ def tm5emisdir_load_emissions2D( emisdir : str | Path, emis_prefix : str, day_ra
     assert np.count_nonzero(emissions2D==missval)==0
     
     return SimpleNamespace(emis2D=emissions2D,
-                           reg1D=reg1D, lonc1D=lonc1D, latc1D=latc1D,
-                           emisdir=emisdir)
+                           reg1D=reg1D, lonc1D=lonc1D, latc1D=latc1D, emisdir=emisdir)
 
 
 def tm5rundir_simustart(outpath : str | Path) -> Timestamp:
