@@ -637,9 +637,11 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
         # Now update the "sites_list", if needed:
         sites_available = set(self.conc.station.values.reshape(-1))
-        if sites_available != set(self.sites_list):
-            self.sites_list = list(sites_available)
-            self.param.current_site.objects = set(self.conc.station.values.reshape(-1))
+        update_sites = (sites_available != set(self.sites_list))
+        if update_sites:
+            updated_site_list = sorted(list(sites_available))
+            self.sites_list = updated_site_list
+            self.param.current_site.objects = updated_site_list#set(self.conc.station.values.reshape(-1))
             self.current_site = self.param.current_site.objects[0]
             self.widgets['station_selector'].visible = True
 
