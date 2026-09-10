@@ -711,7 +711,7 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
         #-- emission day
         #
         ncvar = fp.createVariable('emisday', str, ('nemisday',))
-        ncvar.long_name = 'emission_month'
+        ncvar.long_name = 'day_of_emission'
         ncvar.units = ''
         ncvar[:] = np.array([ _.strftime('%Y%m%d') for _ in emisday_range ])
         #
@@ -749,7 +749,7 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
     ncvar = fp.createVariable('obs_jacobian', 'f8', ('nobs','nemismon','ng',),
                               compression='zlib', complevel=complevel)
     ncvar[:] = obs_jacobian_mm[:,:,:]
-    ncvar.units = obs_jacobian_units
+    ncvar.units = obs_jacobian_mm_units
     ncvar.comment = f"Jacobian quantifies the sensitivity of concentration at " \
         f"observed times and locations w.r.t. to monthly total emissions."
     if args.add_daily_obsjac:
