@@ -444,7 +444,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     current_site = param.Selector(doc='Current site to be displayed', default=None)
     sites_list = param.List(default=[], doc='List of observation sites available (for internal use ...)')
     simul_type = param.Selector(objects=['fwd', 'inv'], allow_None=True, default=None)
-    correlation_switch = param.Boolean(doc='Switch to enable/disable correlated emission adjustments', default=False, label='Long distance correlations')
+    correlation_switch = param.Boolean(doc='Switch to enable/disable correlated emission adjustments', default=False, label='Spatially correlated via prior emissions uncertainty')
 
     # Data containers:
     conc        = param.ClassSelector(class_=xr.Dataset)
