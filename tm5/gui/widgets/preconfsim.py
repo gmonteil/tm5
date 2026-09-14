@@ -201,7 +201,7 @@ def load_forward_concentrations(path: Path, label: str) -> xr.Dataset:
         conc.loc[conc.station == station_id, 'station_lon'] = float(stat.station_lon.values[0])
         conc.loc[conc.station == station_id, 'station_lat'] = float(stat.station_lat.values[0])
         conc.loc[conc.station == station_id, 'station_lon'] = float(stat.station_lon.values[0])
-        conc.loc[conc.station == station_id, 'station_alt']  = float(stat.station_alt.values[0])
+        conc.loc[conc.station == station_id, 'station_alt'] = float(stat.station_alt.values[0])
     conc['time'] = [Timestamp(_) for _ in conc.loc[:,'obstime']]
     conc = conc.rename(columns={'conc':f'forward_{label}'})
     conc = conc.to_xarray()
