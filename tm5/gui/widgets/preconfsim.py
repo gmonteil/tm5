@@ -194,7 +194,7 @@ def load_inversion_concentrations(path: Path, label: str) -> xr.Dataset:
 
 def load_forward_concentrations(path: Path, label: str) -> xr.Dataset:
     fc = xr.open_dataset(path / 'fc.nc')
-    conc = fc[['obs', 'conc', 'station', 'station_alt', 'obstime']].to_dataframe()
+    conc = fc[['obs', 'conc', 'station', 'obstime']].to_dataframe()
     conc.loc[:,'station'] = conc.loc[:,'station'].astype('string')
     for station_id in fc.station_id.values:
         stat = fc.sel(nsta = fc.station_id == station_id)
@@ -238,6 +238,7 @@ def load_emissions(path: Path) -> Dict[str, xr.Dataset]:
     apos = xr.open_dataset(path / 'fepost.nc')
     #-- deliberately selecting last month
     ilastmon = apri.nmon.values[-1]
+
     apri = apri.isel(nmon=ilastmon)
     apos = apos.isel(nmon=ilastmon)
     emis_mon = Timestamp(*apri.time.values)
@@ -610,13 +611,12 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
     @param.depends('current_site', 'sites_list')
     def map_sites(self):
-        msg = f"...current_site={self.current_site}"
-        logger.debug(msg)
+        # msg = f"...current_site={self.current_site}"
+        # logger.debug(msg)
         if self.conc is None or self.current_site is None:
             return ''
-        msg = f"...calling plot_map_sites"
-        logger.debug(msg)
-        self.conc.to_dataframe().loc[:, ['station', 'station_lon', 'station_lat',]].drop_duplicates().to_csv('plot_map_sites.csv')
+        # msg = f"...calling plot_map_sites"
+        # logger.debug(msg)
         site_map = plot_map_sites(
             self.conc.to_dataframe().loc[:, ['station', 'station_lon', 'station_lat',]].drop_duplicates(),
             self.current_site
