@@ -200,6 +200,8 @@ def load_forward_concentrations(path: Path, label: str) -> xr.Dataset:
         stat = fc.sel(nsta = fc.station_id == station_id)
         conc.loc[conc.station == station_id, 'station_lon'] = float(stat.station_lon.values[0])
         conc.loc[conc.station == station_id, 'station_lat'] = float(stat.station_lat.values[0])
+        conc.loc[conc.station == station_id, 'station_lon'] = float(stat.station_lon.values[0])
+        conc.loc[conc.station == station_id, 'station_alt']  = float(stat.station_alt.values[0])
     conc['time'] = [Timestamp(_) for _ in conc.loc[:,'obstime']]
     conc = conc.rename(columns={'conc':f'forward_{label}'})
     conc = conc.to_xarray()
@@ -617,8 +619,10 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             return ''
         # msg = f"...calling plot_map_sites"
         # logger.debug(msg)
+        site_columns = ['station', 'station_lon', 'station_lat','station_alt']
+        site_columns = ['station', 'station_lon', 'station_lat',]
         site_map = plot_map_sites(
-            self.conc.to_dataframe().loc[:, ['station', 'station_lon', 'station_lat',]].drop_duplicates(),
+            self.conc.to_dataframe().loc[:, site_columns].drop_duplicates(),
             self.current_site
         )
         # msg = f"...returning site_map  ==>{site_map}<=="
