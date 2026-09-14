@@ -1,14 +1,9 @@
 # Tasks (by order of priority)
 - GUI (setup)
-    - [x] (1) GM to apply script (to remove halos from the Jacobian and emission files) to the files we are using on the VM
-    - [x] (1) MV to integrate script into environment that creates the Jacobian
-    - [ ] (1) GM to check (and hopefully correct) the origin of the mismatch between linearised and full forward model that Thomas had (erroneoulsy) attributed to linearisation around wrong concentration trajectory due to footprint calculation with 0 emissions. For a longer run (at least 3-4 extra months, i.e. Oct 2020 to June or so).
-    - [ ] (2) GM to check (and hopefully correct) the origin of the mismatch between linearised and full forward model in particular for sites in Halo. For a longer run (at least 3-4 extra months, i.e. Oct 2020 to June or so).
-    - [ ] (1) MV to trace back differences in response to initial concentration
-    - [ ] (2) MV to apply Guillaume's script to compare full and linearised models to Michael's footprint directories, and hopefully detect and correct potential error in the postprocessing
-    - [ ] (3) GM to include an example GUI element for namelist parameters: "Resolution of Emission space" fixed patters/full grid
+    - [ ] (1) MV to integrate script into environment that creates the global Jacobian (local are running)
+    - [ ] (2) GM to include an example GUI element for namelist parameters: "Resolution of Emission space" fixed patters/full grid
     - [ ] (5) GM to improve performance on emission plots, potentially also seasonal cycles, or bar plot ... 
-    - [ ] (4) GM to "combine the two tabs "setup simulation" and "preconfigured simulation"
+    - [ ] (1) GM to "combine the two tabs "setup simulation" and "preconfigured simulation"
 - GUI (analysis)
     - [x partly] Add Chi2 with sigma = sqrt (sigma_obs**2 + sigma_model **2), and sigma model from a crude approximation derived from short scale variability of the obs, or the variability of the meteo (representation error approximation from slopes may also be there ...
     - [ ] (8) GM: Integrate some visualisation of the emission budget in configuration part of the GUI (to allow perform a quick sanity check)
@@ -31,14 +26,11 @@
 - Documentation
     - [ ] properly setup github pages with mkdocs
 - Inversion
+    - [ ] GM: to check whether the adjoint read the proper OH field
+    - [ ] MV: revise python postprocessor of footprints to take a full year long Jacobian as input     
     - [ ] TXK/MV: draft a kind of tutorial guiding the user through one of the experiments
     - [ ] TXK to exclude spinup from target Jacobian
-    - [ ] GM (1) to revise global footprint calculation (back to Oct and network identifier ... see below)
-    - [ ] MV (1) does the local footprints -> Need to be validated
-    - [x] TK (1) prepare an example of a switch in the fortran (that the user should then be able to control via the GUI)
-    - [ ] postprocessing of the global flask Jacobian such that the sensitivity with respect to the grid cells over the zoom domain is distributed to sensitivities on the zoom grid according to the fraction of each zoom domain grid cell area in the global resolution's grid cell. Like this the emission dimension of the global and zoom domain contributions to the overall Jacobian are the same 
-    - [ ] MV to revise zoom domain footprint calculation (back to Oct ... see below)
-  
+    - [ ] postprocessing of the global flask Jacobian such that the sensitivity with respect to the grid cells over the zoom domain is distributed to sensitivities on the zoom grid according to the fraction of each zoom domain grid cell area in the global resolution's grid cell. Like this the emission dimension of the global and zoom domain contributions to the overall Jacobian are the same  
             
 # Task ideas / discussion
 - avoid misuse through implementation of "accepted ranges" => *That's essentially built-in the GUI*

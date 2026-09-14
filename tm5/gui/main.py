@@ -254,29 +254,7 @@ class FitIC_UI(pn.viewable.Viewer):
 
     @debug.timer
     def __panel__(self):
-        if self.drop_precomputed:
-            return pn.Tabs(
-                self.setup_tab,
-                self.preconfigured_tabs,
-                dynamic=True
-            )
-        else:
-            return pn.Tabs(
-                self.setup_tab,
-                self.preconfigured_tabs,
-                self.precomp_tabs,
-                dynamic=True
-            )
-
-    @property
-    def drop_precomputed(self):
-        #-- MVO-20260602: FIT-IC now focusing on simulations/inversions actually run
-        #                 with the Jacobian,
-        #                 the former 'precomputed results' must now be  explicitly
-        #                 activated and probably being removed on the mid-term time scale...
-        show_precomputed = self.conf.get('show_precomputed',False)
-        return (not show_precomputed)
-    
+        return pn.Tabs(self.preconfigured_tabs, dynamic=True)
     @property
     def setup_tab(self):
         return ("Setup simulation", ExperimentSetupGUI(gui_settings=self.conf))
