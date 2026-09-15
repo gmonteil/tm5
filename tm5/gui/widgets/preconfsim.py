@@ -17,17 +17,17 @@ from holoviews import opts, Overlay
 from typing import Tuple, Dict, List
 import io
 from numpy import zeros
+from itertools import cycle
+from bokeh.palettes import Category10
+import itertools
+import geoviews.feature as gf
+from cartopy import crs
 
 from tm5 import debug
 from tm5.gui.css import *
 from tm5.gui.widgets.stations import calc_statistics
 from tm5.gui.widgets.widget_utils import experiment_desc, plot_site_info, load_observations_metadata
 
-from itertools import cycle
-from bokeh.palettes import Category10
-import itertools
-import geoviews.feature as gf
-from cartopy import crs
 
 
 
@@ -118,15 +118,14 @@ def conc_statistics(conc: xr.Dataset, label: str) -> DataFrame:
     case_table['post'] = 'apos'
     # msg = f"stations -->{stations}<--"
     # logger.debug(stations)
-    stats = {
-        'station': [],
-        }
+    stats = OrderedDict()
+    stats['station'] = []
     for case_name in case_table.keys():
         stats[f"Mean bias ({case_name})"] = []
+    for case_name in case_table.keys():
         stats[f"RMSE ({case_name})"] = []
+    for case_name in case_table.keys():
         stats[f"Correlation coefficient ({case_name})"] = []
-    msg = f"case_table ==>{case_table}<==  stats ==>{stats}<=="
-    logger.debug(msg)
         
     for sta in stations:
         # msg = f"now @station={sta}"
@@ -162,6 +161,8 @@ def conc_statistics(conc: xr.Dataset, label: str) -> DataFrame:
     #-- turn into dataframe
     #
     stats = DataFrame.from_dict(stats).set_index('station')
+    #-- reorder columns
+    
     # #-- DEBUGGING
     # stats.to_csv('stats.csv', index=True)
 
@@ -286,11 +287,46 @@ def plot_conc_timeseries(df: DataFrame, simul_type: str, cur_exp: str):
 
 
 def plot_stats_table(df: DataFrame, emis_dataset: str):
-    nc = len(df.columns)
-    formatters = [lambda x: f'{x:.2f}'] * nc
-    p = pn.pane.DataFrame(df, text_align='center', formatters=formatters)
-    title = f'# Fit statistics for all stations ({get_exp_label(emis_dataset)})'
-    return pn.Column(pn.pane.Markdown(title), p)
+    #-- reduce decimals for visualisation
+    df = df.round(decimals=2)
+    # msg = f"df.columns ==>{df.columns}<=="
+    # logger.debug(msg)
+    # columns = [
+    #     {
+    #         "title": col,
+    #         "field": col,
+    #         "headerSort": col != "station",
+    #     }
+    #     for col in df.columns
+    # ]
+    # msg = f"columns ***{columns}***"
+    # logger.debug(msg)
+    formatters = {
+        col: {"type": "number", "precision": 2}
+        for col in df.columns
+        if df[col].dtype.kind in "fiu"
+    }
+    # msg = f"formatters ***{formatters}***"
+    # logger.debug(msg)
+    
+    table = pn.widgets.Tabulator(
+        df,
+        text_align={'station':"left"},
+        # text_align="center",
+        # columns=columns,
+        # formatters=formatters,
+    )
+    # msg = f"tabulator widget generated table ***{table}***"
+    # logger.debug(msg)
+    title = f"# Fit statistics for all stations (emissions scenario: {get_exp_label(emis_dataset)})"
+    return pn.Column(pn.pane.Markdown(title), table)
+
+# def plot_stats_table(df: DataFrame, emis_dataset: str):
+#     nc = len(df.columns)
+#     formatters = [lambda x: f'{x:.2f}'] * nc
+#     table = pn.pane.DataFrame(df, text_align='center', formatters=formatters)
+#     title = f'# Fit statistics for all stations ({get_exp_label(emis_dataset)})'
+#     return pn.Column(pn.pane.Markdown(title), table)
 
 
 def plot_emis_table_md(emis_datasets: List[str]):
