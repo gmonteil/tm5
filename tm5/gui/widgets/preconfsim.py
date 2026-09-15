@@ -110,21 +110,24 @@ def conc_statistics(conc: xr.Dataset, label: str) -> DataFrame:
     """
     """
     dfc = conc.to_dataframe()
-    stations = set(dfc.station.values)
+    stations = sorted(list(set(dfc.station.values)))
 
+    #-- mapping of cases onto identifiers in data frame
+    case_table = OrderedDict()
+    case_table['prior'] = 'apri'
+    case_table['post'] = 'apos'
     # msg = f"stations -->{stations}<--"
     # logger.debug(stations)
     stats = {
         'station': [],
-        'Mean bias (prior)': [],
-        'Mean bias (post)' : [],
-        'RMSE (prior)': [],
-        'RMSE (post)': [],
-        'Correlation coefficient (prior)': [],
-        'Correlation coefficient (post)': [],
         }
-    # msg = f"stats initial -->{stats}<-- (==>{stations}<==)"
-    # logger.debug(msg)
+    for case_name in case_table.keys():
+        stats[f"Mean bias ({case_name})"] = []
+        stats[f"RMSE ({case_name})"] = []
+        stats[f"Correlation coefficient ({case_name})"] = []
+    msg = f"case_table ==>{case_table}<==  stats ==>{stats}<=="
+    logger.debug(msg)
+        
     for sta in stations:
         # msg = f"now @station={sta}"
         # logger.debug(msg)
@@ -133,45 +136,33 @@ def conc_statistics(conc: xr.Dataset, label: str) -> DataFrame:
         #
         cnd = dfc['station']==sta
         _df = dfc.loc[cnd,:]
-        stats['station'].append(sta)
-        _capri = _df.loc[:,f'apri_{label}']
-        _capos = _df.loc[:,f'apos_{label}']
         _cobs  = _df.loc[:,'obs']
-        # msg = f"...@{sta} RMSE ...({_df.shape})"
-        # logger.debug(msg)
-        #
-        #-- prior statistics
-        #
-        _bias_prior  = _capri - _cobs
-        meanbias_prior = _bias_prior.mean()
-        rmse_prior = (_bias_prior ** 2).mean() ** .5
-        corrcoef_prior = np.corrcoef(_capri.values,_cobs.values)[0,1]
-        # msg = f"@{sta}, rmse prior ==>{rmse_prior}<=="
-        # logger.debug(msg)
-        #
-        #-- posterior statistics
-        #
-        _bias_post  = _capos - _cobs
-        meanbias_post = _bias_post.mean()
-        rmse_post  = (_bias_post **2).mean() ** .5
-        corrcoef_post = np.corrcoef(_capos.values,_cobs.values)[0,1]
-        # msg = f"@{sta}, rmse post ==>{rmse_post}<=="
-        # logger.debug(msg)
-        #
-        #-- fill into dictionary
-        #
-        stats['Mean bias (prior)'].append(meanbias_prior)
-        stats['RMSE (prior)'].append(rmse_prior)
-        stats['Correlation coefficient (prior)'].append(corrcoef_prior)
-        stats['Mean bias (post)'].append(meanbias_post)
-        stats['RMSE (post)'].append(rmse_post)
-        stats['Correlation coefficient (post)'].append(corrcoef_post)
+        stats['station'].append(sta)
+        #-- stats for prior and posteror
+        for case_name, case_tag in case_table.items():
+            _csim = _df.loc[:,f"{case_tag}_{label}"]
+            #
+            #-- compute statistics
+            #
+            _bias  = _csim - _cobs
+            _meanbias = _bias.mean()
+            _rmse = (_bias ** 2).mean() ** .5
+            _corrcoef = np.corrcoef(_csim.values,_cobs.values)[0,1]
+            # msg = f"@{sta}/{case_name}/{label}: meanbias/rmse/corrcoef = {_meanbias}/{_rmse}/{_corrcoef}"
+            # logger.debug(msg)
+            #
+            #-- insert statistics
+            #
+            stats[f'Mean bias ({case_name})'].append(_meanbias)
+            stats[f'RMSE ({case_name})'].append(_rmse)
+            stats[f'Correlation coefficient ({case_name})'].append(_corrcoef)
     # msg = f"...loop terminated, stats -->{stats}<--"
     # logger.info(msg)
     #
     #-- turn into dataframe
     #
     stats = DataFrame.from_dict(stats).set_index('station')
+    # #-- DEBUGGING
     # stats.to_csv('stats.csv', index=True)
 
     return stats
