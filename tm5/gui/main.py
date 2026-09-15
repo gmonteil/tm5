@@ -22,6 +22,7 @@ from numpy import corrcoef
 pn.extension()
 pn.extension('terminal')
 pn.extension('floatpanel')
+pn.extension('tabulator')
 #-- MVO::would potentially be nicer to differentiate (widget) loading
 #        indicator more individually...
 #   Reference: https://panel.holoviz.org/how_to/param/examples/loading.html
