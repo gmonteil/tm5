@@ -17,3 +17,29 @@ experiments:
     no-northamerica: fitic-simu-no-northamerica_oh-cams/output_2021-01-01--2022-01-01
   path: /lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir/runs_with-convdiff_repeated
   cache: /lunarc/nobackup/projects/ghg_inv/shared/FIT-IC/experiment-cache
+
+
+emissions:
+  glob_pattern: ${.path}/*.nc
+  path: /path/to/emissions
+  scenarios:
+    default:
+      title: EDGARv8.0 (default)
+      description: All categories taken from the EDGARv8.0 sectorial CH4 flux file.
+      categories:
+        fossil:
+          global:
+            filename: EDGARv8.0_ch4-fluxes_glb1x1_monthly
+            field: fossil
+        agriculture:
+          global:
+            filename: EDGARv8.0_ch4-fluxes_glb1x1_monthly
+            field: agriculture
+        waste:
+          global:
+            filename: EDGARv8.0_ch4-fluxes_glb1x1_monthly
+            field: waste
+    custom:
+      title: Custom
+      description: Start from an empty set of categories and add them manually.
+      categories: {}

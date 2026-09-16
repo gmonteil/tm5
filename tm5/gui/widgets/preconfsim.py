@@ -534,11 +534,10 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
         self.emission_scenario = []
         self.emission_scenario_widgets = pn.Column()
-        for category in self.gui_settings.emissions.get('categories', []):
-            self._add_emission_category(category)
 
         scenarios = self.gui_settings.emissions.get('scenarios', {})
         self.param.preconf_scenario.objects = {v['title']: k for k, v in scenarios.items()}
+        self.preconf_scenario = 'default'
 
         # Globally accessible widgets
         self.widgets = {
@@ -621,7 +620,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             catname = f'category_{len(self.emission_scenario) + 1}'
         es = EmissionSettings(
             catname=catname,
-            regions=list(self.gui_settings.emissions.get('regions', [])),
+            regions=['global', 'regional'],
             path=self.gui_settings.emissions.path,
             remove_callback=self._remove_emission_category,
         )
