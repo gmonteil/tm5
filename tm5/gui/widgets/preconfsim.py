@@ -25,6 +25,7 @@ from cartopy import crs
 
 from tm5 import debug
 from tm5.gui.css import *
+from tm5.gui.widgets.emissions import EmissionSettings
 from tm5.gui.widgets.stations import calc_statistics
 from tm5.gui.widgets.widget_utils import experiment_desc, plot_site_info, load_observations_metadata
 
@@ -508,6 +509,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     sites_list = param.List(default=[], doc='List of observation sites available (for internal use ...)')
     simul_type = param.Selector(objects=['fwd', 'inv'], allow_None=True, default=None)
     correlation_switch = param.Boolean(doc='Switch to enable/disable correlated emission adjustments', default=False, label='Spatially correlated prior emissions uncertainty')
+    add_category_event = param.Event(doc='Add a new emission category', label='Add category')
+    preconf_scenario = param.Selector(default=None, allow_None=True, doc='Preconfigured emission scenario')
 
     # Data containers:
     conc        = param.ClassSelector(class_=xr.Dataset)
@@ -529,6 +532,14 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.param.emis_dataset.path = self.gui_settings.emissions.glob_pattern
         self.emis_dataset = self.param.emis_dataset.objects[0]
 
+        self.emission_scenario = []
+        self.emission_scenario_widgets = pn.Column()
+        for category in self.gui_settings.emissions.get('categories', []):
+            self._add_emission_category(category)
+
+        scenarios = self.gui_settings.emissions.get('scenarios', {})
+        self.param.preconf_scenario.objects = {v['title']: k for k, v in scenarios.items()}
+
         # Globally accessible widgets
         self.widgets = {
             'station_selector': pn.widgets.Select.from_param(self.param.current_site),
@@ -545,8 +556,16 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         )
 
         widgets = [
-            header_pane, 
+            header_pane,
             pn.Row(pn.widgets.Select.from_param(self.param.emis_dataset), expdesc_pane),
+            pn.Column(
+                pn.Row(
+                    pn.widgets.Select.from_param(self.param.preconf_scenario, name='Preconfigured scenario'), 
+                    self.scenario_description
+                ),
+                self.emission_scenario_widgets,
+                pn.widgets.Button.from_param(self.param.add_category_event)
+            ),
             pn.Row(
                     pn.widgets.Button.from_param(self.param.run_forward),
                     pn.Column(
@@ -595,6 +614,43 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             # msg = f"...reading simulation targets from directory ***{str(output_path)}***"
             # logger.debug(msg)
             self.tgt_table = simulation_read_targets(output_path)
+
+    @param.depends('add_category_event', watch=True)
+    def _add_emission_category(self, catname: str = None):
+        if catname is None:
+            catname = f'category_{len(self.emission_scenario) + 1}'
+        es = EmissionSettings(
+            catname=catname,
+            regions=list(self.gui_settings.emissions.get('regions', [])),
+            path=self.gui_settings.emissions.path,
+            remove_callback=self._remove_emission_category,
+        )
+        self.emission_scenario.append(es)
+        self.emission_scenario_widgets.append(es.__panel__())
+
+    def _remove_emission_category(self, es: EmissionSettings):
+        self.emission_scenario.remove(es)
+        self.emission_scenario_widgets.objects = [e.__panel__() for e in self.emission_scenario]
+
+    @param.depends('preconf_scenario', watch=True)
+    def _load_scenario(self):
+        if self.preconf_scenario is None:
+            return
+        scenario = self.gui_settings.emissions.scenarios[self.preconf_scenario]
+        self.emission_scenario = []
+        for catname, spec in scenario.get('categories', {}).items():
+            self._add_emission_category(catname)
+            self.emission_scenario[-1].set_category(spec)
+        self.emission_scenario_widgets.objects = [e.__panel__() for e in self.emission_scenario]
+
+    @param.depends('preconf_scenario')
+    def scenario_description(self):
+        if self.preconf_scenario is None:
+            return ''
+        return pn.pane.Markdown(
+            self.gui_settings.emissions.scenarios[self.preconf_scenario].get('description', ''),
+            stylesheets=[preconfsim_stylesheet], css_classes=['precomp-right']
+        )
 
     @param.depends('alert')
     def _alert(self):
@@ -674,6 +730,18 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
         settings = {
             'emis': self.emis_dataset,
+            'emissions': {
+                es.catname: {
+                    'global': {
+                        'file': es.emis_glo.filename, 
+                        'field': es.emis_glo.fieldname},
+                    **({'regional': {
+                        'file': es.emis_reg.filename, 
+                        'field': es.emis_reg.fieldname}} if es.switch_reg else {}
+                    )
+                }
+                for es in self.emission_scenario
+            },
             'task': task,
             'namelist': {
                 'fix': self.correlation_switch

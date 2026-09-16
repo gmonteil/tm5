@@ -9,6 +9,7 @@ from tm5.gui.css import *
 
 @lru_cache
 def get_emis_file_list(path: Path, pattern: str) -> List[Path]:
+    # TODO: we need a smarter pattern, maybe including the region name and category. But for now this will do ...
     return list(Path(path).glob(pattern))
 
 
@@ -47,7 +48,7 @@ class FieldSelector(pn.viewable.Viewer):
         """
         Update the choices of the "Field" widget.
         """
-        available_files = get_emis_file_list(Path(self.path) / self.domain, f'{self.filename}*.nc')
+        available_files = get_emis_file_list(Path(self.path), f'{self.filename}*.nc')
         if len(available_files) > 0:
             ds = xr.open_dataset(available_files[0])
             self.param.fieldname.objects = [_ for _ in ds.data_vars if _ != 'area']
@@ -59,15 +60,14 @@ class FieldSelector(pn.viewable.Viewer):
         # available_files = get_emis_file_list(self.path, '**/*.nc*')
         # -- 2025-04-14:: restrict here to the global (default) domain
         logger.info(self.domain)
-        logger.info(f'**/*{self.domain}*.nc')
-        available_files = get_emis_file_list(Path(self.path) / self.domain, '*.nc')
+        available_files = get_emis_file_list(Path(self.path), '*.nc')
         self.param.filename.objects = set([f.name.rsplit('_', maxsplit=1)[0] for f in available_files])
         # if len(available_files) > 0:
         self.filename = self.param.filename.objects[0]
 
     @param.depends('filename', 'fieldname', watch=True)
     def update_field_description(self):
-        available_files = get_emis_file_list(Path(self.path) / self.domain, f'{self.filename}*.nc*')
+        available_files = get_emis_file_list(Path(self.path), f'{self.filename}*.nc*')
         if len(available_files) > 0:
             ds = xr.open_dataset(available_files[0])
 
@@ -93,6 +93,20 @@ class FieldSelector(pn.viewable.Viewer):
     def update_desc(self):
         self.widgets['title'].object = f'### {self.desc}'
 
+    def set_selection(self, filename: str, fieldname: str = None):
+        """
+        Directly set filename/fieldname (e.g. from a preconfigured scenario)
+        """
+        # Add the "filename" from the yaml file to the list of available filenames for that category
+        # (and set it as the active one)
+        if filename not in self.param.filename.objects:
+            self.param.filename.objects = list(self.param.filename.objects) + [filename]
+        self.filename = filename
+
+        # Same for the fields
+        if fieldname is not None:
+            self.fieldname = fieldname
+
 
 class EmissionSettings(pn.viewable.Viewer):
     catname = param.String(doc='name of the emission category (should be unique to that tracer)')
@@ -101,9 +115,11 @@ class EmissionSettings(pn.viewable.Viewer):
     # emis_reg = FieldSelector(desc='Emissions for the regional domain')
     # emis_glo = FieldSelector(desc='Global emissions')
     switch_reg = param.Boolean(doc="Switch alternate source for regional emissions")
+    remove_event = param.Event(doc='Remove this emission category', label='Remove category')
 
-    def __init__(self, **params):
+    def __init__(self, remove_callback: callable, **params):
         super().__init__(**params)
+        self.removeme = remove_callback  # method of the parent object that needs to be called when removing the category (see _handle_remove method below)
         self.emis_reg = FieldSelector(desc='Emissions for the regional domain', domain=self.regions[-1])
         self.emis_glo = FieldSelector(desc='Global emissions', domain=self.regions[0])
         self.emis_glo.path = self.path
@@ -119,14 +135,19 @@ class EmissionSettings(pn.viewable.Viewer):
 
     def __panel__(self):
         return pn.Row(
-            pn.widgets.TextInput.from_param(self.param.catname),
+            pn.Column(
+                pn.widgets.TextInput.from_param(self.param.catname),
+                pn.widgets.Button.from_param(self.param.remove_event),
+            ),
             pn.Row(
                 pn.Column(
                     self.pane_glo,
                     self.switch_button),
                 self.pane_reg,
                 sizing_mode='stretch_width'
-            )
+            ),
+            stylesheets=[setup_stylesheet,], css_classes=['setup-tracer'],
+            margin=(5, 0)
         )
 
     @param.depends('regions', 'switch_reg', watch=True)
@@ -137,6 +158,21 @@ class EmissionSettings(pn.viewable.Viewer):
         else:
             self.pane_reg.visible = False
 
+    @param.depends('remove_event', watch=True)
+    def _handle_remove(self):
+        self.removeme(self)
+
+    def set_category(self, spec: dict):
+        """
+        Force a category to a certain value (instead of letting it happen through widget inputs).
+        This is needed when loading pre-defined emission scenarios
+        """
+        self.emis_glo.set_selection(spec['global']['filename'], spec['global'].get('field'))
+        reg = spec.get('regional')
+        if reg:
+            self.switch_reg = True
+            self.emis_reg.set_selection(reg['filename'], reg.get('field'))
+
     @param.depends('regions', watch=True)
     def update_switch_visibility(self):
         self.switch_button.visible = len(self.regions) > 1
@@ -145,7 +181,8 @@ class EmissionSettings(pn.viewable.Viewer):
         newem = self.__class__(
             catname=self.catname,
             regions=self.regions,
-            path=self.path)
+            path=self.path,
+            remove_callback=self.removeme)
         newem.switch_reg = self.switch_reg
         newem.emis_glo.filename = str(self.emis_glo.filename)
         newem.emis_glo.fieldname = str(self.emis_glo.fieldname)

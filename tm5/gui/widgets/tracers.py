@@ -61,13 +61,18 @@ class TracerSettings(pn.viewable.Viewer):
         newem = EmissionSettings(
             catname=f'emissions_{len(self.emissions) + 1}',
             regions=self.regions,
-            path=emission_path
+            path=emission_path,
+            remove_callback=self._remove_emission,
         )
         #
         #-- append new emission settings widget
         #
         self.emissions.append(newem)
         self.emissions_widgets.append(self.emissions[-1].__panel__())
+
+    def _remove_emission(self, es: EmissionSettings):
+        self.emissions.remove(es)
+        self.emissions_widgets.objects = [e.__panel__() for e in self.emissions]
 
     @param.depends('regions', watch=True)
     def update_emis_region(self):
