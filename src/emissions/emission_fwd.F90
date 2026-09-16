@@ -153,9 +153,19 @@ contains
         do icat = 1, tracer%n_cat
             do j = jsr(ireg), jer(ireg)
                 do i = isr(ireg), ier(ireg)
-                    if (region_dat(ireg)%zoomed(i, j) /= ireg) cycle
+                   if (region_dat(ireg)%zoomed(i, j) /= ireg) cycle
                     x = emis(icat, i, j) * dtime
                     mass_dat(ireg)%rm_t(i, j, 1, itrac) = mass_dat(ireg)%rm_t(i, j, 1, itrac) + x
+                    !-- MVO::code below used to trace back potential NaNs
+                    !        propagated by TM5
+                    ! if( isnan(emis(icat,i,j)) ) then
+                    !    print*, 'NaN emission value at iday=',iday,'ireg=',ireg,&
+                    !         'icat=',icat,&
+                    !         'i/j=',i,j, &
+                    !         'x=',x,&
+                    !         'sum(mass_dat(ireg)%rm_t)=',sum(mass_dat(ireg)%rm_t)
+                    !    stop
+                    ! endif
                     mass_dat(ireg)%rzm_t(i, j, 1, itrac) = mass_dat(ireg)%rzm_t(i, j, 1, itrac) - x
                 end do
             end do

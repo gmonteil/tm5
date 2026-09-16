@@ -62,6 +62,7 @@ if args.outdir!=None:
         f"(overriding configuration file ==>{outdir_sav}<=="
     logger.info(msg)
     dconf[args.host].paths.output = args.outdir
+    dconf[args.host].paths.emissions = args.outdir
 dconf['host'] = dconf[args.host]
 
 #=====================================================
