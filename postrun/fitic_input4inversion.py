@@ -64,6 +64,14 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
         domain_tag = 'glb6x4'
     msg = f"...yields nobs={len(obstable)} (regions ==>{regions}<==)"
     logger.info(msg)
+    #
+    #--
+    #
+    obsid_first = obstable.loc[:,'obsid'].values[0]
+    if len(obsid_first.split('_'))==3: #-- time included in obsid
+        obstable.loc[:,'station_name'] = ['_'.join(_.split('_')[:2]) for _ in  obstable.loc[:,'obsid'].values]
+    else:
+        obstable.loc[:,'station_name'] = obstable.loc[:,'obsid']
     days = sorted(obstable.time.dt.date.drop_duplicates())
     obs_firstday = Timestamp(days[0])
     obs_lastday  = Timestamp(days[-1])
@@ -100,7 +108,7 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
     if args.stations!=None:
         msg = f"restricting obstable to stations ==>{args.stations}<=="
         logger.info(msg)
-        cnd_sta = obstable.loc[:,'obsid'].isin(args.stations)
+        cnd_sta = obstable.loc[:,'station_name'].isin(args.stations)
         obstable = obstable.loc[cnd_sta,:]
         msg = f"...yields nobs={len(obstable)}"
         logger.info(msg)
@@ -1241,6 +1249,42 @@ def subcmd_fitic_monthly_emissions_visu(args):
         logger.info(msg)
 
 
+def subcmd_obsjac_verification_visu(args):
+    """
+    """
+    dfcmp = pd.read_csv(args.filepath, parse_dates=[0], date_format='%Y-%m-%d %H:%M:%S')
+    # print(dfcmp.columns)
+    cols_visu = ['tm5fwd','linfwd','linfwd_mm',]
+    if  'linfwd_6x4' in dfcmp.columns:
+        cols_visu += ['linfwd_6x4',]
+    #
+    if args.visu_mode=='line':
+        p = (
+            dfcmp.hvplot(x='time', y=cols_visu, groupby='station', width=1500, height=600, grid=True)
+        )
+    elif args.visu_mode=='scatter':
+        p = (dfcmp.hvplot.scatter(x='time', y=cols_visu, groupby='station', width=1500, height=600, grid=True)
+        )
+    #
+    #-- finalise plot
+    #
+    title = "Simulated concentrations from full-forward and linear model"
+    plotcfg = opts.Overlay(title=title, ylabel=f"[ppb]")
+    p.opts(plotcfg)
+    #
+    #-- save plot
+    #
+    outname_tokens = [args.filepath.stem, f"{args.visu_mode}-plot",]
+    outname = '_'.join(outname_tokens) + '.html'
+    if args.outdir!=None:
+        outname = args.outdir / outname
+        outname.parent.mkdir(parents=True, exist_ok=True)
+    #
+    hv.save(p, outname)
+    msg = f"generated ***{str(outname)}***"
+    logger.info(msg)
+
+
 ################################################################################
 #
 #                   p a r s e r
@@ -1340,6 +1384,22 @@ sparser.add_argument('--outdir',
                      type=Path,
                      help="""top-level directory for any generated outputs..""")
 
+#
+#--
+#
+sparser = subparsers.add_parser('obsjac_verification_visu',
+                                help="""visualisation of simulated  concentrations from full model and propagated by the linear model.""")
+sparser.add_argument('filepath',
+                     type=Path,
+                     help="""csv file generated as generated during the fitic input generation.""")
+sparser.add_argument('--visu_mode',
+                     choices=['line','scatter'],
+                     default='line',
+                     help="""whether to show concentration time-series as line or as scattered markers (default: %(default)s).""")
+sparser.add_argument('--outdir',
+                     type=Path,
+                     help="""top-level directory for any generated outputs..""")
+
 
 
 ################################################################################
@@ -1361,6 +1421,9 @@ def main(args):
 
     if args.subcmds=='fitic_monthly_emissions_visu':
         subcmd_fitic_monthly_emissions_visu(args)
+
+    if args.subcmds=='obsjac_verification_visu':
+        subcmd_obsjac_verification_visu(args)
 
     #
     te = Timestamp.now('UTC')
