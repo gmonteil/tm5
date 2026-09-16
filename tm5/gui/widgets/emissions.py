@@ -20,11 +20,13 @@ class FieldSelector(pn.viewable.Viewer):
     path = param.Path(doc='location of the emission files')
     desc = param.String(doc="domain of the emissions")
     domain = param.String(doc="title of the section")
+    locked = param.Boolean(default=False, doc='Read-only (true for anything but the "custom" scenario)')
 
     def __init__(self, **params):
         super().__init__(**params)
         self.widgets = dict(
-            field=pn.widgets.Select.from_param(self.param.fieldname),
+            file=pn.widgets.Select.from_param(self.param.filename, locked=self.locked),
+            field=pn.widgets.Select.from_param(self.param.fieldname, locked=self.locked),
             # info=pn.pane.Markdown(width=300,
             #                       stylesheets=[setup_stylesheet,], css_classes=['setup-tracer']),
             # title=pn.pane.Markdown(width=300,
@@ -37,7 +39,7 @@ class FieldSelector(pn.viewable.Viewer):
     def __panel__(self):
         return pn.Column(
             self.widgets['title'],
-            pn.widgets.Select.from_param(self.param.filename),
+            self.widgets['file'],
             self.widgets['field'],
             self.widgets['info'],
             stylesheets=[setup_stylesheet,], css_classes=['setup-tracer']
@@ -116,18 +118,24 @@ class EmissionSettings(pn.viewable.Viewer):
     # emis_glo = FieldSelector(desc='Global emissions')
     switch_reg = param.Boolean(doc="Switch alternate source for regional emissions")
     remove_event = param.Event(doc='Remove this emission category', label='Remove category')
+    locked = param.Boolean(default=False, doc='Read-only (true for anything but the "custom" scenario)')
 
     def __init__(self, remove_callback: callable, **params):
         super().__init__(**params)
         self.removeme = remove_callback  # method of the parent object that needs to be called when removing the category (see _handle_remove method below)
-        self.emis_reg = FieldSelector(desc='Emissions for the regional domain', domain=self.regions[-1])
-        self.emis_glo = FieldSelector(desc='Global emissions', domain=self.regions[0])
+        self.emis_reg = FieldSelector(desc='Emissions for the regional domain', domain=self.regions[-1], locked=self.locked)
+        self.emis_glo = FieldSelector(desc='Global emissions', domain=self.regions[0], locked=self.locked)
         self.emis_glo.path = self.path
         self.emis_reg.path = self.path
         self.pane_glo = pn.Column(self.emis_glo, stylesheets=[setup_stylesheet,], css_classes=['setup-tracer'])
         self.pane_reg = pn.Column(self.emis_reg, visible=len(self.regions) > 1)
+        self.widgets = dict(
+            catname=pn.widgets.TextInput.from_param(self.param.catname, locked=self.locked),
+            remove=pn.widgets.Button.from_param(self.param.remove_event, locked=self.locked),
+            switch=pn.widgets.Switch.from_param(self.param.switch_reg, align='center', locked=self.locked),
+        )
         self.switch_button = pn.Row(
-            pn.widgets.Switch.from_param(self.param.switch_reg, align='center'),
+            self.widgets['switch'],
             pn.pane.Markdown("Use different regional emissions", stylesheets=[setup_stylesheet,], css_classes=['setup-tracer']),
             visible=len(self.regions) > 1
         )
@@ -136,8 +144,8 @@ class EmissionSettings(pn.viewable.Viewer):
     def __panel__(self):
         return pn.Row(
             pn.Column(
-                pn.widgets.TextInput.from_param(self.param.catname),
-                pn.widgets.Button.from_param(self.param.remove_event),
+                self.widgets['catname'],
+                self.widgets['remove'],
             ),
             pn.Row(
                 pn.Column(
