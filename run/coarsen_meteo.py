@@ -19,15 +19,22 @@ def get_hostname():
     return hostname
 
 parser = ArgumentParser()
+parser.add_argument('config_file', help="""yaml configuration file.""")
 parser.add_argument('-b', '--build', action='store_true', default=False, help='Use this option to compile the code')
 parser.add_argument('-m', '--host', default=os.environ['TM5_HOST'])
-parser.add_argument('--config_file', default='coarsen_meteo.yaml')
+#parser.add_argument('--config_file', default='coarsen_meteo.yaml')
 parser.add_argument('--trange',
                     metavar=('tstart','tend'),
                     nargs=2,
                     help="""whether to override simulation start/end time specified in the yaml file (strings must be parseable as pandas Timestamp).""")
 parser.add_argument('--meteo_outdir',
                     help="""top-level destination directory for coarsened meteorology files (to override settings provided in yaml file)""")
+parser.add_argument('--tm5exec',
+                    help="""specify an already compiled TM5 executablea as an *absolute* path, user is responsible to ensure it is consistent with the spatial settings of the provided yaml configuration file. NOTE, that the provided executable will *not* be used in case one of the options '--build' or --build-only' war provided, too!""")
+
+#
+#--
+#
 args = parser.parse_args(sys.argv[1:])
 
 # keys = sorted(os.environ.keys())
@@ -40,7 +47,11 @@ if not yaml_file.exists():
 
 # 0. Read yaml file
 dconf = OmegaConf.load(str(yaml_file))
-
+machine = args.host
+#-- consistency
+if not machine in dconf.keys():
+    msg = f"selected machine -->{args.host}<-- not found in configuration file."
+    raise RuntimeError(msg)
 
 #
 #-- potential partial override (or extend) configuration
@@ -51,12 +62,27 @@ if args.trange!=None:
     dconf.run['end']   = tend
 
 if args.meteo_outdir!=None:
-    _oldout = dconf.run.paths.meteo_out
-    dconf.run.paths['meteo_out'] = args.meteo_outdir
+    _oldout = dconf[args.host].paths.meteo_out
+    dconf[args.host].paths['meteo_out'] = args.meteo_outdir
     msg = f"overriding output destination to -->{args.meteo_outdir}<-- " \
         f"(in yaml file -->{_oldout}<--"
     logger.info(msg)
 
+if args.tm5exec!=None:
+    if args.build:
+        msg = f"discarding provided executable ***{args.tm5exec}*** " \
+            f"because request for building it is also triggered via command line!"
+        logger.warning(msg)
+    else:
+        exe = Path(args.tm5exec)
+        if not exe.is_absolute():
+            msg = f"provided executable must be an absolute path (-->{str(exe)}<--)"
+            raise RuntimeError(msg)
+        elif not exe.exists():
+            msg = f"provided executable not found on sysstem (-->{str(exe)}<--)"
+            raise RuntimeError(msg)
+        else:
+            dconf.run.paths['tm5exec'] = str(exe)
 # OmegaConf.save(config=dconf, f='xxx.yml')
 # sys.exit(0)
 
@@ -65,7 +91,7 @@ if args.meteo_outdir!=None:
 tm = tm5.TM5(dconf, host=args.host)
 
 if args.build :
-    tm.build()
+    tm.build() #-- potential tm5exec handled internally
 
 # 2. setup input files
 tm.setup_meteo()
