@@ -623,7 +623,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             regions=['global', 'regional'],
             path=self.gui_settings.emissions.path,
             remove_callback=self._remove_emission_category,
-            locked=(self.preconf_scenario != 'custom'),
+            disabled=(self.preconf_scenario != 'custom'),
         )
         self.emission_scenario.append(es)
         self.emission_scenario_widgets.append(es.__panel__())
