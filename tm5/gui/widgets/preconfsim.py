@@ -537,6 +537,17 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.widgets['station_selector'].visible = False
 
     def __panel__(self):
+        intro_text =  """
+        # Introduction
+        You are running a fast demo configuration of the Flexible Inversion Tool for Inventory Compilers (FIT-IC) with a focus on central Europe and for January 2021.<br>
+        This demo allows you to select one or more scenarios from a set of methane emission scenarios and perform a forward simulation based on the selected scenario(s) and compare the simulated atmospheric signal(s) to observed methane concentrations or to perform an atmospheric transport inversion using the selected scenario(s) as prior emission field(s).<br>
+        For background see https://fit-ic.inversion-lab.com.
+        """
+        intro_pane = pn.pane.Markdown(
+            intro_text,
+            stylesheets=[preconfsim_stylesheet], 
+            css_classes=['precomp-intro']
+            )
         header_pane = pn.pane.Markdown('# Preconfigured prior emission scenarios')
         expdesc_pane = pn.pane.Markdown(
             plot_emis_table_md(self.param.emis_dataset.objects),
@@ -545,6 +556,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         )
 
         widgets = [
+            intro_pane,
             header_pane, 
             pn.Row(pn.widgets.Select.from_param(self.param.emis_dataset), expdesc_pane),
             pn.Row(
