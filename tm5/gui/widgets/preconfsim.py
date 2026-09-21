@@ -512,7 +512,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     correlation_switch = param.Selector(
         default="full grid",
         objects=["fixed patterns", "full grid"],
-        label="Resolution of Emission space (Note, option 'fixed patterns' is not yet implemented)",
+        label="Resolution of Emission space (Please note that option 'fixed patterns' is not implemented yet)",
     )
 
     
