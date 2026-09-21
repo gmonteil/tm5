@@ -507,8 +507,15 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     current_site = param.Selector(doc='Current site to be displayed', default=None)
     sites_list = param.List(default=[], doc='List of observation sites available (for internal use ...)')
     simul_type = param.Selector(objects=['fwd', 'inv'], allow_None=True, default=None)
-    correlation_switch = param.Boolean(doc='Switch to enable/disable correlated emission adjustments', default=False, label='Spatially correlated prior emissions uncertainty')
+    
+    # correlation_switch = param.Boolean(doc='Switch to enable/disable correlated emission adjustments', default=False, label='Spatially correlated prior emissions uncertainty')
+    correlation_switch = param.Selector(
+        default="full grid",
+        objects=["fixed patterns", "full grid"],
+        label="Resolution of Emission space (Note, option 'fixed patterns' is not yet implemented)",
+    )
 
+    
     # Data containers:
     conc        = param.ClassSelector(class_=xr.Dataset)
     stats4conc  = param.DataFrame()
@@ -563,7 +570,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                     pn.widgets.Button.from_param(self.param.run_forward),
                     pn.Column(
                         pn.widgets.Button.from_param(self.param.run_inv),
-                        pn.widgets.Switch.from_param(self.param.correlation_switch)
+                        pn.widgets.Select.from_param(self.param.correlation_switch)
                     ),
             ),
             self._alert,
@@ -684,11 +691,13 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
         url = f"{self.gui_settings.backend_url}/forward"
 
+        msg = f"self.correlation_switch ==>{self.correlation_switch}<=="
+        logger.debug(msg)
         settings = {
             'emis': self.emis_dataset,
             'task': task,
             'namelist': {
-                'fix': self.correlation_switch
+                'fix': (self.correlation_switch=='fixed patterns')
             }
         }
         r = requests.post(url, data={'conf': OmegaConf.to_yaml(settings)})
