@@ -19,6 +19,16 @@ experiments:
   cache: /lunarc/nobackup/projects/ghg_inv/shared/FIT-IC/experiment-cache
 
 
+start: 1 jan 2021
+end: 31 dec 2021
+
+
+regions:
+  glb600x400: {west: -180, east: 180, south: -90, north: 90, dlon: 6, dlat: 4}
+  eur300x200: {west: -36, east: 54, south: 22, north: 74, dlon: 3, dlat: 2}
+  gns100x100: {west: 0, east: 18, south: 42, north: 58, dlon: 1, dlat: 1}
+
+
 emissions:
   glob_pattern: ${.path}/*.nc
   path: /path/to/emissions

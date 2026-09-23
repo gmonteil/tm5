@@ -15,7 +15,6 @@ import xarray as xr
 import numpy as np
 from numpy import zeros, tile
 from netCDF4 import Dataset, stringtochar
-import xesmf
 from types import SimpleNamespace
 import pickle
 import lzma

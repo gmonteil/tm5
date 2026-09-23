@@ -11,8 +11,8 @@ from pathlib import Path
 import yaml
 import f90nml
 import os
-import shutil
-from argparse import ArgumentParser
+import tempfile
+from omegaconf import OmegaConf
 
 app = Flask(__name__)
 
@@ -40,7 +40,10 @@ file_counter = (base_repr(i, base=36).lower() for i in range(360, 10_000_000))
 #
 resultdir = f'/data/avengers/fit_ic/results_flask-v3'
 python = '/data/avengers/python/fitic/bin/python'
+python = sys.executable  # I assume that "server_vm.py" and "forward.py" use the same environment. Comment out if false.
+
 datapath = f'/data/avengers/fit_ic/4server/current'
+emis_cache_dir = f'{resultdir}/emissions_cache'
 
 def get_host_port():
     #MVO-ATTENTION: does not work properly on pancake...
@@ -53,25 +56,32 @@ def gencmd() -> Tuple[str, str]:
     # _, port = get_host_port()
    
     run_id = next(file_counter)
-    while (Path(outpath := f'{resultdir}/{run_id}').exists()):
+    outpath = Path(f'{resultdir}/{run_id}')
+    while outpath.exists():
         run_id = next(file_counter)
+        outpath = Path(f'{resultdir}/{run_id}')
 
-    fwd = f'{datapath}/forward.py'
+    # More practical for me to run the "forward.py" from the repo than whatever
+    # is in "datapath" (which changes from one machine to another). But we need
+    # to clean this up at some point ...
+    fwd = str(Path(__file__).parent / 'forward.py')
+
     config = yaml.safe_load(request.form['conf'])
-    emfile = config['emis']
+
+
+    outpath.mkdir(parents=True, exist_ok=True)
+
+    emis_conf = OmegaConf.create(config['emissions'])
+    with open(outpath / 'config.yaml', 'w') as f:
+        f.write(OmegaConf.to_yaml(emis_conf))
+
     task = config['task']
     logger.debug(f"config ***{config}***")
-    # print(config)
     cmd = (
         f'{python} '
         f'{fwd} --task {task} --output {outpath} '
-        f'--emis {emfile} --data {datapath}'
+        f'--emis-conf {outpath / 'config.yaml'} --emis-cache-dir {emis_cache_dir} --data {datapath}'
     )
-    #
-    #--
-    #
-    outpath = Path(outpath)
-    outpath.mkdir(parents=True, exist_ok=True)
     if 'namelist' in config:
         nmlfile = outpath / 'fitic.nml'
         nml_dict = { 'fitic.nml' : config['namelist'] }

@@ -7,18 +7,24 @@ import subprocess
 from pathlib import Path
 import shutil
 from loguru import logger
+from omegaconf import OmegaConf
+from gen_emfile import gen_emfile
 
 parser = ArgumentParser()
 parser.add_argument('--output', help='Path where the code will be run and the output written', type=Path)
 parser.add_argument('--data', help='Path where the input files are located. Should be visible by both the VM and the JHub', type=Path)
-parser.add_argument('--emis', help='Name of the file to use for the emissions (should be inside the data path)')
+parser.add_argument('--emis-conf', help='Path to a YAML file describing the emission categories/scenario/period', type=Path)
+parser.add_argument('--emis-cache-dir', help='Shared directory where generated emission files are cached', type=Path)
 parser.add_argument('--task', choices=['forward', 'inversion'])
 
 args = parser.parse_args(sys.argv[1:])
 
 outpath = args.output
 datapath = args.data
-emfile = args.emis
+
+# The following constructs the emission file, unless it already exists:
+emis_conf = OmegaConf.load(args.emis_conf)
+emfile = gen_emfile(emis_conf, args.emis_cache_dir)
 
 # Create the run directory and copy the files in it
 # MVO-CHANGED: this is now already done in server.py

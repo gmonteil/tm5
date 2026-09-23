@@ -731,16 +731,22 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         settings = {
             'emis': self.emis_dataset,
             'emissions': {
-                es.catname: {
-                    'global': {
-                        'file': es.emis_glo.filename, 
-                        'field': es.emis_glo.fieldname},
-                    **({'regional': {
-                        'file': es.emis_reg.filename, 
-                        'field': es.emis_reg.fieldname}} if es.switch_reg else {}
-                    )
-                }
-                for es in self.emission_scenario
+                'name': self.preconf_scenario,
+                'start': self.gui_settings.start,
+                'end': self.gui_settings.end,
+                'regions': OmegaConf.to_container(self.gui_settings.regions),
+                'categories': {
+                    es.catname: {
+                        'global': {
+                            'file': f'{es.emis_glo.path}/{es.emis_glo.filename}*.nc',
+                            'field': es.emis_glo.fieldname},
+                        **({'regional': {
+                            'file': f'{es.emis_reg.path}/{es.emis_reg.filename}*.nc',
+                            'field': es.emis_reg.fieldname}} if es.switch_reg else {}
+                        )
+                    }
+                    for es in self.emission_scenario
+                },
             },
             'task': task,
             'namelist': {
