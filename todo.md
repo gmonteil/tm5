@@ -1,6 +1,13 @@
 # Tasks (by order of priority)
+- GUI development steps
+    - [ ] (0) MV to copy the adapted switch between fixed patterns vs full grid into Guillaumes GUI update 
+    - [ ] (1) MV to Guillaumes GUI update with current Fortran version and verify that results with previous GUI version are reproduced
+    - [ ] (2) GM to implement the following change: The light blue boxes that indicate the details of a pre-configured emission scenario are initially not displayed but there is a button "details of emission scenario" that makes these boxes appear
+    - [ ] (3) MV/txk to adapt fortran code such that both the short demo version and the full one year version both rely on the same file for the Jacobian and the observations, the demo version just reads in and uses only the fraction needed to cover Jan 2021 for the obs and the period from Oct 2020 to Jan 2021 for the Jacobian (need to observe CPU time for the demo version, it should remain as quick as it is now)
+    - [ ] (4) MV to adapt the GUI such that the choice of the configuration is between "Fast version Jan 2021" and "Slower version for full year 2021"
+    - [ ] (5) MV/txk to adapt fortran code such that the choice under item (4) is read in and used
 - GUI (setup)
-    - [ ] (1) MV to integrate script into environment that creates the global Jacobian (local are running)
+    - [ ] (1) MV to integrate script into environment that creates the global Jacobian, local for one year requires update of preprocessing software
     - [ ] (2) GM to include an example GUI element for namelist parameters: "Resolution of Emission space" fixed patters/full grid
     - [ ] (5) GM to improve performance on emission plots, potentially also seasonal cycles, or bar plot ... 
     - [ ] (1) GM to "combine the two tabs "setup simulation" and "preconfigured simulation"
