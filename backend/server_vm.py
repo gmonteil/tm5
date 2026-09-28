@@ -76,7 +76,7 @@ def gencmd() -> Tuple[str, str]:
         f.write(OmegaConf.to_yaml(emis_conf))
 
     task = config['task']
-    logger.debug(f"config ***{config}***")
+    # logger.debug(f"config ***{config}***")
     cmd = (
         f'{python} '
         f'{fwd} --task {task} --output {outpath} '

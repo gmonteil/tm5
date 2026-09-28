@@ -17,9 +17,9 @@ def get_emfile_name(conf, cache_dir: Path) -> Path:
 
 def gen_emfile(conf: dict, cache_dir: Path) -> Path:
 
-    msg = f"...emissions request for conf ******************************\n" \
-        f"{conf}\n******************************"
-    logger.debug(msg)
+    # msg = f"...emissions request for conf ******************************\n" \
+    #     f"{conf}\n******************************"
+    # logger.debug(msg)
     # Hack to make stuff in "postrun" importable ...
     repo_root = str(Path(__file__).resolve().parents[1])
     if repo_root not in sys.path:
@@ -62,26 +62,21 @@ def gen_emfile(conf: dict, cache_dir: Path) -> Path:
 
     prefix = f'{scratch_dir}/ch4emis'
 
-    if coarser:
+    if len(coarser) > 0:
         emis_dict = {
             'run': {'start': str(conf.start), 'end': str(conf.end), 'regions': coarser},
             'regions': region_block(coarser),
             'emissions': {'CH4': {'prefix': prefix, 'categories': categories_block('global')}},
         }
+        prepare_emissions(OmegaConf.create(emis_dict))
 
-    if finest:
+    if len(finest) > 0:
         emis_dict = {
             'run': {'start': str(conf.start), 'end': str(conf.end), 'regions': finest},
             'regions': region_block(finest),
             'emissions': {'CH4': {'prefix': prefix, 'categories': categories_block('regional')}},
         }
-
-    msg = f"...calling prepare_emissions with emis_dict **********\n" \
-        f"{emis_dict}\n**********"
-    logger.debug(msg)
-        
-    emis_dconf = OmegaConf.create(emis_dict)
-    prepare_emissions(emis_dconf)
+        prepare_emissions(OmegaConf.create(emis_dict))
     #
     #-- generate spatially 1D emissions for FIT-IC Fortran system.
     #
@@ -99,9 +94,6 @@ def gen_emfile(conf: dict, cache_dir: Path) -> Path:
 
 def gen_emfile_new(conf: dict, cache_dir: Path) -> Path:
 
-    msg = f"...emissions request for conf ******************************\n" \
-        f"{conf}\n******************************"
-    logger.debug(msg)
     # Hack to make stuff in "postrun" importable ...
     repo_root = str(Path(__file__).resolve().parents[1])
     if repo_root not in sys.path:
@@ -136,26 +128,26 @@ def gen_emfile_new(conf: dict, cache_dir: Path) -> Path:
     cat_dict = {}
     for catname, cat in conf.categories.items():
         cat_dict[catname] = {}
-        cat_dict[catname]['path'] = conf[catname]['global']['filename']
-        cat_dict[catname]['feld'] = conf[catname]['global']['field']
-        if 'regional' in conf[catname]:
+        cat_dict[catname]['path'] = cat['global']['file']
+        cat_dict[catname]['field'] = cat['global']['field']
+        if 'regional' in cat:
             cat_dict[catname]['overwrite'] = {}
-            cat_dict[catname]['overwrite']['path'] = conf[catname]['regional']['filename']
-            cat_dict[catname]['overwrite']['field'] = conf[catname]['regional']['field']
+            cat_dict[catname]['overwrite']['path'] = cat['regional']['file']
+            cat_dict[catname]['overwrite']['field'] = cat['regional']['field']
     prefix = f'{scratch_dir}/ch4emis'
     emis_dict = {
         'run': {'start': str(conf.start), 'end': str(conf.end), 'regions': region_names},
         'regions': region_block(region_names),
         'emissions': {'CH4': {'prefix': prefix, 'categories': cat_dict } },
     }
-    msg = f"...calling prepare_emissions with emis_dict **********\n" \
-        f"{emis_dict}\n**********"
-    logger.debug(msg)
+#    msg = f"...calling prepare_emissions with emis_dict **********\n" \
+#        f"{emis_dict}\n**********"
+#    logger.debug(msg)
         
     emis_dconf = OmegaConf.create(emis_dict)
-    msg = f"...prepare_emissions being called with emis_dconf ******************************\n" \
-    f"{emis_dconf}\n******************************"
-    logger.debug(msg)
+#    msg = f"...prepare_emissions being called with emis_dconf ******************************\n" \
+#    f"{emis_dconf}\n******************************"
+#    logger.debug(msg)
     prepare_emissions(emis_dconf)
     #
     #-- generate spatially 1D emissions for FIT-IC Fortran system.

@@ -8,7 +8,7 @@ from pathlib import Path
 import shutil
 from loguru import logger
 from omegaconf import OmegaConf
-from gen_emfile import gen_emfile
+from gen_emfile import gen_emfile_new as gen_emfile
 
 parser = ArgumentParser()
 parser.add_argument('--output', help='Path where the code will be run and the output written', type=Path)
