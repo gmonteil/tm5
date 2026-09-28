@@ -10,7 +10,7 @@ import datetime as dtm
 from loguru import logger
 import pandas as pd
 from pandas import date_range, DatetimeIndex,DataFrame
-from pandas import Timestamp, Timedelta, concat
+from pandas import Timestamp, Timedelta, concat, to_timedelta
 import xarray as xr
 import numpy as np
 from numpy import zeros, tile
@@ -18,6 +18,7 @@ from netCDF4 import Dataset, stringtochar
 from types import SimpleNamespace
 import pickle
 import lzma
+from h5py import File
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -39,9 +40,25 @@ from tm5.post.footprint_io import load_adjoint_fwd #-- this was for earlier diag
 from tm5.fitic import tm5emisdir_load_emissions2D
 from tm5.fitic import get_fitic_region_table
 from tm5.fitic import ojac_glb6x4_redistribute_to_fitic
-from tm5.fitic import ojac_glb6x4_redistribute_to_fitic_sqm
+from tm5.fitic import ojac_glb6x4_redistribute_to_fitic_lessmem
 from tm5.post.plot_util import cnorm_set
 from tm5.post.utilities import lonstr,latstr,set_outname,create_sha512
+
+#-- MVO-TODO::should not be hard-coded like this!!!
+#             but for now stick safe with what we have on COSMOS
+#
+emis_path = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/input/ch4/emission-input-tm5/fitic-default_20201001-20211231')
+pathtable_gns1x1 = SimpleNamespace(
+    footprint_dir = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir/runs_footprint_with-chemistry/fitic-footprint-ifort-slurm_simustart-20201001'),
+    footprint_path = 'footprints_gns100x100_20201001--%Y%m%d',
+    #--> now using full reference simulation from Oct 1, 2020 to Dec 31, 2021
+    tm5_fwd_path = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir/runs_fitic-forward_with-chemistry/fitic-simu-default_gns-obs_20201001--20220101'),
+)
+pathtable_glb6x4 = SimpleNamespace(
+    footprint_dir = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir/runs_footprint_with-chemistry/glb6x4-footprint-ifort-slurm_simustart-20201001'),
+    footprint_path = 'footprints_glb600x400_20201001--%Y%m%d',
+    tm5_fwd_path = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir/runs_fitic-forward_with-chemistry/glb6x4-simu-default_flask-obs_20201001-20220101'),
+)
 
 
 def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None: 
@@ -259,6 +276,7 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
         msg = f"flask footprints computed for {domain_tag} require " \
             f"spatial re-distribution to FIT-IC grid-cells."
         logger.info(msg)
+
         #
         #--
         #
@@ -272,8 +290,30 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
                     },
             attrs = {'units': 'ppb/(kgCH4/cell/s)'}
             )
-        # obs_jacobian = ojac_glb6x4_redistribute_to_fitic_sqm(ojac6x4_da, fitic_region_table)
-        obs_jacobian = ojac_glb6x4_redistribute_to_fitic(ojac6x4_da, fitic_region_table)
+        #
+        #-- MVO-NOTE, 2026-09-28:
+        #   - ran into trouble with memory with ESMF regridder when
+        #     passing the full 6x4 Jacobian.
+        #     Thus we do the re-gridding in bins of emission months.
+        #   - Note, that meanwhile also a more memory efficient regridding
+        #     routine 'ojac_glb6x4_redistribute_to_fitic_lessmem' is invoked.
+        #
+        emis_months = emisday_range.to_series().groupby(emisday_range.to_period("M"))
+        for imon,(month, group) in enumerate(emis_months):
+            #
+            #--
+            #
+            days_month = group.index
+            cur_ojac6x4_da = ojac6x4_da.sel(emisday=days_month)
+            msg = f"...re-distributing for emission month -->{month}<--"
+            logger.debug(msg)
+            #-- re-distribution, yields numpy array (nobs,nemisday,ng)
+            cur_obs_jacobian = ojac_glb6x4_redistribute_to_fitic_lessmem(cur_ojac6x4_da, fitic_region_table)
+            if imon==0:
+                obs_jacobian = cur_obs_jacobian
+            else:
+                obs_jacobian = np.concatenate((obs_jacobian,cur_obs_jacobian), axis=1)
+        # obs_jacobian = ojac_glb6x4_redistribute_to_fitic(ojac6x4_da, fitic_region_table)
         obs_jacobian_6x4 = obs_jacobian_6x4.reshape((nobs,nemisday,ng_6x4))
 
     ##################################################
@@ -790,7 +830,288 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
     msg = f"generated file ***{outname}***"
     logger.info(msg)
 
-    
+
+def subcmd_prepare_obsjacobian_nopickle(args : ArgumentNamespace) -> None: 
+    """
+    """
+    complevel = args.__dict__.get('complevel',4)
+    #--
+    mode = args.mode
+    obs_lastday = args.obs_lastday
+    #-- fixed settings
+    simu_start = Timestamp(2020, 10, 1) #-- TOD::should not be hard-coded here
+    obs_firstday = Timestamp(2021,1,1)  #-- TOD::should not be hard-coded here
+    dir_end = obs_lastday + Timedelta(days=1)
+    # 
+    if mode=='gns1x1':
+        pathtable = pathtable_gns1x1
+        regions = ['glb600x400', 'eur300x200', 'gns100x100',]
+    else:
+        pathtable = pathtable_glb6x4
+        regions = ['glb600x400',]
+    footprint_dir  = pathtable.footprint_dir
+    footprint_path = pathtable.footprint_path
+    tm5_fwd_path   = pathtable.tm5_fwd_path
+    long_mode = mode.replace('1x1','100x100').replace('6x4','600x400')
+    #
+    domain_tag = args.mode
+    time_tag = f"{simu_start.strftime('%Y%m%d')}--{obs_lastday.strftime('%Y%m%d')}"
+    obstime_tag = f"{obs_firstday.strftime('%Y%m%d')}--{obs_lastday.strftime('%Y%m%d')}"
+    station_tag = None
+    if args.stations!=None:
+        station_tag = '--'.join(args.stations)
+
+    # ------------------------------------
+    # 1./2. Load observations AND forward simulation
+    #
+    msg = f"loading observations and TM5 forward simulation from reference run..."
+    logger.info(msg)
+    outpfile = tm5_fwd_path / 'point/point_output.nc4'
+    inpfile  = tm5_fwd_path / 'point_input.nc4'
+    with File(inpfile) as inpf:
+        with File(outpfile) as oupf:
+            #-- collect fields from point_output.nc4
+            tm5mix, station_id, ido, reg = [], [], [], []
+            for region in regions:
+                if 'CH4' in oupf[region]:
+                    tm5mix.extend(oupf[region]['CH4']['mixing_ratio'])
+                    station_id.extend(oupf[region]['CH4']['station_id'])
+                    ido.extend(oupf[region]['CH4']['id'])
+                    reg.extend([region] * oupf[region]['CH4']['id'].shape[0])
+            tm5mix = np.array(tm5mix)
+            station_id = np.array(station_id)
+            ido = np.array(ido)
+            #-- fields from point_input.nc4
+            idi = inpf['CH4']['id'][:]
+            #-- time stamp
+            vartime = inpf['CH4']['time']
+            time_units = vartime.attrs['units'].decode('UTF-8')
+            if time_units.startswith('hours since '):
+                reftime = Timestamp(time_units.replace('hours since ',''))
+                time = reftime +  to_timedelta(vartime[:], unit='hour')
+            elif time_units.startswith('seconds since '):
+                reftime = Timestamp(time_units.replace('seconds since ',''))
+                time = reftime +  to_timedelta(vartime[:], unit='second')
+            else:
+                msg = f"...unexpected time-units -->{time_units}<-- @{str(inpfile)}"
+                raise RuntimeError(msg)
+            lon = inpf['CH4']['lon'][:]
+            lat = inpf['CH4']['lat'][:]
+            alt = inpf['CH4']['alt'][:]
+            obsmix = inpf['CH4']['mixing_ratio'][:]
+            obsmixerr = inpf['CH4']['mixing_ratio_err'][:]
+            time_window_length = inpf['CH4']['time_window_length'][:]
+            sampling_strategy = inpf['CH4']['sampling_strategy'][:]
+            station_id = inpf['CH4']['station_id'][:]
+            tracer = inpf['CH4']['tracer'][:]
+            obsid = inpf['CH4']['obsid'][:]
+            # Construct a DataFrame with mix, obsid and time
+            obstable = DataFrame(
+                { 'time': time,
+                  'lon':lon,
+                  'lat':lat,
+                  'alt':alt,
+                  'mixing_ratio':obsmix,
+                  'mixing_ratio_err':obsmixerr,
+                  'time_window_length':time_window_length,
+                  'sampling_strategy':sampling_strategy,
+                  'station_id':station_id,
+                  'tracer':tracer,
+                  'obsid': obsid,
+                  'index': idi,
+                  'region': reg }
+            ).set_index('index')
+            #-- add output
+            obstable.loc[ido, 'tm5_fwd'] = tm5mix
+            #-- convert byte-string to normal string
+            obstable.loc[:, 'obsid'] = obstable.obsid.str.decode('utf8')
+            obstable.loc[:, 'tracer'] = obstable.tracer.str.decode('utf8')
+    #
+    # outname = f"reference-obstable_with-tm5-fwd_{process_tag}.csv"
+    # obstable.to_csv(outname)
+    msg = f"...obstable done."
+    logger.info(msg)
+
+    # ------------------------------------
+    # 2(a). restrict to selected observational period and/or selected stations
+    #
+    cnd_time = obstable['time']<dir_end
+    obstable = obstable.loc[cnd_time,:]
+    outname_tokens = [f'obstable', domain_tag, 'with-tm5-fwd', obstime_tag]
+    if args.stations!=None:
+        cnd_station = obstable['obsid'].isin(args.stations)
+        obstable = obstable.loc[cnd_station,:]
+        outname_tokens += [station_tag,]
+    outname = '_'.join(outname_tokens) + f".csv"
+    if args.outdir!=None:
+        outname = args.outdir / outname
+        outname.parent.mkdir(parents=True, exist_ok=True)
+    obstable.to_csv(outname)
+    #
+    #--
+    #
+    obsid_values = obstable.loc[:,'obsid'].values
+    if len(obsid_values[0].split('_'))==2:
+        obstable.loc[:,'obs_stationid'] = obsid_values
+    elif len(obsid_values[0].split('_'))==3:
+        obstable.loc[:,'obs_stationid'] = ['_'.join(_.split('_')[:2]) for _ in obsid_values]
+    #
+    #-- assume coordinates and altitude do not depend on time
+    #
+    station_table = obstable.sort_values('obs_stationid')[['obs_stationid','time','lon','lat','alt',]].groupby('obs_stationid').first()
+    staname_list = list(station_table.index)
+    nsta = len(station_table)
+    msg = f"preparing for nsta={nsta} (==>{staname_list}<==)"
+    logger.info(msg)
+    if nsta<=4:
+        obsid_tag = '--'.join(staname_list)
+    else:
+        obsid_tag = f"{nsta}-obslocations"
+
+    # ------------------------------------
+    # 3. Load initial condition
+    #
+    # There should be a much more straightforward way to do it: just run a forward run without emissions
+    # But for consistency, I did it based on the footprint runs (which start with a forward without emissions)
+    msg = f"start collecting initial concentrations..."
+    logger.debug(msg)
+    tm5_df = []
+    for date in obstable.time.dt.date.drop_duplicates():
+        # logger.info(f"iniconc@{date}...")
+        dir_date = date + Timedelta(days=1)
+        tmpath = footprint_dir / dir_date.strftime(footprint_path)
+        outpfile = tmpath / 'point/point_output.nc4'
+        inpfile = tmpath / 'point_input.nc4'
+        if date>dir_end.date():
+            break
+        elif not inpfile.exists():
+            msg = f"***{str(inpfile)}*** NOT FOUND"
+            logger.debug(msg)
+            continue
+        # msg = f"extracting iniconc from files ***{str(outpfile)}*** ***{str(inpfile)}***"
+        # logger.debug(msg)
+        with File(inpfile) as inpf:
+            with File(outpfile) as oupf:
+                mix, station_id, ido, reg = [], [], [], []
+                for region in regions:
+                    if 'CH4' in oupf[region]:
+                        mix.extend(oupf[region]['CH4']['mixing_ratio'])
+                        station_id.extend(oupf[region]['CH4']['station_id'])
+                        ido.extend(oupf[region]['CH4']['id'])
+                        reg.extend([region] * oupf[region]['CH4']['id'].shape[0])
+                mix = np.array(mix)
+                station_id = np.array(station_id)
+                ido = np.array(ido)
+                idi = inpf['CH4']['id'][:]
+                obsid = inpf['CH4']['obsid'][:]
+                vartime = inpf['CH4']['time']
+                time_units = vartime.attrs['units'].decode('UTF-8')
+                # msg = f"time_units -->{time_units}<--"
+                # logger.debug(msg)
+                if time_units.startswith('days since '):
+                    reftime = Timestamp(time_units.replace('days since ',''))
+                    time = reftime +  to_timedelta(vartime[:], unit='day')
+                elif time_units.startswith('hours since '):
+                    reftime = Timestamp(time_units.replace('hours since ',''))
+                    time = reftime +  to_timedelta(vartime[:], unit='hour')
+                elif time_units.startswith('minutes since '):
+                    reftime = Timestamp(time_units.replace('minutes since ',''))
+                    time = reftime +  to_timedelta(vartime[:], unit='minute')
+                elif time_units.startswith('seconds since '):
+                    reftime = Timestamp(time_units.replace('seconds since ',''))
+                    time = reftime +  to_timedelta(vartime[:], unit='second')
+                else:
+                    msg = f"...unexpected time-units -->{time_units}<-- @{str(inpfile)}"
+                    raise RuntimeError(msg)
+                #
+                # time = Timestamp(date) + to_timedelta(inpf['CH4']['time'][:] + 1, unit='hour')  # Here there is a weird extra hour ...
+
+                # Construct a DataFrame with mix, obsid and time
+                # MVO: have region already above, can drop here
+                # df = DataFrame({'time': time, 'obsid': obsid, 'index': idi, 'region': reg}).set_index('index')
+                df = DataFrame({'time': time, 'obsid': obsid, 'index': idi,}).set_index('index')
+                df.loc[ido, 'iniconc'] = mix
+                df.loc[:, 'obsid'] = df.obsid.str.decode('utf8')
+
+                # Store
+                tm5_df.append(df)
+    #
+    msg = f"...initial concentrations done"
+    logger.debug(msg)
+
+    # ------------------------------------
+    # 4. merge Load initial condition
+    #
+    tm5_df = concat(tm5_df)
+    outname_tokens = [f'iniconc', domain_tag, obstime_tag]
+    if args.stations!=None:
+        outname_tokens += [station_tag,]
+    outname = '_'.join(outname_tokens) + f".csv"
+    if args.outdir!=None:
+        outname = args.outdir / outname
+        outname.parent.mkdir(parents=True, exist_ok=True)
+    tm5_df.to_csv(outname)
+
+    #
+    obstable = obstable.merge(tm5_df, on=['time', 'obsid'])
+
+    outname_tokens = ["obstable", domain_tag, "with-tm5-fwd_with-iniconc", obstime_tag]
+    if args.stations!=None:
+        outname_tokens += [station_tag,]
+    outname = '_'.join(outname_tokens) + f".csv"
+    if args.outdir!=None:
+        outname = args.outdir / outname
+        outname.parent.mkdir(parents=True, exist_ok=True)
+    obstable.to_csv(outname, index=True)
+    logger.info(f"generated ***{str(outname)}***")
+    msg = f"...initial concentrations loaded len(obstable)={len(obstable)}"
+    logger.info(msg)
+    #
+    #--
+    #
+    nobs = len(obstable)
+    obs_dates = sorted(obstable.time.dt.date.drop_duplicates())
+    obsday_tag = f"obs-{obs_dates[0]}--{obs_dates[-1]}"
+    #
+    #-- emissions are always from Oct 1, 2020
+    #
+    emis_start = simu_start
+    emisday_range = date_range(emis_start, obs_lastday, freq='1D')
+    nemisday = len(emisday_range)
+    msg = f"detected maximal nemisday={nemisday}"
+    logger.info(msg)
+    emis_tag = emis_start.strftime(f"emis-start-%Y%m%d")
+    #-- prepare for monthly emissions (if possible)
+    emismon_range = date_range(emis_start, obs_lastday, freq='MS')
+    nemismon = len(emismon_range)
+    #
+    #-- load region table ***FIT-IC compliant***
+    #
+    fitic_region_table = get_fitic_region_table()
+    fitic_regions = list(fitic_region_table.keys())
+    ng = 0
+    regionid_1D = []
+    lon_1D = None
+    lat_1D = None
+    for region,region_info in fitic_region_table.items():
+        keep_mask = ~region_info.drop_mask
+        ng_reg = np.count_nonzero(keep_mask)
+        ng += ng_reg
+        regionid_1D += [region,]*ng_reg
+        lon_reg = region_info.lonmesh[keep_mask]
+        lat_reg = region_info.latmesh[keep_mask]
+        if lon_1D is None:
+            lon_1D = lon_reg
+        else:
+            lon_1D= np.hstack((lon_1D,lon_reg))
+        if lat_1D is None:
+            lat_1D = lat_reg
+        else:
+            lat_1D= np.hstack((lat_1D,lat_reg))
+#
+    ############################## E N D
+
+
 def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
     """
     Preparation of monthly averaged emissions suitable as input for (Fortran based)
@@ -1328,6 +1649,31 @@ sparser.add_argument('--outdir',
                      help="""destination directory for all generated outputs.""")
 
 #
+#--       prepare_obsjacobian_nopickle
+#
+sparser = subparsers.add_parser('prepare_obsjacobian_nopickle',
+                                help="""preparation of NetCDF file providing an observational Jacobian and further inputs required for FIT-IC inversion system.""")
+sparser.add_argument('mode',
+                     choices=['gns1x1','glb6x4',],
+                     help="""create Jacobian based on footprint simulations for ICOS observations within innermost domain or for global flask stations.""")
+sparser.add_argument('--obs_lastday',
+                     type=Timestamp,
+                     default=Timestamp(2021,1,1),
+                     help="""last observational day (default:%(default)s).""")
+sparser.add_argument('--stations',
+                     nargs='+',
+                     help="""restrict to selected stations.""")
+sparser.add_argument('--emission_dir',
+                     type=Path,
+                     help="""propagate emissions forward (and compare against reference forward results).""")
+sparser.add_argument('--add_daily_obsjac',
+                     action='store_true',
+                     help="""whether to add the daily observational Jacobian to NetCDF ouput (which is currently not used in the inversion environment).""")
+sparser.add_argument('--outdir',
+                     type=Path,
+                     help="""destination directory for all generated outputs.""")
+
+#
 #--       monthly_emissions_for_inversion
 #
 sparser = subparsers.add_parser('monthly_emissions_for_inversion',
@@ -1411,6 +1757,9 @@ def main(args):
 
     if args.subcmds=='prepare_obsjacobian':
         subcmd_prepare_obsjacobian(args)
+
+    if args.subcmds=='prepare_obsjacobian_nopickle':
+        subcmd_prepare_obsjacobian_nopickle(args)
 
     if args.subcmds=='monthly_emissions_for_inversion':
         subcmd_monthly_emissions_for_inversion(args)
