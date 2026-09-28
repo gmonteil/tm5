@@ -540,16 +540,17 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.emission_scenario = []
         self.emission_scenario_widgets = pn.Column()
 
-        scenarios = self.gui_settings.emissions.get('scenarios', {})
-        self.param.preconf_scenario.objects = {v['title']: k for k, v in scenarios.items()}
-        self.preconf_scenario = 'default'
-
         # Globally accessible widgets
         self.widgets = {
             'station_selector': pn.widgets.Select.from_param(self.param.current_site),
-            'borders': gf.borders()
+            'borders': gf.borders(),
+            'add_category': pn.widgets.Button.from_param(self.param.add_category_event),
         }
         self.widgets['station_selector'].visible = False
+
+        scenarios = self.gui_settings.emissions.get('scenarios', {})
+        self.param.preconf_scenario.objects = {v['title']: k for k, v in scenarios.items()}
+        self.preconf_scenario = 'default'
 
     def __panel__(self):
         header_pane = pn.pane.Markdown('# Preconfigured prior emission scenarios')
@@ -568,7 +569,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                     self.scenario_description
                 ),
                 self.emission_scenario_widgets,
-                pn.widgets.Button.from_param(self.param.add_category_event)
+                self.widgets['add_category']
             ),
             pn.Row(
                     pn.widgets.Button.from_param(self.param.run_forward),
@@ -619,17 +620,20 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             # logger.debug(msg)
             self.tgt_table = simulation_read_targets(output_path)
 
-    @param.depends('add_category_event', watch=True)
-    def _add_emission_category(self, catname: str = None):
-        if catname is None:
-            catname = f'category_{len(self.emission_scenario) + 1}'
-        es = EmissionSettings(
+    def _build_emission_category(self, catname: str) -> EmissionSettings:
+        return EmissionSettings(
             catname=catname,
             regions=['global', 'regional'],
             path=self.gui_settings.emissions.path,
             remove_callback=self._remove_emission_category,
-            disabled=(self.preconf_scenario != 'custom'),
+            visible=(self.preconf_scenario == 'custom'),
         )
+
+    @param.depends('add_category_event', watch=True)
+    def _add_emission_category(self, catname: str = None):
+        if catname is None:
+            catname = f'category_{len(self.emission_scenario) + 1}'
+        es = self._build_emission_category(catname)
         self.emission_scenario.append(es)
         self.emission_scenario_widgets.append(es.__panel__())
 
@@ -641,11 +645,14 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     def _load_scenario(self):
         if self.preconf_scenario is None:
             return
+        self.widgets['add_category'].visible = (self.preconf_scenario == 'custom')
         scenario = self.gui_settings.emissions.scenarios[self.preconf_scenario]
-        self.emission_scenario = []
+        emission_scenario = []
         for catname, spec in scenario.get('categories', {}).items():
-            self._add_emission_category(catname)
-            self.emission_scenario[-1].set_category(spec)
+            es = self._build_emission_category(catname)
+            es.set_category(spec)
+            emission_scenario.append(es)
+        self.emission_scenario = emission_scenario
         self.emission_scenario_widgets.objects = [e.__panel__() for e in self.emission_scenario]
 
     @param.depends('preconf_scenario')

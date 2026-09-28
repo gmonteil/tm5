@@ -13,6 +13,11 @@ def get_emis_file_list(path: Path, pattern: str) -> List[Path]:
     return list(Path(path).glob(pattern))
 
 
+@lru_cache
+def get_emis_dataset(path: Path) -> xr.Dataset:
+    return xr.open_dataset(path)
+
+
 class FieldSelector(pn.viewable.Viewer):
     catname = param.String(doc='category name')
     filename = param.Selector(doc="name of the emission file")
@@ -20,19 +25,19 @@ class FieldSelector(pn.viewable.Viewer):
     path = param.Path(doc='location of the emission files')
     desc = param.String(doc="domain of the emissions")
     domain = param.String(doc="title of the section")
-    disabled = param.Boolean(default=False, doc='Read-only (true for anything but the "custom" scenario)')
+    visible = param.Boolean(default=True, doc='False for anything but the "custom" scenario')
 
     def __init__(self, **params):
         super().__init__(**params)
         self.widgets = dict(
-            file=pn.widgets.Select.from_param(self.param.filename, disabled=self.disabled),
-            field=pn.widgets.Select.from_param(self.param.fieldname, disabled=self.disabled),
+            file=pn.widgets.Select.from_param(self.param.filename, visible=self.visible),
+            field=pn.widgets.Select.from_param(self.param.fieldname, visible=self.visible),
             # info=pn.pane.Markdown(width=300,
             #                       stylesheets=[setup_stylesheet,], css_classes=['setup-tracer']),
             # title=pn.pane.Markdown(width=300,
             #                        stylesheets=[setup_stylesheet,], css_classes=['setup-tracer'])
-            info=pn.pane.Markdown(width=300),
-            title=pn.pane.Markdown(width=300),
+            info=pn.pane.Markdown(width=300, visible=self.visible),
+            title=pn.pane.Markdown(width=300, visible=self.visible),
         )
         self.update_desc()
 
@@ -52,10 +57,10 @@ class FieldSelector(pn.viewable.Viewer):
         """
         available_files = get_emis_file_list(Path(self.path), f'{self.filename}*.nc')
         if len(available_files) > 0:
-            ds = xr.open_dataset(available_files[0])
+            ds = get_emis_dataset(available_files[0])
             self.param.fieldname.objects = [_ for _ in ds.data_vars if _ != 'area']
             self.fieldname = self.param.fieldname.objects[0]
-            self.widgets['field'].visible = len(self.param.fieldname.objects) > 1
+            self.widgets['field'].visible = (len(self.param.fieldname.objects) > 1) and self.visible
 
     @param.depends('path', 'domain', watch=True)
     def update_file_choices(self):
@@ -71,7 +76,7 @@ class FieldSelector(pn.viewable.Viewer):
     def update_field_description(self):
         available_files = get_emis_file_list(Path(self.path), f'{self.filename}*.nc*')
         if len(available_files) > 0:
-            ds = xr.open_dataset(available_files[0])
+            ds = get_emis_dataset(available_files[0])
 
             if 'comment' in ds[self.fieldname].attrs:
                 self.widgets['info'].object = f"""
@@ -118,26 +123,26 @@ class EmissionSettings(pn.viewable.Viewer):
     # emis_glo = FieldSelector(desc='Global emissions')
     switch_reg = param.Boolean(doc="Switch alternate source for regional emissions")
     remove_event = param.Event(doc='Remove this emission category', label='Remove category')
-    disabled = param.Boolean(default=False, doc='Read-only (true for anything but the "custom" scenario)')
+    visible = param.Boolean(default=True, doc='False for anything but the "custom" scenario')
 
     def __init__(self, remove_callback: callable, **params):
         super().__init__(**params)
         self.removeme = remove_callback  # method of the parent object that needs to be called when removing the category (see _handle_remove method below)
-        self.emis_reg = FieldSelector(desc='Emissions for the regional domain', domain=self.regions[-1], disabled=self.disabled)
-        self.emis_glo = FieldSelector(desc='Global emissions', domain=self.regions[0], disabled=self.disabled)
+        self.emis_reg = FieldSelector(desc='Emissions for the regional domain', domain=self.regions[-1], visible=self.visible)
+        self.emis_glo = FieldSelector(desc='Global emissions', domain=self.regions[0], visible=self.visible)
         self.emis_glo.path = self.path
         self.emis_reg.path = self.path
-        self.pane_glo = pn.Column(self.emis_glo, stylesheets=[setup_stylesheet,], css_classes=['setup-tracer'])
+        self.pane_glo = pn.Column(self.emis_glo, stylesheets=[setup_stylesheet,], css_classes=['setup-tracer'], visible=self.visible)
         self.pane_reg = pn.Column(self.emis_reg, visible=len(self.regions) > 1)
         self.widgets = dict(
-            catname=pn.widgets.TextInput.from_param(self.param.catname, disabled=self.disabled),
-            remove=pn.widgets.Button.from_param(self.param.remove_event, disabled=self.disabled),
-            switch=pn.widgets.Switch.from_param(self.param.switch_reg, align='center', disabled=self.disabled),
+            catname=pn.widgets.TextInput.from_param(self.param.catname, visible=self.visible),
+            remove=pn.widgets.Button.from_param(self.param.remove_event, visible=self.visible),
+            switch=pn.widgets.Switch.from_param(self.param.switch_reg, align='center'),
         )
         self.switch_button = pn.Row(
             self.widgets['switch'],
             pn.pane.Markdown("Use different regional emissions", stylesheets=[setup_stylesheet,], css_classes=['setup-tracer']),
-            visible=len(self.regions) > 1
+            visible=(len(self.regions) > 1) and self.visible
         )
         self.update_visibility_regional_emissions()
 
@@ -155,14 +160,15 @@ class EmissionSettings(pn.viewable.Viewer):
                 sizing_mode='stretch_width'
             ),
             stylesheets=[setup_stylesheet,], css_classes=['setup-tracer'],
-            margin=(5, 0)
+            margin=(5, 0),
+            visible=self.visible,
         )
 
     @param.depends('regions', 'switch_reg', watch=True)
     def update_visibility_regional_emissions(self):
         if len(self.regions) > 1 and self.switch_reg:
             self.emis_reg.desc = f"Emissions for region *{self.regions[-1]}*"
-            self.pane_reg.visible = True
+            self.pane_reg.visible = self.visible
         else:
             self.pane_reg.visible = False
 
@@ -183,13 +189,14 @@ class EmissionSettings(pn.viewable.Viewer):
 
     @param.depends('regions', watch=True)
     def update_switch_visibility(self):
-        self.switch_button.visible = len(self.regions) > 1
+        self.switch_button.visible = (len(self.regions) > 1) and self.visible
 
     def copy(self):
         newem = self.__class__(
             catname=self.catname,
             regions=self.regions,
             path=self.path,
+            visible=self.visible,
             remove_callback=self.removeme)
         newem.switch_reg = self.switch_reg
         newem.emis_glo.filename = str(self.emis_glo.filename)
