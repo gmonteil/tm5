@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import asyncio
 from omegaconf import OmegaConf, DictConfig
 import requests
 from pathlib import Path
@@ -340,6 +341,14 @@ def plot_emis_table_md(emis_datasets: List[str]):
     return '\n'.join(lines)
 
 
+def plot_scenario_table_md(scenarios: DictConfig):
+    lines = ['| **Scenario** | **Description** |']
+    lines.append('| --- | --- |')
+    for spec in scenarios.values():
+        lines.append(f"| {spec.get('title', '')} | {spec.get('description', '')} |")
+    return '\n'.join(lines)
+
+
 def plot_emission_map(emissions: xr.Dataset, emis_dataset: str):
     # print("computing emission map")
     logger.debug("computing emission map")
@@ -554,20 +563,17 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
     def __panel__(self):
         header_pane = pn.pane.Markdown('# Preconfigured prior emission scenarios')
-        expdesc_pane = pn.pane.Markdown(
-            plot_emis_table_md(self.param.emis_dataset.objects),
-            stylesheets=[preconfsim_stylesheet], 
+        scenario_table_pane = pn.pane.Markdown(
+            plot_scenario_table_md(self.gui_settings.emissions.scenarios),
+            stylesheets=[preconfsim_stylesheet],
             css_classes=['precomp-right']
         )
 
         widgets = [
             header_pane,
-            pn.Row(pn.widgets.Select.from_param(self.param.emis_dataset), expdesc_pane),
+            scenario_table_pane,
             pn.Column(
-                pn.Row(
-                    pn.widgets.Select.from_param(self.param.preconf_scenario, name='Preconfigured scenario'), 
-                    self.scenario_description
-                ),
+                pn.widgets.Select.from_param(self.param.preconf_scenario, name='Preconfigured scenario'),
                 self.emission_scenario_widgets,
                 self.widgets['add_category']
             ),
@@ -654,15 +660,6 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             emission_scenario.append(es)
         self.emission_scenario = emission_scenario
         self.emission_scenario_widgets.objects = [e.__panel__() for e in self.emission_scenario]
-
-    @param.depends('preconf_scenario')
-    def scenario_description(self):
-        if self.preconf_scenario is None:
-            return ''
-        return pn.pane.Markdown(
-            self.gui_settings.emissions.scenarios[self.preconf_scenario].get('description', ''),
-            stylesheets=[preconfsim_stylesheet], css_classes=['precomp-right']
-        )
 
     @param.depends('alert')
     def _alert(self):
