@@ -38,12 +38,13 @@ file_counter = (base_repr(i, base=36).lower() for i in range(360, 10_000_000))
 #
 #-- ATTENTION: path settings depend on platform!!!
 #
-resultdir = f'/data/avengers/fit_ic/results_flask-v3'
+results_home = f'/data/avengers/fit_ic/results_flask-v5'
 python = '/data/avengers/python/fitic/bin/python'
 python = sys.executable  # I assume that "server_vm.py" and "forward.py" use the same environment. Comment out if false.
+# logger.debug(f"python ==>{python}<==")
 
 datapath = f'/data/avengers/fit_ic/4server/current'
-emis_cache_dir = f'{resultdir}/emissions_cache'
+emis_cache_dir = f'{results_home}/emissions_cache'
 
 def get_host_port():
     #MVO-ATTENTION: does not work properly on pancake...
@@ -54,12 +55,14 @@ def get_host_port():
 
 def gencmd() -> Tuple[str, str]:
     # _, port = get_host_port()
+    # msg = f"running with python ==>{python}<=="
+    # logger.debug(msg)
    
     run_id = next(file_counter)
-    outpath = Path(f'{resultdir}/{run_id}')
+    outpath = Path(f'{results_home}/{run_id}')
     while outpath.exists():
         run_id = next(file_counter)
-        outpath = Path(f'{resultdir}/{run_id}')
+        outpath = Path(f'{results_home}/{run_id}')
 
     # More practical for me to run the "forward.py" from the repo than whatever
     # is in "datapath" (which changes from one machine to another). But we need
@@ -68,7 +71,9 @@ def gencmd() -> Tuple[str, str]:
 
     config = yaml.safe_load(request.form['conf'])
 
-
+    msg = f"config ==============================>\n{config}\n<=============================="
+    logger.debug(msg)
+    
     outpath.mkdir(parents=True, exist_ok=True)
 
     emis_conf = OmegaConf.create(config['emissions'])
@@ -76,17 +81,17 @@ def gencmd() -> Tuple[str, str]:
         f.write(OmegaConf.to_yaml(emis_conf))
 
     task = config['task']
-    logger.debug(f"config ***{config}***")
     cmd = (
         f'{python} '
         f'{fwd} --task {task} --output {outpath} '
         f'--emis-conf {outpath / 'config.yaml'} --emis-cache-dir {emis_cache_dir} --data {datapath}'
     )
     if 'namelist' in config:
-        nmlfile = outpath / 'fitic.nml'
-        nml_dict = { 'fitic.nml' : config['namelist'] }
+        nml_file = outpath / 'fitic.nml'
+        nml_name = 'fitic'
+        nml_dict = { nml_name : config['namelist'] }
         nml = f90nml.Namelist(nml_dict)
-        nml.write(nmlfile, force=True)
+        nml.write(nml_file, force=True)
 
     logger.debug(f"command ==>{cmd}<==")
 
