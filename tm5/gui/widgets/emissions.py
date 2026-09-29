@@ -50,26 +50,49 @@ class FieldSelector(pn.viewable.Viewer):
         """
         Update the choices of the "Field" widget.
         """
-        available_files = get_emis_file_list(Path(self.path), f'{self.filename}*.nc')
+        # msg = f"self.path -->{self.path}<-- and self.filename -->{self.filename}<--"
+        # logger.debug(msg)
+        if self.filename==None:
+            return
+        elif self.filename.endswith('.nc'):
+            ptn = self.filename
+        else:
+            ptn = f'{self.filename}*.nc'
+        available_files = get_emis_file_list(Path(self.path), ptn)
+        # msg = f"...self.filename -->{self.filename}<-- yields avaialable files ***{available_files}***"
+        # logger.debug(msg)
         if len(available_files) > 0:
             ds = xr.open_dataset(available_files[0])
             self.param.fieldname.objects = [_ for _ in ds.data_vars if _ != 'area']
             self.fieldname = self.param.fieldname.objects[0]
+            # msg = f"...from file ***{available_files[0]}*** getting fieldname -->{self.fieldname}<--"
+            # logger.debug(msg)
             self.widgets['field'].visible = len(self.param.fieldname.objects) > 1
 
     @param.depends('path', 'domain', watch=True)
     def update_file_choices(self):
         # available_files = get_emis_file_list(self.path, '**/*.nc*')
         # -- 2025-04-14:: restrict here to the global (default) domain
-        logger.info(self.domain)
         available_files = get_emis_file_list(Path(self.path), '*.nc')
+        # msg = f"@path={self.path}, filename={self.filename}, domain={self.domain}: " \
+        #     f"yields available_files ***{available_files}***"
+        # logger.debug(msg)
         self.param.filename.objects = set([f.name.rsplit('_', maxsplit=1)[0] for f in available_files])
         # if len(available_files) > 0:
         self.filename = self.param.filename.objects[0]
 
     @param.depends('filename', 'fieldname', watch=True)
     def update_field_description(self):
-        available_files = get_emis_file_list(Path(self.path), f'{self.filename}*.nc*')
+        if self.filename==None:
+            return
+        elif self.filename.endswith('.nc'):
+            ptn = f'{self.filename}'
+        else:
+            ptn = f'{self.filename}*.nc*'
+        available_files = get_emis_file_list(Path(self.path), ptn)
+        # msg = f"@path={self.path}, filename={self.filename}, fieldname={self.fieldname}: yields " \
+        #     f"available_files ***{available_files}***"
+        # logger.debug(msg)
         if len(available_files) > 0:
             ds = xr.open_dataset(available_files[0])
 

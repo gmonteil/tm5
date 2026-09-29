@@ -516,7 +516,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     )
     add_category_event = param.Event(doc='Add a new emission category', label='Add category')
     preconf_scenario = param.Selector(default=None, allow_None=True, doc='Preconfigured emission scenario')
-
+    show_details = param.Boolean(default=True, label="Show details of emssions scenario")
     # Data containers:
     conc        = param.ClassSelector(class_=xr.Dataset)
     stats4conc  = param.DataFrame()
@@ -539,9 +539,12 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
         self.emission_scenario = []
         self.emission_scenario_widgets = pn.Column()
-
+        self.emission_scenario_widgets.visible = True #False #--MVO-WHEN-TESTING
         scenarios = self.gui_settings.emissions.get('scenarios', {})
-        self.param.preconf_scenario.objects = {v['title']: k for k, v in scenarios.items()}
+        # self.param.preconf_scenario.objects = {v['title']: k for k, v in scenarios.items()}
+        self.param.preconf_scenario.objects = OrderedDict()
+        for k,v in scenarios.items():
+            self.param.preconf_scenario.objects[v['title']] = k
         self.preconf_scenario = 'default'
 
         # Globally accessible widgets
@@ -642,8 +645,12 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         if self.preconf_scenario is None:
             return
         scenario = self.gui_settings.emissions.scenarios[self.preconf_scenario]
+        # msg = f"@preconf_scenario={self.preconf_scenario}, scenario = ----------\n{scenario}\n----------"
+        # logger.debug(msg)
         self.emission_scenario = []
         for catname, spec in scenario.get('categories', {}).items():
+            # msg = f"@{catname}, spec={spec}=: adding category..."
+            # logger.debug(msg)
             self._add_emission_category(catname)
             self.emission_scenario[-1].set_category(spec)
         self.emission_scenario_widgets.objects = [e.__panel__() for e in self.emission_scenario]
@@ -733,8 +740,11 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
         url = f"{self.gui_settings.backend_url}/forward"
 
+        msg = f"self.emission_scenario ***{self.emission_scenario}***"
+        logger.debug(msg)
+        
         settings = {
-            'emis': self.emis_dataset,
+            # 'emis': self.emis_dataset,
             'emissions': {
                 'name': self.preconf_scenario,
                 'start': self.gui_settings.start,
@@ -743,10 +753,10 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                 'categories': {
                     es.catname: {
                         'global': {
-                            'file': f'{es.emis_glo.path}/{es.emis_glo.filename}*.nc',
+                            'file': f'{es.emis_glo.path}/{es.emis_glo.filename}' if f'{es.emis_glo.path}/{es.emis_glo.filename}'.endswith('.nc') else f'{es.emis_glo.path}/{es.emis_glo.filename}*.nc',
                             'field': es.emis_glo.fieldname},
                         **({'regional': {
-                            'file': f'{es.emis_reg.path}/{es.emis_reg.filename}*.nc',
+                            'file': f'{es.emis_reg.path}/{es.emis_reg.filename}' if f'{es.emis_reg.path}/{es.emis_reg.filename}'.endswith('.nc') else f'{es.emis_reg.path}/{es.emis_reg.filename}*.nc',
                             'field': es.emis_reg.fieldname}} if es.switch_reg else {}
                         )
                     }
@@ -758,7 +768,17 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                 'fix': (self.correlation_switch=='fixed patterns')
             }
         }
-        r = requests.post(url, data={'conf': OmegaConf.to_yaml(settings)})
+        # msg = f"frontend created settings ******************************\n" \
+        #     f"{settings}\n******************************"
+        # logger.debug(msg)
+        yaml_conf =  OmegaConf.to_yaml(settings)
+        # msg = f"frontend created yaml config ******************************\n" \
+        #     f"{yaml_conf}\n******************************"
+        # logger.debug(msg)
+        try:
+            r = requests.post(url, data={'conf':yaml_conf})
+        except requests.exceptions.ConnectionError:
+            self.alert = f"{task} run failed: could not connect to server -->{url}<--"
         if not r.ok:
             self.alert = f"{task} run failed: backend returned {r.status_code} for emis={self.emis_dataset} at {url}. Body: {r.text[:500]}"
             return
