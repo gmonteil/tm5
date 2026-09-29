@@ -8,7 +8,7 @@ from pathlib import Path
 import shutil
 from loguru import logger
 from omegaconf import OmegaConf
-from gen_emfile import gen_emfile
+from gen_emfile import gen_emfile_new
 
 parser = ArgumentParser()
 parser.add_argument('--output', help='Path where the code will be run and the output written', type=Path)
@@ -24,7 +24,7 @@ datapath = args.data
 
 # The following constructs the emission file, unless it already exists:
 emis_conf = OmegaConf.load(args.emis_conf)
-emfile = gen_emfile(emis_conf, args.emis_cache_dir)
+emfile = gen_emfile_new(emis_conf, args.emis_cache_dir)
 
 # Create the run directory and copy the files in it
 # MVO-CHANGED: this is now already done in server.py

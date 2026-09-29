@@ -99,9 +99,9 @@ def gen_emfile(conf: dict, cache_dir: Path) -> Path:
 
 def gen_emfile_new(conf: dict, cache_dir: Path) -> Path:
 
-    msg = f"...emissions request for conf ******************************\n" \
-        f"{conf}\n******************************"
-    logger.debug(msg)
+    # msg = f"...emissions request for conf ******************************\n" \
+    #     f"{conf}\n******************************"
+    # logger.debug(msg)
     # Hack to make stuff in "postrun" importable ...
     repo_root = str(Path(__file__).resolve().parents[1])
     if repo_root not in sys.path:
@@ -135,26 +135,26 @@ def gen_emfile_new(conf: dict, cache_dir: Path) -> Path:
     #
     cat_dict = {}
     for catname, cat in conf.categories.items():
+        # msg = f"@{catname} -->\n{cat}\n<--"
+        # logger.debug(msg)
         cat_dict[catname] = {}
-        cat_dict[catname]['path'] = conf[catname]['global']['filename']
-        cat_dict[catname]['feld'] = conf[catname]['global']['field']
-        if 'regional' in conf[catname]:
+        cat_dict[catname]['path'] = cat['global']['file']
+        cat_dict[catname]['field'] = cat['global']['field']
+        if 'regional' in cat:
             cat_dict[catname]['overwrite'] = {}
-            cat_dict[catname]['overwrite']['path'] = conf[catname]['regional']['filename']
-            cat_dict[catname]['overwrite']['field'] = conf[catname]['regional']['field']
+            cat_dict[catname]['overwrite']['path'] = cat['regional']['file']
+            cat_dict[catname]['overwrite']['field'] = cat['regional']['field']
     prefix = f'{scratch_dir}/ch4emis'
     emis_dict = {
         'run': {'start': str(conf.start), 'end': str(conf.end), 'regions': region_names},
         'regions': region_block(region_names),
         'emissions': {'CH4': {'prefix': prefix, 'categories': cat_dict } },
     }
-    msg = f"...calling prepare_emissions with emis_dict **********\n" \
-        f"{emis_dict}\n**********"
-    logger.debug(msg)
+    # msg = f"...calling prepare_emissions with emis_dict **********\n" \
+    #     f"{emis_dict}\n**********"
+    # logger.debug(msg)
         
     emis_dconf = OmegaConf.create(emis_dict)
-    msg = f"...prepare_emissions being called with emis_dconf ******************************\n" \
-    f"{emis_dconf}\n******************************"
     logger.debug(msg)
     prepare_emissions(emis_dconf)
     #
@@ -167,6 +167,8 @@ def gen_emfile_new(conf: dict, cache_dir: Path) -> Path:
         outdir=None,
         outname=str(outname),
     )
+    # msg = f"...calling subcmd_monthly_emissions_for_inversion with args ==>{args}<=="
+    # logger.debug(msg)
     subcmd_monthly_emissions_for_inversion(args)
 
     return outname
