@@ -322,6 +322,120 @@ def ojac_glb6x4_redistribute_to_fitic(ojac_6x4 : xr.DataArray, fitic_region_tabl
     return ojac_out
 
 
+def ojac_glb6x4_redistribute_to_fitic_lessmem(ojac_6x4 : xr.DataArray, fitic_region_table : OrderedDict) -> np.ndarray:
+    """
+    Re-distributing sensitivities (Jacobian) that have been computed
+    globally at (the coarse) 6x4 degree resolution spatially
+    to sensitivities spatially compliant for application to
+    the (1-dimensional) emissions prepared for the AVENGERS
+    3-level zoom configuration (glb6x4,eur3x2,gns1x1).
+
+    Nearest-neighbour approach is used for the re-distribution (upscaling)
+    to the two inner zoom domains.
+    The sensitivities are provided in ['ppb/(kgCH4/cell/s)'].
+    Initially I thought re-distribution should be done
+    after conversion to ['ppb/(kgCH4/m2/s)'], but this is actually wrong!
+
+    The resulting output Jacobian numpy array will have shape
+    (nobs,nemisday,ng) with
+    'nobs': number of observational locations
+            (including both, spatial and temporal dimension)
+    'nemisday': number of emission days
+    'ng': number of emission grid-cells of AVENGERS zoom configuration
+          (HALO parts of the inner domains excluded,
+           grid-cells of HALO corrected child domains removed from parent)
+    """
+    #
+    #-- some consistency checks
+    #
+    assert ojac_6x4.dims==('obs','emisday','lat','lon')
+    assert ojac_6x4.units==('ppb/(kgCH4/cell/s)')
+    nobs,nemisday,nlat,nlon = ojac_6x4.shape
+    
+    #
+    #-- define global grids at the two finer resolutions
+    #
+    glb_6x4 = fitic_region_table['glb600x400'].grid
+    eur_3x2 = fitic_region_table['eur300x200'].grid
+    gns_1x1 = fitic_region_table['gns100x100'].grid
+
+    #
+    #-- conversion to innermost zoom domain
+    #
+    _lon1x1 = (ojac_6x4.lon>=gns_1x1.west) & \
+        (ojac_6x4.lon<=gns_1x1.east)
+    _lat1x1 = (ojac_6x4.lat>=gns_1x1.south) & \
+        (ojac_6x4.lat<=gns_1x1.north)
+    _ds_glb1x1 = xr.Dataset(coords=dict(lon=gns_1x1.lonc, lat=gns_1x1.latc))
+    #-- 6x4 Jacobian restricted to gns1x1 domain
+    ojac_1x1 = ojac_6x4.sel(lon=_lon1x1, lat=_lat1x1)
+    #-- define regridder
+    regridder = xesmf.Regridder(ojac_1x1, _ds_glb1x1, method='nearest_s2d')
+    #-- apply regridder (converts 6x4 sensitivities to 1x1 sensitivities)
+    ojac_1x1 = regridder(ojac_1x1)
+    #
+    #-- conversion to European 3x2 domain @3x2 degree resolution (nearest neighbour)
+    #
+    #-- global 3x2 sensitivites [ppb/(kgCH4/cell/s)]
+    _lon3x2 = (ojac_6x4.lon>=eur_3x2.west) & \
+        (ojac_6x4.lon<=eur_3x2.east)
+    _lat3x2 = (ojac_6x4.lat>=eur_3x2.south) & \
+        (ojac_6x4.lat<=eur_3x2.north)
+    ojac_3x2 = ojac_6x4.sel(lon=_lon3x2,lat=_lat3x2)
+    _ds_glb3x2 = xr.Dataset(coords=dict(lon=eur_3x2.lonc, lat=eur_3x2.latc))
+    regridder = xesmf.Regridder(ojac_3x2, _ds_glb3x2, method='nearest_s2d')
+    ojac_3x2 = regridder(ojac_3x2)
+    
+    #
+    # (glb6x4)  - drop non FIT-IC grid-cells
+    #
+    drop_mask = fitic_region_table['glb600x400'].drop_mask
+    keep_mask_6x4 = ~drop_mask
+    ojac_6x4_out = ojac_6x4.values[:,:,keep_mask_6x4]
+    msg = f"...generated ojac_6x4_out (shape={ojac_6x4_out.shape})"
+    logger.debug(msg)
+    #
+    # (eur3x2) - restrict global 3x2 to eur_3x2
+    #
+    _lon3x2 = (ojac_3x2.lon>=eur_3x2.west) & \
+        (ojac_3x2.lon<=eur_3x2.east)
+    _lat3x2 = (ojac_3x2.lat>=eur_3x2.south) & \
+        (ojac_3x2.lat<=eur_3x2.north)
+    ojac_3x2 = ojac_3x2.sel(lon=_lon3x2,lat=_lat3x2)
+    #
+    # (eur3x2) - drop non FIT-IC grid-cells
+    #
+    drop_mask = fitic_region_table['eur300x200'].drop_mask
+    keep_mask_3x2 = ~drop_mask
+    ojac_3x2_out = ojac_3x2.values[:,:,keep_mask_3x2]
+    msg = f"...generated ojac_3x2_out (shape={ojac_3x2_out.shape})"
+    logger.debug(msg)
+    #
+    # (gns1x1) - restrict global 1x1 to gns1x1
+    #
+    _lon1x1 = (ojac_1x1.lon>=gns_1x1.west) & \
+        (ojac_1x1.lon<=gns_1x1.east)
+    _lat1x1 = (ojac_1x1.lat>=gns_1x1.south) & \
+        (ojac_1x1.lat<=gns_1x1.north)
+    ojac_1x1 = ojac_1x1.sel(lon=_lon1x1,lat=_lat1x1)
+    #
+    # (gns1x1) - drop non FIT-IC grid-cells
+    #
+    drop_mask = fitic_region_table['gns100x100'].drop_mask
+    keep_mask_1x1 = ~drop_mask
+    ojac_1x1_out = ojac_1x1.values[:,:,keep_mask_1x1]
+    msg = f"...generated ojac_1x1_out (shape={ojac_1x1_out.shape})"
+    logger.debug(msg)
+    #
+    #-- concat along the spatial domain contributions
+    #
+    ojac_out = np.concatenate((ojac_6x4_out,ojac_3x2_out,ojac_1x1_out), axis=2)
+    msg = f"...generated ojac_out (shape={ojac_out.shape})"
+    logger.debug(msg)
+
+    return ojac_out
+
+
 def ojac_glb6x4_redistribute_to_fitic_sqm(ojac_6x4 : xr.DataArray, fitic_region_table : OrderedDict) -> SimpleNamespace:
     """
     Re-distributing sensitivities (Jacobian) that were computed globally only at the
