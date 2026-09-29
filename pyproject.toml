@@ -19,7 +19,10 @@ requires-python = '>=3.10'
 #include = ['tm5']
 #-- 2026-05-27: otherwise some files are missing when installing with 'pip install .'
 #               (reason not yet clear...)
-include = ['tm5', 'tm5.gui', 'tm5.gui.widgets']
+#-- 2026-09-29: 'postrun' added, since subcmd_monthly_emissions_for_inversion is
+#               currently required within the backend pipeline
+#               !!!SHOULD BE REVERTED AGAIN!!!
+include = ['tm5', 'tm5.gui', 'tm5.gui.widgets', 'postrun']
 
 [project.optional-dependencies]
 dev = ['ipython', 'mkdocs']
