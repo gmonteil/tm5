@@ -679,6 +679,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         if self.current_site is None:
             return ''
         cur_exp = get_exp_label(self.emis_dataset)
+        cur_exp = self.preconf_scenario
         dfc = self.conc.to_dataframe()
         dfc = dfc[dfc.station == self.current_site]
         # msg = f"...@{self.simul_type},cur_exp={cur_exp}: calling plot_conc_timeseries..."
@@ -800,6 +801,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         
     def _read_concentrations(self, path: Path, task: str):
         label = get_exp_label(self.emis_dataset)
+        label = self.preconf_scenario
         # msg = f"@task={task}, emissions_label -->{label}<--"
         # logger.debug(msg)
         if task == 'inversion':
