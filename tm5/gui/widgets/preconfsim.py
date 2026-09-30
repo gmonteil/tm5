@@ -25,6 +25,7 @@ import geoviews.feature as gf
 from cartopy import crs
 
 from tm5 import debug
+from tm5.util import get_dict_checksum as dict_checksum
 from tm5.gui.css import *
 from tm5.gui.widgets.emissions import EmissionSettings
 from tm5.gui.widgets.stations import calc_statistics
@@ -743,12 +744,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
         url = f"{self.gui_settings.backend_url}/forward"
 
-        msg = f"self.emission_scenario ***{self.emission_scenario}***"
-        logger.debug(msg)
-        
-        settings = {
-            # 'emis': self.emis_dataset,
-            'emissions': {
+        emis_settings = {
                 'name': self.preconf_scenario,
                 'start': self.gui_settings.start,
                 'end': self.gui_settings.end,
@@ -764,8 +760,17 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                         )
                     }
                     for es in self.emission_scenario
-                },
-            },
+                }
+            }
+
+        msg = f"@self.emission_scenario ***{self.emission_scenario}*** yields checksum " \
+            f"-->{dict_checksum(emis_settings)}<--"
+        logger.debug(msg)
+
+
+        settings = {
+            # 'emis': self.emis_dataset,
+            'emissions': emis_settings,
             'task': task,
             'namelist': {
                 'fix': (self.correlation_switch=='fixed patterns')
