@@ -519,13 +519,14 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     current_site = param.Selector(doc='Current site to be displayed', default=None)
     sites_list = param.List(default=[], doc='List of observation sites available (for internal use ...)')
     simul_type = param.Selector(objects=['fwd', 'inv'], allow_None=True, default=None)
-    # correlation_switch = param.Boolean(doc='Switch to enable/disable correlated emission adjustments', default=False, label='Spatially correlated prior emissions uncertainty')
     correlation_switch = param.Selector(
         default="full grid",
         objects=["fixed patterns", "full grid"],
         label="Resolution of Emission space (Please note that option 'fixed patterns' is not implemented yet)",
     )
     add_category_event = param.Event(doc='Add a new emission category', label='Add category')
+    # show_category_event = param.Event(doc='Show emission categories for scenario',
+    #                                   label='Show categories')
     preconf_scenario = param.Selector(default=None, allow_None=True, doc='Preconfigured emission scenario')
     show_details = param.Boolean(default=True, label="Show details of emssions scenario")
     # Data containers:
@@ -556,18 +557,19 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             'station_selector': pn.widgets.Select.from_param(self.param.current_site),
             'borders': gf.borders(),
             'add_category': pn.widgets.Button.from_param(self.param.add_category_event),
+            # 'show_category': pn.widgets.Button.from_param(self.param.show_category_event),
         }
+        #-- becomes visible only after a forward run or an inversion
         self.widgets['station_selector'].visible = False
 
-        scenarios = self.gui_settings.emissions.get('scenarios', {})
-        # self.param.preconf_scenario.objects = {v['title']: k for k, v in scenarios.items()}
+        self.scenarios = self.gui_settings.emissions.get('scenarios', {})
         self.param.preconf_scenario.objects = OrderedDict()
-        for k,v in scenarios.items():
+        for k,v in self.scenarios.items():
             self.param.preconf_scenario.objects[v['title']] = k
         self.preconf_scenario = 'default'
 
     def __panel__(self):
-        header_pane = pn.pane.Markdown('# Preconfigured prior emission scenarios')
+        header_pane = pn.pane.Markdown('# Selecting prior emission scenarios')
         scenario_table_pane = pn.pane.Markdown(
             plot_scenario_table_md(self.gui_settings.emissions.scenarios),
             stylesheets=[preconfsim_stylesheet],
@@ -580,7 +582,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             pn.Column(
                 pn.widgets.Select.from_param(self.param.preconf_scenario, name='Preconfigured scenario'),
                 self.emission_scenario_widgets,
-                self.widgets['add_category']
+                self.widgets['add_category'],
+                # self.widgets['show_category']
             ),
             pn.Row(
                     pn.widgets.Button.from_param(self.param.run_forward),
@@ -626,19 +629,23 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             self.emissions = load_emissions(output_path)
             # msg = f"...computing conc statistics"
             # logger.debug(msg)
-            # self.stats4conc = conc_statistics(self.conc, get_exp_label(self.emis_dataset))
             self.stats4conc = conc_statistics(self.conc, self.preconf_scenario)
             # msg = f"...reading simulation targets from directory ***{str(output_path)}***"
             # logger.debug(msg)
             self.tgt_table = simulation_read_targets(output_path)
 
+    def _scenario_editable(self):
+        cur_scenario = self.scenarios[self.preconf_scenario]
+        is_editable = 'editable' in cur_scenario and cur_scenario['editable']
+        return is_editable
+    
     def _build_emission_category(self, catname: str) -> EmissionSettings:
         return EmissionSettings(
             catname=catname,
             regions=['global', 'regional'],
             path=self.gui_settings.emissions.path,
             remove_callback=self._remove_emission_category,
-            visible=(self.preconf_scenario == 'custom'),
+            visible=self._scenario_editable(),
         )
 
     @param.depends('add_category_event', watch=True)
@@ -649,6 +656,13 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.emission_scenario.append(es)
         self.emission_scenario_widgets.append(es.__panel__())
 
+    # @param.depends('show_category_event', watch=True)
+    # def _show_emission_categories(self):
+    #     msg = f"show_category_event triggered"
+    #     logger.debug(msg)
+    #     for ed in self.emission_scenario_widgets:
+    #         ed.visible = True
+
     def _remove_emission_category(self, es: EmissionSettings):
         self.emission_scenario.remove(es)
         self.emission_scenario_widgets.objects = [e.__panel__() for e in self.emission_scenario]
@@ -657,7 +671,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     def _load_scenario(self):
         if self.preconf_scenario is None:
             return
-        self.widgets['add_category'].visible = (self.preconf_scenario == 'custom')
+        self.widgets['add_category'].visible = self._scenario_editable()
+        # self.widgets['show_category'].visible = not self._scenario_editable()
         scenario = self.gui_settings.emissions.scenarios[self.preconf_scenario]
         emission_scenario = []
         for catname, spec in scenario.get('categories', {}).items():
@@ -681,7 +696,6 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             return ''
         if self.current_site is None:
             return ''
-        cur_exp = get_exp_label(self.emis_dataset)
         cur_exp = self.preconf_scenario
         dfc = self.conc.to_dataframe()
         dfc = dfc[dfc.station == self.current_site]
@@ -737,11 +751,6 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             - 100: something went wrong ...
             - 101: result is not valid json
         """
-        # if self.emis_dataset in self.cache_inv and task == 'inversion':
-        #     return self.cache_inv[self.emis_dataset]
-        # elif self.emis_dataset in self.cache_fwd and task == 'forward':
-        #     return self.cache_fwd[self.emis_dataset]
-
         url = f"{self.gui_settings.backend_url}/forward"
 
         emis_settings = {
@@ -767,7 +776,11 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             f"-->{dict_checksum(emis_settings)}<--"
         logger.debug(msg)
 
-
+        # if self.emis_dataset in self.cache_inv and task == 'inversion':
+        #     return self.cache_inv[self.emis_dataset]
+        # elif self.emis_dataset in self.cache_fwd and task == 'forward':
+        #     return self.cache_fwd[self.emis_dataset]
+      
         settings = {
             # 'emis': self.emis_dataset,
             'emissions': emis_settings,
@@ -809,7 +822,6 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         return output_path
         
     def _read_concentrations(self, path: Path, task: str):
-        label = get_exp_label(self.emis_dataset)
         label = self.preconf_scenario
         # msg = f"@task={task}, emissions_label -->{label}<--"
         # logger.debug(msg)
