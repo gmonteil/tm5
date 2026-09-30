@@ -47,3 +47,18 @@ def utc_to_lst( time_utc : np.ndarray | np.datetime64, longitude : np.ndarray | 
     time_LST = time_utc + td
 
     return time_LST
+
+
+def get_dict_checksum(d: dict) -> str:
+    import hashlib
+    import json
+    # 1. Serialize the dictionary to a JSON string with sorted keys
+    # sort_keys=True ensures key order doesn't affect the checksum
+    # separators removes extra whitespace to ensure consistency
+    json_str = json.dumps(d, sort_keys=True, separators=(',', ':'))
+    
+    # 2. Encode to bytes and compute the SHA-256 hash
+    hash_obj = hashlib.sha256(json_str.encode('utf-8'))
+    
+    # 3. Return the hexadecimal digest
+    return hash_obj.hexdigest()
