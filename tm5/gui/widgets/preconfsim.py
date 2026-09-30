@@ -31,8 +31,6 @@ from tm5.gui.widgets.stations import calc_statistics
 from tm5.gui.widgets.widget_utils import experiment_desc, plot_site_info, load_observations_metadata
 
 
-
-
 def get_exp_label(expfile: str | Path) -> str:
     return Path(expfile).name.replace('fitic-', '').rsplit('_monthly')[0]
 
@@ -288,7 +286,7 @@ def plot_conc_timeseries(df: DataFrame, simul_type: str, cur_exp: str):
     return p
 
 
-def plot_stats_table(df: DataFrame, emis_dataset: str):
+def plot_stats_table(df: DataFrame, emis_scenario: str):
     #-- reduce decimals for visualisation
     df = df.round(decimals=2)
     # msg = f"df.columns ==>{df.columns}<=="
@@ -320,7 +318,7 @@ def plot_stats_table(df: DataFrame, emis_dataset: str):
     )
     # msg = f"tabulator widget generated table ***{table}***"
     # logger.debug(msg)
-    title = f"# Fit statistics for all stations (emissions scenario: {get_exp_label(emis_dataset)})"
+    title = f"# Fit statistics for all stations (scenario: {emis_scenario})"
     return pn.Column(pn.pane.Markdown(title), table)
 
 # def plot_stats_table(df: DataFrame, emis_dataset: str):
@@ -349,7 +347,8 @@ def plot_scenario_table_md(scenarios: DictConfig):
     return '\n'.join(lines)
 
 
-def plot_emission_map(emissions: xr.Dataset, emis_dataset: str):
+def plot_emission_map(emissions: xr.Dataset, emis_scenario: str):
+    logger.debug("OOOOOOOOOOOOOOOOOOOOOOOOOOOOO")
     # print("computing emission map")
     logger.debug("computing emission map")
             
@@ -378,8 +377,6 @@ def plot_emission_map(emissions: xr.Dataset, emis_dataset: str):
         'gns100x100': (42, 58)
     }
         
-    logger.debug("...returning emissions map now!!!")
-    
     emis_units = emissions['glb600x400'].apos.attrs['units']
     emis_month = emissions['glb600x400'].attrs['emis_month']
 
@@ -392,7 +389,7 @@ def plot_emission_map(emissions: xr.Dataset, emis_dataset: str):
             emissions[mode].apri.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projections[mode], xlim=xlims[mode], ylim=ylims[mode]),
             (emissions[mode].apos - emissions[mode].apri).hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection[mode], xlim=xlims[mode], ylim=ylims[mode])
         )
-        title = f"# emission maps (posterior, prior, posterior-prior) ({get_exp_label(emis_dataset)})"
+        title = f"# emission maps (posterior, prior, posterior-prior) (scenario: {emis_scenario})"
         p = pn.Column(pn.pane.Markdown(title), prow)
     elif mode == 'row_merged':
         prow = pn.Row(
@@ -406,7 +403,7 @@ def plot_emission_map(emissions: xr.Dataset, emis_dataset: str):
             (emissions['eur300x200'].apos - emissions['eur300x200'].apri).hvplot.quadmesh(rasterize=True, geo=True, cmap=cmap, clim=clim) *
             (emissions['gns100x100'].apos - emissions['gns100x100'].apri).hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim)
         )
-        title = f"# emssions maps (posterior, prior, posterior-prior) ({get_exp_label(emis_dataset)})"
+        title = f"# emssions maps (posterior, prior, posterior-prior) (scenario: {emis_scenario})"
         p = pn.Column(pn.pane.Markdown(title), prow)
     elif mode == 'guillaume':
         ppost = (
@@ -414,31 +411,36 @@ def plot_emission_map(emissions: xr.Dataset, emis_dataset: str):
             emissions['eur300x200'].apos.hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
             emissions['gns100x100'].apos.hvplot.quadmesh(cmap=cmap, clim=clim, coastline=True, xlim=xlim, ylim=ylim, projection=projection)
         )
-        plotcfg = opts.Overlay(title=f'posterior emissions ({emis_month}, {get_exp_label(emis_dataset)})', ylabel=f"[{emis_units}]" )
+        plotcfg = opts.Overlay(title=f'posterior emissions ({emis_month}, scenario: {emis_scenario})', ylabel=f"[{emis_units}]" )
         ppost.opts(plotcfg)
         pprior = (
             emissions['glb600x400'].apri.hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
             emissions['eur300x200'].apri.hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
             emissions['gns100x100'].apri.hvplot.quadmesh(cmap=cmap, clim=clim, coastline=True, xlim=xlim, ylim=ylim, projection=projection)
             )
-        plotcfg = opts.Overlay(title=f'prior emissions ({emis_month}, {get_exp_label(emis_dataset)})' )
+        title = f'prior emissions ({emis_month}, scenario: {emis_scenario})'
+        plotcfg = opts.Overlay(title=title)
         pprior.opts(plotcfg)
         pdiff = (
             (emissions['glb600x400'].apos - emissions['glb600x400'].apri).hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
             (emissions['eur300x200'].apos - emissions['eur300x200'].apri).hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
             (emissions['gns100x100'].apos - emissions['gns100x100'].apri).hvplot.quadmesh(cmap=cmap, clim=clim, coastline=True, xlim=xlim, ylim=ylim, projection=projection)
             )
-        plotcfg = opts.Overlay(title=f'posterior-prior emissions ({emis_month}, {get_exp_label(emis_dataset)})')
+        title = f'posterior-prior emissions ({emis_month}, scenario: {emis_scenario})'
+        plotcfg = opts.Overlay(title=title)
         pdiff.opts(plotcfg)
         
         prow = (
             ppost + pprior + pdiff
         )
         p = prow
+    msg = f"...returning emissions map for mode -->{mode}<-- (title ==>{title}<==)"
+    logger.debug(msg)
+    
     return p
     
 
-def plot_target_table(df: DataFrame, emis_dataset: str):
+def plot_target_table(df: DataFrame, emis_scenario: str):
     def get_csv_file():
         # You can re-compute data here if it's dynamic
         fid = io.BytesIO()
@@ -448,8 +450,7 @@ def plot_target_table(df: DataFrame, emis_dataset: str):
 
     nc = len(df.columns)
     formatters = [lambda x: f'{x:.3f}'] * nc
-    # outname = f"targets_{get_exp_label(self.emis_dataset)}.csv"
-    # outname = f"targets.csv"
+    # outname = f"targets-{emis_scenario}.csv"
     # button = pn.widgets.FileDownload(callback=get_csv_file, filename=outname, label="Download Data (CSV)", button_type="primary")
     button = pn.widgets.FileDownload(callback=get_csv_file, filename="targets.csv", label="Download Data (CSV)", button_type="primary")
 
@@ -457,7 +458,7 @@ def plot_target_table(df: DataFrame, emis_dataset: str):
     # return self.tgt_table
     #-- MVO-TODO::units [MtCH4] should not be hard-coded here
     logger.debug("...returning target table now")
-    title = f'# Target emission quantities [MtCH4] ({get_exp_label(emis_dataset)})'
+    title = f'# Target emission quantities [MtCH4] (scenario: {emis_scenario})'
     return pn.Column(pn.pane.Markdown(title), p)
 
 
@@ -624,7 +625,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             self.emissions = load_emissions(output_path)
             # msg = f"...computing conc statistics"
             # logger.debug(msg)
-            self.stats4conc = conc_statistics(self.conc, get_exp_label(self.emis_dataset))
+            # self.stats4conc = conc_statistics(self.conc, get_exp_label(self.emis_dataset))
+            self.stats4conc = conc_statistics(self.conc, self.preconf_scenario)
             # msg = f"...reading simulation targets from directory ***{str(output_path)}***"
             # logger.debug(msg)
             self.tgt_table = simulation_read_targets(output_path)
@@ -690,7 +692,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     def conc_stats_table(self):
         if self.stats4conc is None:
             return ''
-        return plot_stats_table(self.stats4conc, self.emis_dataset)
+        return plot_stats_table(self.stats4conc, self.preconf_scenario)
 
     @param.depends('emissions')
     def map_emissions(self):
@@ -698,14 +700,14 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             # print("resetting emission map")
             logger.debug("resetting emission map")
             return 
-        return plot_emission_map(self.emissions, self.emis_dataset)
+        return plot_emission_map(self.emissions, self.preconf_scenario)
 
     @param.depends('tgt_table')
     def target_table(self):
         if self.tgt_table is None:
             logger.debug("returning None")
             return ''
-        return plot_target_table(self.tgt_table, self.emis_dataset)
+        return plot_target_table(self.tgt_table, self.preconf_scenario)
 
     @param.depends('current_site', 'sites_list')
     def map_sites(self):
@@ -781,17 +783,19 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         except requests.exceptions.ConnectionError:
             self.alert = f"{task} run failed: could not connect to server -->{url}<--"
         if not r.ok:
-            self.alert = f"{task} run failed: backend returned {r.status_code} for emis={self.emis_dataset} at {url}. Body: {r.text[:500]}"
+            self.alert = f"{task} run failed: backend returned {r.status_code} " \
+                f"for configuration *****{yaml_conf}***** at {url}. Body: {r.text[:500]}"
             return
         try:
             payload = r.json()
         except requests.exceptions.JSONDecodeError:
-            self.alert = f"{task} run failed: backend returned non-JSON for emis={self.emis_dataset} at {url}. Body: {r.text[:500]}"
+            self.alert = f"{task} run failed: backend returned non-JSON for " \
+                f"configuration *****{yaml_conf}**** at {url}. Body: {r.text[:500]}"
             return
         self.alert = ''
 
         output_path = Path(payload['output'])
-        # msg = f"@task={task} for {self.emis_dataset} yields output_path ***{str(output_path)}***"
+        # msg = f"...@task={task} generated output_path ***{str(output_path)}***"
         # logger.debug(msg)
         if task == 'inversion':
             self.cache_inv[self.emis_dataset] = output_path
