@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import asyncio
+import copy
 from omegaconf import OmegaConf, DictConfig
 import requests
 from pathlib import Path
@@ -30,10 +31,6 @@ from tm5.gui.css import *
 from tm5.gui.widgets.emissions import EmissionSettings
 from tm5.gui.widgets.stations import calc_statistics
 from tm5.gui.widgets.widget_utils import experiment_desc, plot_site_info, load_observations_metadata
-
-
-def get_exp_label(expfile: str | Path) -> str:
-    return Path(expfile).name.replace('fitic-', '').rsplit('_monthly')[0]
 
 
 @debug.timer
@@ -287,7 +284,7 @@ def plot_conc_timeseries(df: DataFrame, simul_type: str, cur_exp: str):
     return p
 
 
-def plot_stats_table(df: DataFrame, emis_scenario: str):
+def plot_stats_table(df: DataFrame, scenario_name: str):
     #-- reduce decimals for visualisation
     df = df.round(decimals=2)
     # msg = f"df.columns ==>{df.columns}<=="
@@ -319,14 +316,14 @@ def plot_stats_table(df: DataFrame, emis_scenario: str):
     )
     # msg = f"tabulator widget generated table ***{table}***"
     # logger.debug(msg)
-    title = f"# Fit statistics for all stations (scenario: {emis_scenario})"
+    title = f"# Fit statistics for all stations (emissions scenario: {scenario_name})"
     return pn.Column(pn.pane.Markdown(title), table)
 
-# def plot_stats_table(df: DataFrame, emis_dataset: str):
+# def plot_stats_table(df: DataFrame, scenario_name: str):
 #     nc = len(df.columns)
 #     formatters = [lambda x: f'{x:.2f}'] * nc
 #     table = pn.pane.DataFrame(df, text_align='center', formatters=formatters)
-#     title = f'# Fit statistics for all stations ({get_exp_label(emis_dataset)})'
+#     title = f'# Fit statistics for all stations ({scenario_name})'
 #     return pn.Column(pn.pane.Markdown(title), table)
 
 
@@ -334,7 +331,6 @@ def plot_emis_table_md(emis_datasets: List[str]):
     lines = ['| **Emissions setup** | **Description** |']
     lines.append('| --- | --- |')
     for exp in emis_datasets:
-        exp = get_exp_label(exp)
         if desc := experiment_desc(exp):
             lines.append(f'| {exp} | {desc} |')
     return '\n'.join(lines)
@@ -348,8 +344,7 @@ def plot_scenario_table_md(scenarios: DictConfig):
     return '\n'.join(lines)
 
 
-def plot_emission_map(emissions: xr.Dataset, emis_scenario: str):
-    logger.debug("OOOOOOOOOOOOOOOOOOOOOOOOOOOOO")
+def plot_emission_map(emissions: xr.Dataset, emis_dataset: str):
     # print("computing emission map")
     logger.debug("computing emission map")
             
@@ -378,6 +373,8 @@ def plot_emission_map(emissions: xr.Dataset, emis_scenario: str):
         'gns100x100': (42, 58)
     }
         
+    logger.debug("...returning emissions map now!!!")
+    
     emis_units = emissions['glb600x400'].apos.attrs['units']
     emis_month = emissions['glb600x400'].attrs['emis_month']
 
@@ -390,7 +387,7 @@ def plot_emission_map(emissions: xr.Dataset, emis_scenario: str):
             emissions[mode].apri.hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projections[mode], xlim=xlims[mode], ylim=ylims[mode]),
             (emissions[mode].apos - emissions[mode].apri).hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim, projection=projection[mode], xlim=xlims[mode], ylim=ylims[mode])
         )
-        title = f"# emission maps (posterior, prior, posterior-prior) (scenario: {emis_scenario})"
+        title = f"# emission maps (posterior, prior, posterior-prior) ({emis_dataset})"
         p = pn.Column(pn.pane.Markdown(title), prow)
     elif mode == 'row_merged':
         prow = pn.Row(
@@ -404,7 +401,7 @@ def plot_emission_map(emissions: xr.Dataset, emis_scenario: str):
             (emissions['eur300x200'].apos - emissions['eur300x200'].apri).hvplot.quadmesh(rasterize=True, geo=True, cmap=cmap, clim=clim) *
             (emissions['gns100x100'].apos - emissions['gns100x100'].apri).hvplot.quadmesh(rasterize=True, geo=True, coastline=True, cmap=cmap, clim=clim)
         )
-        title = f"# emssions maps (posterior, prior, posterior-prior) (scenario: {emis_scenario})"
+        title = f"# emssions maps (posterior, prior, posterior-prior) ({emis_dataset})"
         p = pn.Column(pn.pane.Markdown(title), prow)
     elif mode == 'guillaume':
         ppost = (
@@ -412,23 +409,21 @@ def plot_emission_map(emissions: xr.Dataset, emis_scenario: str):
             emissions['eur300x200'].apos.hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
             emissions['gns100x100'].apos.hvplot.quadmesh(cmap=cmap, clim=clim, coastline=True, xlim=xlim, ylim=ylim, projection=projection)
         )
-        plotcfg = opts.Overlay(title=f'posterior emissions ({emis_month}, scenario: {emis_scenario})', ylabel=f"[{emis_units}]" )
+        plotcfg = opts.Overlay(title=f'posterior emissions ({emis_month}, {emis_dataset})', ylabel=f"[{emis_units}]" )
         ppost.opts(plotcfg)
         pprior = (
             emissions['glb600x400'].apri.hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
             emissions['eur300x200'].apri.hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
             emissions['gns100x100'].apri.hvplot.quadmesh(cmap=cmap, clim=clim, coastline=True, xlim=xlim, ylim=ylim, projection=projection)
             )
-        title = f'prior emissions ({emis_month}, scenario: {emis_scenario})'
-        plotcfg = opts.Overlay(title=title)
+        plotcfg = opts.Overlay(title=f'prior emissions ({emis_month}, {emis_dataset})' )
         pprior.opts(plotcfg)
         pdiff = (
             (emissions['glb600x400'].apos - emissions['glb600x400'].apri).hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
             (emissions['eur300x200'].apos - emissions['eur300x200'].apri).hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
             (emissions['gns100x100'].apos - emissions['gns100x100'].apri).hvplot.quadmesh(cmap=cmap, clim=clim, coastline=True, xlim=xlim, ylim=ylim, projection=projection)
             )
-        title = f'posterior-prior emissions ({emis_month}, scenario: {emis_scenario})'
-        plotcfg = opts.Overlay(title=title)
+        plotcfg = opts.Overlay(title=f'posterior-prior emissions ({emis_month}, {emis_dataset})')
         pdiff.opts(plotcfg)
         
         prow = (
@@ -441,7 +436,7 @@ def plot_emission_map(emissions: xr.Dataset, emis_scenario: str):
     return p
     
 
-def plot_target_table(df: DataFrame, emis_scenario: str):
+def plot_target_table(df: DataFrame, emis_dataset: str):
     def get_csv_file():
         # You can re-compute data here if it's dynamic
         fid = io.BytesIO()
@@ -451,7 +446,8 @@ def plot_target_table(df: DataFrame, emis_scenario: str):
 
     nc = len(df.columns)
     formatters = [lambda x: f'{x:.3f}'] * nc
-    # outname = f"targets-{emis_scenario}.csv"
+    # outname = f"targets_{emis_dataset}.csv"
+    # outname = f"targets.csv"
     # button = pn.widgets.FileDownload(callback=get_csv_file, filename=outname, label="Download Data (CSV)", button_type="primary")
     button = pn.widgets.FileDownload(callback=get_csv_file, filename="targets.csv", label="Download Data (CSV)", button_type="primary")
 
@@ -459,7 +455,7 @@ def plot_target_table(df: DataFrame, emis_scenario: str):
     # return self.tgt_table
     #-- MVO-TODO::units [MtCH4] should not be hard-coded here
     logger.debug("...returning target table now")
-    title = f'# Target emission quantities [MtCH4] (scenario: {emis_scenario})'
+    title = f'# Target emission quantities [MtCH4] ({emis_dataset})'
     return pn.Column(pn.pane.Markdown(title), p)
 
 
@@ -512,9 +508,12 @@ def plot_map_sites(df: DataFrame, current_site: str):
 
 
 class PreconfExperimentGUI(pn.viewable.Viewer):
-    emis_dataset = param.FileSelector(doc='Prior emission dataset')
+    # emis_dataset = param.FileSelector(doc='Prior emission dataset')
     run_forward = param.Event(doc='Do a forward run', label='Perform a forward simulation')
     run_inv = param.Event(doc='Do an inversion', label='Perform an inversion')
+    duplicate_scenario_event = param.Event(doc='Create a new scenario based on an existing one.', label='Duplicate scenario')
+    confirm_duplicate_event = param.Event(doc='Click to create the new scenario under that name', label='Create')
+    new_scenario_name = param.String(default='', doc='Name for the new scenario')
     alert = param.String(doc='Generic object for error messages or others ...', default='')
     current_site = param.Selector(doc='Current site to be displayed', default=None)
     sites_list = param.List(default=[], doc='List of observation sites available (for internal use ...)')
@@ -525,8 +524,6 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         label="Resolution of Emission space (Please note that option 'fixed patterns' is not implemented yet)",
     )
     add_category_event = param.Event(doc='Add a new emission category', label='Add category')
-    # show_category_event = param.Event(doc='Show emission categories for scenario',
-    #                                   label='Show categories')
     preconf_scenario = param.Selector(default=None, allow_None=True, doc='Preconfigured emission scenario')
     show_details = param.Boolean(default=True, label="Show details of emssions scenario")
     # Data containers:
@@ -546,32 +543,44 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.gui_settings = gui_settings
 
         # Load the file list
-        self.param.emis_dataset.path = self.gui_settings.emissions.glob_pattern
-        self.emis_dataset = self.param.emis_dataset.objects[0]
+        # self.param.emis_dataset.path = self.gui_settings.emissions.glob_pattern
+        # self.emis_dataset = self.param.emis_dataset.objects[0]
 
-        self.emission_scenario = []
         self.emission_scenario_widgets = pn.Column()
+
+        # Copy the settings since this may get edited (I think it's cleaner to keep 
+        # settings read-only).
+        self.emission_scenarios = copy.deepcopy(self.gui_settings.emissions.scenarios)
 
         # Globally accessible widgets
         self.widgets = {
             'station_selector': pn.widgets.Select.from_param(self.param.current_site),
             'borders': gf.borders(),
             'add_category': pn.widgets.Button.from_param(self.param.add_category_event),
-            # 'show_category': pn.widgets.Button.from_param(self.param.show_category_event),
+            'preconf_scenario': pn.widgets.Select.from_param(self.param.preconf_scenario, name='Preconfigured scenario'),
         }
-        #-- becomes visible only after a forward run or an inversion
         self.widgets['station_selector'].visible = False
+        self.widgets['duplicate_prompt'] = pn.Row(
+            pn.widgets.TextInput.from_param(self.param.new_scenario_name, name='New scenario name'),
+            pn.widgets.Button.from_param(self.param.confirm_duplicate_event),
+            visible=False,
+        )
 
-        self.scenarios = self.gui_settings.emissions.get('scenarios', {})
-        self.param.preconf_scenario.objects = OrderedDict()
-        for k,v in self.scenarios.items():
-            self.param.preconf_scenario.objects[v['title']] = k
+        self.param.preconf_scenario.objects = list(self.emission_scenarios.keys())
+        self._fix_scenario_display_name()
         self.preconf_scenario = 'default'
 
+    def _fix_scenario_display_name(self):
+        """
+        Ensure that the "preconfigured scenarios" menu items reflect the "title"
+        key of the scenarios (from the yaml file), and not the section name.
+        """
+        self.widgets['preconf_scenario'].options = {v['title']: k for k, v in self.emission_scenarios.items()}
+
     def __panel__(self):
-        header_pane = pn.pane.Markdown('# Selecting prior emission scenarios')
+        header_pane = pn.pane.Markdown('# Preconfigured prior emission scenarios')
         scenario_table_pane = pn.pane.Markdown(
-            plot_scenario_table_md(self.gui_settings.emissions.scenarios),
+            plot_scenario_table_md(self.emission_scenarios),
             stylesheets=[preconfsim_stylesheet],
             css_classes=['precomp-right']
         )
@@ -580,10 +589,13 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             header_pane,
             scenario_table_pane,
             pn.Column(
-                pn.widgets.Select.from_param(self.param.preconf_scenario, name='Preconfigured scenario'),
+                pn.Row(
+                    self.widgets['preconf_scenario'],
+                    pn.widgets.Button.from_param(self.param.duplicate_scenario_event),
+                    self.widgets['duplicate_prompt'],
+                ),
                 self.emission_scenario_widgets,
-                self.widgets['add_category'],
-                # self.widgets['show_category']
+                self.widgets['add_category']
             ),
             pn.Row(
                     pn.widgets.Button.from_param(self.param.run_forward),
@@ -634,19 +646,56 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             # logger.debug(msg)
             self.tgt_table = simulation_read_targets(output_path)
 
-    def _scenario_editable(self):
-        cur_scenario = self.scenarios[self.preconf_scenario]
-        is_editable = 'editable' in cur_scenario and cur_scenario['editable']
-        return is_editable
-    
     def _build_emission_category(self, catname: str) -> EmissionSettings:
         return EmissionSettings(
             catname=catname,
             regions=['global', 'regional'],
             path=self.gui_settings.emissions.path,
             remove_callback=self._remove_emission_category,
-            visible=self._scenario_editable(),
+            visible=self.emission_scenarios[self.preconf_scenario].get('editable', False),
         )
+
+    @param.depends('duplicate_scenario_event', watch=True)
+    def _show_duplicate_prompt(self):
+        self.widgets['duplicate_prompt'].visible = True
+
+    @param.depends('confirm_duplicate_event', watch=True)
+    def _duplicate_scenario(self):
+        self.alert = ''
+
+        # Get the value from the "new_scenario_name" widget, once the user has clicked to confirm.
+        new_key = self.new_scenario_name.strip()
+        if self.preconf_scenario is None or new_key == '':
+            return
+
+        # Prevent editing an existing scenario
+        if new_key in self.emission_scenarios:
+            self.alert = f"a scenario named '{new_key}' already exists, pick another name"
+            return
+
+        # Copy the "source scenario"
+        source = self.emission_scenarios[self.preconf_scenario]
+
+        # Create the new one based on it
+        self.emission_scenarios[new_key] = {
+            'title': new_key,
+            'description': f"Duplicated from \"{source.get('title', self.preconf_scenario)}\"",
+            'categories': source.get('categories', {}),
+            'editable': True,
+        }
+
+        # Update the "preconf_scenario" object (re-create it completely in fact)
+        self.param.preconf_scenario.objects = list(self.param.preconf_scenario.objects) + [new_key]
+
+        # Fix the drop-down menu:
+        self._fix_scenario_display_name()
+
+        # Reset "edit" widgets
+        self.new_scenario_name = ''
+        self.widgets['duplicate_prompt'].visible = False
+
+        # Set the current scenario to the scenario we just created
+        self.preconf_scenario = new_key
 
     @param.depends('add_category_event', watch=True)
     def _add_emission_category(self, catname: str = None):
@@ -656,13 +705,6 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.emission_scenario.append(es)
         self.emission_scenario_widgets.append(es.__panel__())
 
-    # @param.depends('show_category_event', watch=True)
-    # def _show_emission_categories(self):
-    #     msg = f"show_category_event triggered"
-    #     logger.debug(msg)
-    #     for ed in self.emission_scenario_widgets:
-    #         ed.visible = True
-
     def _remove_emission_category(self, es: EmissionSettings):
         self.emission_scenario.remove(es)
         self.emission_scenario_widgets.objects = [e.__panel__() for e in self.emission_scenario]
@@ -671,9 +713,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     def _load_scenario(self):
         if self.preconf_scenario is None:
             return
-        self.widgets['add_category'].visible = self._scenario_editable()
-        # self.widgets['show_category'].visible = not self._scenario_editable()
-        scenario = self.gui_settings.emissions.scenarios[self.preconf_scenario]
+        scenario = self.emission_scenarios[self.preconf_scenario]
+        self.widgets['add_category'].visible = scenario.get('editable', False)
         emission_scenario = []
         for catname, spec in scenario.get('categories', {}).items():
             es = self._build_emission_category(catname)
@@ -696,12 +737,11 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             return ''
         if self.current_site is None:
             return ''
-        cur_exp = self.preconf_scenario
         dfc = self.conc.to_dataframe()
         dfc = dfc[dfc.station == self.current_site]
         # msg = f"...@{self.simul_type},cur_exp={cur_exp}: calling plot_conc_timeseries..."
         # logger.debug(msg)
-        return plot_conc_timeseries(dfc, self.simul_type, cur_exp)
+        return plot_conc_timeseries(dfc, self.simul_type, self.preconf_scenario)
 
     @param.depends('stats4conc')
     def conc_stats_table(self):
@@ -751,9 +791,19 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             - 100: something went wrong ...
             - 101: result is not valid json
         """
+        # if self.emis_dataset in self.cache_inv and task == 'inversion':
+        #     return self.cache_inv[self.emis_dataset]
+        # elif self.emis_dataset in self.cache_fwd and task == 'forward':
+        #     return self.cache_fwd[self.emis_dataset]
+
         url = f"{self.gui_settings.backend_url}/forward"
 
-        emis_settings = {
+        msg = f"self.emission_scenario ***{self.emission_scenario}***"
+        logger.debug(msg)
+        
+        settings = {
+            # 'emis': self.emis_dataset,
+            'emissions': {
                 'name': self.preconf_scenario,
                 'start': self.gui_settings.start,
                 'end': self.gui_settings.end,
@@ -769,37 +819,24 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                         )
                     }
                     for es in self.emission_scenario
-                }
-            }
-
-        msg = f"@self.emission_scenario ***{self.emission_scenario}*** yields checksum " \
-            f"-->{dict_checksum(emis_settings)}<--"
-        logger.debug(msg)
-
-        # if self.emis_dataset in self.cache_inv and task == 'inversion':
-        #     return self.cache_inv[self.emis_dataset]
-        # elif self.emis_dataset in self.cache_fwd and task == 'forward':
-        #     return self.cache_fwd[self.emis_dataset]
-      
-        settings = {
-            # 'emis': self.emis_dataset,
-            'emissions': emis_settings,
+                },
+            },
             'task': task,
             'namelist': {
                 'fix': (self.correlation_switch=='fixed patterns')
             }
         }
-        # msg = f"frontend created settings ******************************\n" \
-        #     f"{settings}\n******************************"
-        # logger.debug(msg)
+
+        msg = f"@self.emission_scenario ***{self.emission_scenario}*** yields checksum " \
+            f"-->{dict_checksum(settings['emissions'])}<--"
+        logger.debug(msg)
+
         yaml_conf =  OmegaConf.to_yaml(settings)
-        # msg = f"frontend created yaml config ******************************\n" \
-        #     f"{yaml_conf}\n******************************"
-        # logger.debug(msg)
         try:
             r = requests.post(url, data={'conf':yaml_conf})
         except requests.exceptions.ConnectionError:
             self.alert = f"{task} run failed: could not connect to server -->{url}<--"
+            return
         if not r.ok:
             self.alert = f"{task} run failed: backend returned {r.status_code} " \
                 f"for configuration *****{yaml_conf}***** at {url}. Body: {r.text[:500]}"
@@ -813,7 +850,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.alert = ''
 
         output_path = Path(payload['output'])
-        # msg = f"...@task={task} generated output_path ***{str(output_path)}***"
+        # msg = f"@task={task} for {self.emis_dataset} yields output_path ***{str(output_path)}***"
         # logger.debug(msg)
         if task == 'inversion':
             self.cache_inv[self.emis_dataset] = output_path
@@ -822,13 +859,10 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         return output_path
         
     def _read_concentrations(self, path: Path, task: str):
-        label = self.preconf_scenario
-        # msg = f"@task={task}, emissions_label -->{label}<--"
-        # logger.debug(msg)
         if task == 'inversion':
-            conc = load_inversion_concentrations(path, label)
+            conc = load_inversion_concentrations(path, self.preconf_scenario)
         else:
-            conc = load_forward_concentrations(path, label)
+            conc = load_forward_concentrations(path, self.preconf_scenario)
         # msg = f"...@task={task}, loading concentrations done."
         # logger.debug(msg)
         if self.conc is None:
@@ -839,7 +873,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         # Now update the "sites_list", if needed:
         sites_available = set(conc_update.station.values.reshape(-1))
         update_sites = (sites_available != set(self.sites_list))
-        # msg = f"@task={task}, emissions_label -->{label}<-- " \
+        # msg = f"@task={task}, emissions_label -->{self.prefonf_scenario}<-- " \
         #     f"sites_available -->{sites_available}<--, update_sites={update_sites}"
         # logger.info(msg)
         if update_sites:

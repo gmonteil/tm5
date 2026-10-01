@@ -9,7 +9,10 @@ from tm5.gui.css import *
 
 @lru_cache
 def get_emis_file_list(path: Path, pattern: str) -> List[Path]:
-    # TODO: we need a smarter pattern, maybe including the region name and category. But for now this will do ...
+    if (path / pattern).is_file():
+        return [path / pattern]
+    if not pattern.endswith('*.nc'):
+        pattern += '*.nc'
     return list(Path(path).glob(pattern))
 
 
@@ -30,16 +33,20 @@ class FieldSelector(pn.viewable.Viewer):
     def __init__(self, **params):
         super().__init__(**params)
         self.widgets = dict(
-            file=pn.widgets.Select.from_param(self.param.filename, visible=self.visible),
-            field=pn.widgets.Select.from_param(self.param.fieldname, visible=self.visible),
-            # info=pn.pane.Markdown(width=300,
-            #                       stylesheets=[setup_stylesheet,], css_classes=['setup-tracer']),
-            # title=pn.pane.Markdown(width=300,
-            #                        stylesheets=[setup_stylesheet,], css_classes=['setup-tracer'])
-            info=pn.pane.Markdown(width=300, visible=self.visible),
-            title=pn.pane.Markdown(width=300, visible=self.visible),
+            file=pn.widgets.Select.from_param(self.param.filename),
+            field=pn.widgets.Select.from_param(self.param.fieldname),
+            info=pn.pane.Markdown(width=300),
+            title=pn.pane.Markdown(width=300),
         )
         self.update_desc()
+        self.update_widgets_visibility()
+
+    @param.depends('visible', watch=True)
+    def update_widgets_visibility(self):
+        self.widgets['file'].visible = self.visible
+        self.widgets['field'].visible = (len(self.param.fieldname.objects) > 1) and self.visible
+        self.widgets['info'].visible = self.visible
+        self.widgets['title'].visible = self.visible
 
     def __panel__(self):
         return pn.Column(
@@ -55,47 +62,26 @@ class FieldSelector(pn.viewable.Viewer):
         """
         Update the choices of the "Field" widget.
         """
-        # msg = f"self.path -->{self.path}<-- and self.filename -->{self.filename}<--"
-        # logger.debug(msg)
         if self.filename==None:
             return
-        elif self.filename.endswith('.nc'):
-            ptn = self.filename
-        else:
-            ptn = f'{self.filename}*.nc'
-        available_files = get_emis_file_list(Path(self.path), ptn)
-        # msg = f"...self.filename -->{self.filename}<-- yields avaialable files ***{available_files}***"
-        # logger.debug(msg)
+        available_files = get_emis_file_list(Path(self.path), self.filename)
         if len(available_files) > 0:
             ds = get_emis_dataset(available_files[0])
             self.param.fieldname.objects = [_ for _ in ds.data_vars if _ != 'area']
             self.fieldname = self.param.fieldname.objects[0]
-            self.widgets['field'].visible = (len(self.param.fieldname.objects) > 1) and self.visible
+            self.update_widgets_visibility()
 
     @param.depends('path', 'domain', watch=True)
     def update_file_choices(self):
-        # available_files = get_emis_file_list(self.path, '**/*.nc*')
-        # -- 2025-04-14:: restrict here to the global (default) domain
         available_files = get_emis_file_list(Path(self.path), '*.nc')
-        # msg = f"@path={self.path}, filename={self.filename}, domain={self.domain}: " \
-        #     f"yields available_files ***{available_files}***"
-        # logger.debug(msg)
         self.param.filename.objects = set([f.name.rsplit('_', maxsplit=1)[0] for f in available_files])
-        # if len(available_files) > 0:
         self.filename = self.param.filename.objects[0]
 
     @param.depends('filename', 'fieldname', watch=True)
     def update_field_description(self):
         if self.filename==None:
             return
-        elif self.filename.endswith('.nc'):
-            ptn = f'{self.filename}'
-        else:
-            ptn = f'{self.filename}*.nc*'
-        available_files = get_emis_file_list(Path(self.path), ptn)
-        # msg = f"@path={self.path}, filename={self.filename}, fieldname={self.fieldname}: yields " \
-        #     f"available_files ***{available_files}***"
-        # logger.debug(msg)
+        available_files = get_emis_file_list(Path(self.path), self.filename)
         if len(available_files) > 0:
             ds = get_emis_dataset(available_files[0])
 
@@ -149,26 +135,22 @@ class EmissionSettings(pn.viewable.Viewer):
     def __init__(self, remove_callback: callable, **params):
         super().__init__(**params)
         self.removeme = remove_callback  # method of the parent object that needs to be called when removing the category (see _handle_remove method below)
-        self.emis_reg = FieldSelector(desc='Emissions for the regional domain', domain=self.regions[-1], visible=self.visible)
-        self.emis_glo = FieldSelector(desc='Global emissions', domain=self.regions[0], visible=self.visible)
+        self.emis_reg = FieldSelector(desc='Emissions for the regional domain', domain=self.regions[-1], visible=True)
+        self.emis_glo = FieldSelector(desc='Global emissions', domain=self.regions[0], visible=True)
         self.emis_glo.path = self.path
         self.emis_reg.path = self.path
-        self.pane_glo = pn.Column(self.emis_glo, stylesheets=[setup_stylesheet,], css_classes=['setup-tracer'], visible=self.visible)
+        self.pane_glo = pn.Column(self.emis_glo, stylesheets=[setup_stylesheet,], css_classes=['setup-tracer'])
         self.pane_reg = pn.Column(self.emis_reg, visible=len(self.regions) > 1)
         self.widgets = dict(
-            catname=pn.widgets.TextInput.from_param(self.param.catname, visible=self.visible),
-            remove=pn.widgets.Button.from_param(self.param.remove_event, visible=self.visible),
+            catname=pn.widgets.TextInput.from_param(self.param.catname),
+            remove=pn.widgets.Button.from_param(self.param.remove_event),
             switch=pn.widgets.Switch.from_param(self.param.switch_reg, align='center'),
         )
         self.switch_button = pn.Row(
             self.widgets['switch'],
             pn.pane.Markdown("Use different regional emissions", stylesheets=[setup_stylesheet,], css_classes=['setup-tracer']),
-            visible=(len(self.regions) > 1) and self.visible
         )
-        self.update_visibility_regional_emissions()
-
-    def __panel__(self):
-        return pn.Row(
+        self.layout = pn.Row(
             pn.Column(
                 self.widgets['catname'],
                 self.widgets['remove'],
@@ -182,14 +164,22 @@ class EmissionSettings(pn.viewable.Viewer):
             ),
             stylesheets=[setup_stylesheet,], css_classes=['setup-tracer'],
             margin=(5, 0),
-            visible=self.visible,
         )
+        self.update_visibility_regional_emissions()
+        self.update_visible()
+
+    def __panel__(self):
+        return self.layout
+
+    @param.depends('visible', watch=True)
+    def update_visible(self):
+        self.layout.visible = self.visible
 
     @param.depends('regions', 'switch_reg', watch=True)
     def update_visibility_regional_emissions(self):
         if len(self.regions) > 1 and self.switch_reg:
             self.emis_reg.desc = f"Emissions for region *{self.regions[-1]}*"
-            self.pane_reg.visible = self.visible
+            self.pane_reg.visible = True
         else:
             self.pane_reg.visible = False
 
@@ -210,7 +200,7 @@ class EmissionSettings(pn.viewable.Viewer):
 
     @param.depends('regions', watch=True)
     def update_switch_visibility(self):
-        self.switch_button.visible = (len(self.regions) > 1) and self.visible
+        self.switch_button.visible = len(self.regions) > 1
 
     def copy(self):
         newem = self.__class__(
