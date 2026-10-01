@@ -19,6 +19,9 @@ from types import SimpleNamespace
 import pickle
 import lzma
 from h5py import File
+import argparse
+from typing import Union
+from tqdm import tqdm
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -76,7 +79,6 @@ def set_outname(optionsORdir : Union[str, argparse.Namespace], aname : str, only
 #-- MVO-TODO::should not be hard-coded like this!!!
 #             but for now stick safe with what we have on COSMOS
 #
-emis_path = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/input/ch4/emission-input-tm5/fitic-default_20201001-20211231')
 pathtable_gns1x1 = SimpleNamespace(
     footprint_dir = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir/runs_footprint_with-chemistry/fitic-footprint-ifort-slurm_simustart-20201001'),
     footprint_path = 'footprints_gns100x100_20201001--%Y%m%d',
@@ -890,8 +892,23 @@ def subcmd_prepare_obsjacobian_nopickle(args : ArgumentNamespace) -> None:
     if args.stations!=None:
         station_tag = '--'.join(args.stations)
 
+    tm5_fwd_config = tm5_fwd_path / 'tm5.yaml'
+
+    fwd_conf = OmegaConf.load(tm5_fwd_config)
+    fwd_emisdir = fwd_conf['host'].paths.emissions
+    if not Path(fwd_emisdir).exists():
+        msg = f"emission directory used for the forward simulation not found " \
+            f"on system!! (***{fwd_emisdir}***)"
+        raise RuntimeError(msg)
+    
     # ------------------------------------
     # 1./2. Load observations AND forward simulation
+    #
+    # ATTENTION:
+    # - information is loaded from the reference run,
+    #   which *MUST* done with the exact same setup
+    #   as the footprint simulations, i.e.
+    #   - same observations (location/time)
     #
     msg = f"loading observations and TM5 forward simulation from reference run..."
     logger.info(msg)
@@ -958,7 +975,8 @@ def subcmd_prepare_obsjacobian_nopickle(args : ArgumentNamespace) -> None:
     #
     # outname = f"reference-obstable_with-tm5-fwd_{process_tag}.csv"
     # obstable.to_csv(outname)
-    msg = f"...obstable done."
+    nobsall = len(obstable)
+    msg = f"...obstable done (overall {nobsall} observations)"
     logger.info(msg)
 
     # ------------------------------------
@@ -966,24 +984,35 @@ def subcmd_prepare_obsjacobian_nopickle(args : ArgumentNamespace) -> None:
     #
     cnd_time = obstable['time']<dir_end
     obstable = obstable.loc[cnd_time,:]
+    nobs_act = len(obstable)
+    msg = f"...restricted to {obstime_tag} ({nobs_act} observations remaining"
+    logger.debug(msg)
     outname_tokens = [f'obstable', domain_tag, 'with-tm5-fwd', obstime_tag]
     if args.stations!=None:
         cnd_station = obstable['obsid'].isin(args.stations)
         obstable = obstable.loc[cnd_station,:]
+        nobs_act = len(obstable)
+        msg = f"...restricted to {station_tag} ({nobs_act} observations remaining"
+        logger.debug(msg)
         outname_tokens += [station_tag,]
-    outname = '_'.join(outname_tokens) + f".csv"
-    if args.outdir!=None:
-        outname = args.outdir / outname
-        outname.parent.mkdir(parents=True, exist_ok=True)
-    obstable.to_csv(outname)
     #
-    #--
+    #-- add generic station identifier
+    #   which is similar for flask and  ICOS stations
+    #   (Note: for flask stations the 'obsid' additionally contains
+    #          the observational timepoint, which will be dropped here)
     #
     obsid_values = obstable.loc[:,'obsid'].values
     if len(obsid_values[0].split('_'))==2:
         obstable.loc[:,'obs_stationid'] = obsid_values
     elif len(obsid_values[0].split('_'))==3:
         obstable.loc[:,'obs_stationid'] = ['_'.join(_.split('_')[:2]) for _ in obsid_values]
+    outname = '_'.join(outname_tokens) + f".csv"
+    if args.outdir!=None:
+        outname = args.outdir / outname
+        outname.parent.mkdir(parents=True, exist_ok=True)
+    obstable.to_csv(outname)
+    msg = f"generated ***{str(outname)}***"
+    logger.debug(msg)
     #
     #-- assume coordinates and altitude do not depend on time
     #
@@ -1056,7 +1085,7 @@ def subcmd_prepare_obsjacobian_nopickle(args : ArgumentNamespace) -> None:
                 # time = Timestamp(date) + to_timedelta(inpf['CH4']['time'][:] + 1, unit='hour')  # Here there is a weird extra hour ...
 
                 # Construct a DataFrame with mix, obsid and time
-                # MVO: have region already above, can drop here
+                # MVO: have region already inserted further above, can drop here
                 # df = DataFrame({'time': time, 'obsid': obsid, 'index': idi, 'region': reg}).set_index('index')
                 df = DataFrame({'time': time, 'obsid': obsid, 'index': idi,}).set_index('index')
                 df.loc[ido, 'iniconc'] = mix
@@ -1069,7 +1098,7 @@ def subcmd_prepare_obsjacobian_nopickle(args : ArgumentNamespace) -> None:
     logger.debug(msg)
 
     # ------------------------------------
-    # 4. merge Load initial condition
+    # 3b. concat loaded initial condition
     #
     tm5_df = concat(tm5_df)
     outname_tokens = [f'iniconc', domain_tag, obstime_tag]
@@ -1080,7 +1109,11 @@ def subcmd_prepare_obsjacobian_nopickle(args : ArgumentNamespace) -> None:
         outname = args.outdir / outname
         outname.parent.mkdir(parents=True, exist_ok=True)
     tm5_df.to_csv(outname)
+    msg = f"generated ***{str(outname)}***"
+    logger.debug(msg)
 
+    # ------------------------------------
+    # 4. merge obstable and initial concentrations
     #
     obstable = obstable.merge(tm5_df, on=['time', 'obsid'])
 
@@ -1137,8 +1170,554 @@ def subcmd_prepare_obsjacobian_nopickle(args : ArgumentNamespace) -> None:
             lat_1D = lat_reg
         else:
             lat_1D= np.hstack((lat_1D,lat_reg))
-#
-    ############################## E N D
+    #
+    msg = f"1D grid vector with ng={ng} for -->{fitic_regions}<--"
+    logger.info(msg)
+    ##################################################
+    #
+    #--       c o l l e c t   f o o t p r i n t s   f o r   J a c o b i a n
+    #
+    msg = f"start preparation of obs-Jacobian for nobs/nemisday/ng={nobs}/{nemisday}/{ng}..."
+    logger.info(msg)
+
+    missval = -99999.0
+    obs_jacobian_units = 'ppb/(kgCH4/cell/s)' #-- by TM5
+    if domain_tag=='gns1x1':
+        obs_jacobian = np.zeros((nobs,nemisday,ng))
+        footp_regions = fitic_regions
+    elif domain_tag=='glb6x4':
+        _nlat = fitic_region_table['glb600x400'].grid.nlat
+        _nlon = fitic_region_table['glb600x400'].grid.nlon
+        ng_6x4 = _nlat*_nlon
+        obs_jacobian_6x4 = np.zeros((nobs,nemisday,_nlat,_nlon))
+        footp_regions = ['glb600x400',]
+    iniconc_1D = np.full((nobs,), missval)
+    obsconc_1D = np.full((nobs,), missval)
+    tm5fwd_1D  = np.full((nobs,), missval)
+    obsid_1D = []
+    stationid_1D = []
+    obstime_1D = []
+    iobs = -1
+    for obs_day in obs_dates:
+        cnd_day = obstable.time.dt.date==obs_day
+        obstable_day = obstable.loc[cnd_day,:].sort_values('obsid')
+        nobs_day = len(obstable_day)
+        # print(f"@{obs_day}, nobs={nobs_day}")
+        for obs in obstable_day.itertuples():
+            iobs += 1
+            iniconc_1D[iobs] = obs.iniconc
+            obsconc_1D[iobs] = obs.mixing_ratio
+            tm5fwd_1D[iobs]  = obs.tm5_fwd
+            obstime_1D.append(obs.time)
+            obsid_1D.append(obs.obsid)
+            stationid_1D.append(obs.obs_stationid)
+            #
+            #- now the footprints
+            #
+            curdir_date = obs.time.date() + Timedelta(days=1)
+            fppath = footprint_dir / curdir_date.strftime(footprint_path) / 'adjemis'
+            #-- load footprints in loop over emission days
+            for idate, date in enumerate(tqdm(date_range(emis_start, obs.time, freq='D'))):
+                if domain_tag=='glb6x4':
+                    region = 'glb600x400'
+                    region_info = fitic_region_table[region]
+                    _nlat = region_info.grid.nlat
+                    _nlon = region_info.grid.nlon
+                    cur_footp = np.zeros((_nlat,_nlon))
+                    fpfile = fppath / f'adjemis.{region}.{date:%Y%m%d}.nc'
+                    fp = xr.open_dataset(fpfile)
+                    tracers = fp.tracer.str.strip().str.decode('utf8')
+                    trindex = np.where(tracers == obs.obsid)[0]
+                    if len(trindex) > 0:
+                        ilats = fp.ilat.values[fp.itrac.values == trindex]
+                        ilons = fp.ilon.values[fp.itrac.values == trindex]
+                        values = fp['values'].values[fp.itrac.values == trindex]
+                        cur_footp[ilats,ilons] = values
+                    obs_jacobian_6x4[iobs,idate,:] = cur_footp[:]
+                    fpfile.close()
+                elif domain_tag=='gns1x1':
+                    cur_footplist = []
+                    for region in footp_regions:
+                        region_info = fitic_region_table[region]
+                        _nlat = region_info.grid.nlat
+                        _nlon = region_info.grid.nlon
+                        cur_footp = np.zeros((_nlat,_nlon))
+                        fpfile = fppath / f'adjemis.{region}.{date:%Y%m%d}.nc'
+                        fp = xr.open_dataset(fpfile)
+                        tracers = fp.tracer.str.strip().str.decode('utf8')
+                        trindex = np.where(tracers == obs.obsid)[0]
+                        if len(trindex) > 0:
+                            ilats = fp.ilat.values[fp.itrac.values == trindex]
+                            ilons = fp.ilon.values[fp.itrac.values == trindex]
+                            values = fp['values'].values[fp.itrac.values == trindex]
+                            cur_footp[ilats,ilons] = values
+                            #-- restrict to relevant grid-cells
+                            drop_mask = region_info.drop_mask
+                            keep_mask = ~drop_mask
+                            cur_footp = cur_footp[keep_mask]
+                        cur_footplist.append(cur_footp)
+                    obs_jacobian[iobs,idate,:] = np.hstack(cur_footplist)
+            msg = f"...{obs.obsid}@{obs.time} done"
+            logger.debug(msg)
+    #--
+    msg = f"...reading footprint data done."
+    logger.info(msg)
+     
+    ##################################################
+    #
+    #--       r e d i s t r i b u t i o n   o f   f l a s k   J a c o b i a n
+    #
+    if domain_tag=='glb6x4':
+        msg = f"flask footprints computed for {domain_tag} require " \
+            f"spatial re-distribution to FIT-IC grid-cells."
+        logger.info(msg)
+
+        #
+        #--
+        #
+        ojac6x4_da = xr.DataArray(
+            obs_jacobian_6x4,
+            dims=('obs','emisday','lat','lon'),
+            coords={'obs':obsid_1D,
+                    'emisday':emisday_range,
+                    'lat':fitic_region_table['glb600x400'].grid.latc,
+                    'lon':fitic_region_table['glb600x400'].grid.lonc
+                    },
+            attrs = {'units': 'ppb/(kgCH4/cell/s)'}
+            )
+        #
+        #-- MVO-NOTE, 2026-09-28:
+        #   - ran into trouble with memory with ESMF regridder when
+        #     passing the full 6x4 Jacobian.
+        #     Thus we do the re-gridding in bins of emission months.
+        #   - Note, that meanwhile also a more memory efficient regridding
+        #     routine 'ojac_glb6x4_redistribute_to_fitic_lessmem' is invoked.
+        #
+        emis_months = emisday_range.to_series().groupby(emisday_range.to_period("M"))
+        for imon,(month, group) in enumerate(emis_months):
+            #
+            #--
+            #
+            days_month = group.index
+            cur_ojac6x4_da = ojac6x4_da.sel(emisday=days_month)
+            msg = f"...re-distributing for emission month -->{month}<--"
+            logger.debug(msg)
+            #-- re-distribution, yields numpy array (nobs,nemisday,ng)
+            cur_obs_jacobian = ojac_glb6x4_redistribute_to_fitic_lessmem(cur_ojac6x4_da, fitic_region_table)
+            if imon==0:
+                obs_jacobian = cur_obs_jacobian
+            else:
+                obs_jacobian = np.concatenate((obs_jacobian,cur_obs_jacobian), axis=1)
+        # obs_jacobian = ojac_glb6x4_redistribute_to_fitic(ojac6x4_da, fitic_region_table)
+        obs_jacobian_6x4 = obs_jacobian_6x4.reshape((nobs,nemisday,ng_6x4))
+
+    ##################################################
+    #
+    #--       J a c o b i a n   w.r.t.   m o n t h l y   e m i s s i o n s
+    #
+    obs_jacobian_mm = np.zeros((nobs,nemismon,ng))
+    obs_jacobian_mm_units = "ppb/(kgCH4/cell/month)"
+    for imon,emismondayf in enumerate(emismon_range):
+        emismondayl = (emismondayf + Timedelta(days=32)).replace(day=1) - Timedelta(days=1)
+        monday_range = date_range(emismondayf, emismondayl)
+        #-- unit conversion [ppb/kgCH4/cell/s] --> [ppb/kgCH4/cell/month]
+        nsecmon = len(monday_range)*86400
+        cnd_emismon = (emisday_range>=emismondayf)&(emisday_range<=emismondayl)
+        ndpmon = np.count_nonzero(cnd_emismon)
+        nsecmon = ndpmon*86400 #-- 
+        idxs_emismon = np.where(cnd_emismon)[0]
+        jac_dd = obs_jacobian[:,idxs_emismon,:]
+        jac_mm =  jac_dd.sum(axis=1)/nsecmon
+        obs_jacobian_mm[:,imon,:] = jac_mm[:]
+    if domain_tag=='glb6x4':
+        obs_jacobian_6x4_mm = np.zeros((nobs,nemismon,ng_6x4))
+        obs_jacobian_6x4_mm_units = "ppb/(kgCH4/cell/month)"
+        for imon,emismondayf in enumerate(emismon_range):
+            emismondayl = (emismondayf + Timedelta(days=32)).replace(day=1) - Timedelta(days=1)
+            monday_range = date_range(emismondayf, emismondayl)
+            #-- unit conversion [ppb/kgCH4/cell/s] --> [ppb/kgCH4/cell/month]
+            nsecmon = len(monday_range)*86400
+            cnd_emismon = (emisday_range>=emismondayf)&(emisday_range<=emismondayl)
+            ndpmon = np.count_nonzero(cnd_emismon)
+            nsecmon = ndpmon*86400 #-- 
+            idxs_emismon = np.where(cnd_emismon)[0]
+            jac_dd = obs_jacobian_6x4[:,idxs_emismon,:]
+            jac_mm =  jac_dd.sum(axis=1)/nsecmon
+            obs_jacobian_6x4_mm[:,imon,:] = jac_mm[:]
+        
+    ##################################################
+    #
+    #--       o u t p u t   g e n e r a t i o n
+    #
+    outname_tokens = ["fitic-inversion-input", obsid_tag, domain_tag, obsday_tag, emis_tag]
+    outname = '_'.join(outname_tokens) + '.nc'
+    if args.outdir!=None:
+        outname = args.outdir / outname
+        outname.parent.mkdir(parents=True, exist_ok=True)
+    #
+    #-- create dimensions
+    #
+    n_strlen = 32
+    fp = Dataset(outname, 'w')
+    fp.createDimension('ng', ng)
+    if args.add_daily_obsjac:
+        fp.createDimension('nemisday', nemisday)
+    fp.createDimension('nemismon', nemismon)
+    fp.createDimension('nobs', nobs)
+    fp.createDimension('nsta', nsta)
+    fp.createDimension('ntc', 6) #-- year/mon/day/hour/minute/second for calendar type variable(s)
+    fp.createDimension('nstrlen', n_strlen)
+    #
+    #-- longitude
+    #
+    ncvar = fp.createVariable('lon', 'f8', ('ng',),
+                              compression='zlib', complevel=complevel)
+    ncvar.long_name = 'longitude'
+    ncvar.units = 'degrees_east'
+    ncvar.comment = 'references center of grid-cell in related zoom domain'
+    ncvar[:] = lon_1D[:]
+    #
+    #-- latitude
+    #
+    ncvar = fp.createVariable('lat', 'f8', ('ng',),
+                              compression='zlib', complevel=complevel)
+    ncvar.long_name = 'latitude'
+    ncvar.units = 'degrees_north'
+    ncvar.comment = 'references center of grid-cell in related zoom domain'
+    ncvar[:] = lat_1D[:]
+    #
+    #-- region identifier
+    #
+    ncvar = fp.createVariable('region', str, ('ng',))
+    ncvar.long_name = f"emission_region_identifier"
+    ncvar.units = ''
+    ncvar[:] = np.array(regionid_1D[:])
+    #
+    #-- region identifier
+    #
+    ncvar = fp.createVariable('region_ftn', 'S1', ('ng','nstrlen',))
+    ncvar.long_name = f"emission_region_identifier"
+    ncvar.comment = f"region identifer in a format which is suitable " \
+        f"for Fortran based I/O"
+    ncvar.units = ''
+    ncvar[:] = stringtochar(np.array(regionid_1D), n_strlen=n_strlen)
+    #
+    #-- observed concentration
+    #
+    ncvar = fp.createVariable('obs', 'f8', ('nobs',),
+                              compression='zlib', complevel=complevel)
+    ncvar[:] = obsconc_1D[:]
+    ncvar.long_name = f"observed CH4 concentration"
+    ncvar.units = 'ppb'
+    #
+    #-- initial concentration
+    #
+    ncvar = fp.createVariable('iniconc', 'f8', ('nobs',),
+                              compression='zlib', complevel=complevel)
+    ncvar[:] = iniconc_1D[:]
+    ncvar.long_name = f"initial CH4 concentration"
+    ncvar.units = 'ppb'
+    #
+    #-- station identifier (per observation)
+    #
+    stationid_1D = np.array(stationid_1D[:])
+    ncvar = fp.createVariable('station', str, ('nobs',) )
+    ncvar[:] = stationid_1D[:]
+    ncvar.long_name = 'station_identifier'
+    ncvar.units = ''
+    ncvar = fp.createVariable('station_ftn', 'S1', ('nobs','nstrlen',),
+                              compression='zlib', complevel=complevel)
+    ncvar[:] = stringtochar(stationid_1D[:], n_strlen=n_strlen)
+    ncvar.long_name = 'station_identifier'
+    ncvar.comment = f"station identifier in a format which is suitable " \
+        f"for Fortran based I/O"
+    ncvar.units = ''
+    #
+    #-- observational time points
+    #
+    ncvar = fp.createVariable('obstime', str, ('nobs',) )
+    ncvar[:] = np.array([ _.strftime('%Y%m%dT%H%M%S') for _ in obstime_1D ])
+    ncvar.long_name = 'time_of_observation'
+    ncvar.units = ''
+    #
+    #-- observational calendar (to ease integration in Fortran inversion environment)
+    #
+    ncvar = fp.createVariable('obs_calendar', 'i4', ('nobs','ntc'),
+                              compression='zlib', complevel=complevel)
+    for iobs,_obst in enumerate(obstime_1D):
+        ncvar[iobs,:] = [_obst.year,_obst.month,_obst.day,_obst.hour,_obst.minute,_obst.second]
+    ncvar.long_name = 'time_of_observation'
+    ncvar.units = ''
+    ncvar.comment = f"observational time points in a format which is suitable " \
+        f"for Fortran based I/O"
+    #
+    #-- unique list of stations
+    #
+    ncvar = fp.createVariable('station_id', str, ('nsta',))
+    ncvar[:] = np.array(staname_list[:])
+    ncvar.long_name = f"station_identifier_list"
+    ncvar.units = ''
+    ncvar.comment = f"Comprises the overall list of stations. Note, that there may be no observations for a station on certain day(s)."
+    ncvar = fp.createVariable('station_id_ftn', 'S1', ('nsta','nstrlen',),
+                              compression='zlib', complevel=complevel)
+    ncvar[:] = stringtochar(np.array(staname_list[:]), n_strlen=n_strlen)
+    ncvar.long_name = 'station_identifier'
+    ncvar.comment = f"station identifier in a format which is suitable " \
+        f"for Fortran based I/O"
+    ncvar.units = ''
+    #-- longitude
+    ncvar = fp.createVariable('station_lon', 'f8', ('nsta',))
+    ncvar[:] = station_table.loc[:,'lon']
+    ncvar.long_name = 'station_longitude'
+    ncvar.units = 'degrees_east'
+    #-- latitude
+    ncvar = fp.createVariable('station_lat', 'f8', ('nsta',))
+    ncvar[:] = station_table.loc[:,'lat']
+    ncvar.long_name = 'station_longitude'
+    ncvar.units = 'degrees_north'
+    #-- altitude
+    ncvar = fp.createVariable('station_alt', 'f8', ('nsta',))
+    ncvar[:] = station_table.loc[:,'alt']
+    ncvar.long_name = 'station_altitude'
+    ncvar.units = 'm'
+    if args.add_daily_obsjac:
+        #
+        #-- emission day
+        #
+        ncvar = fp.createVariable('emisday', str, ('nemisday',))
+        ncvar.long_name = 'day_of_emission'
+        ncvar.units = ''
+        ncvar[:] = np.array([ _.strftime('%Y%m%d') for _ in emisday_range ])
+        #
+        #-- emission day (as calendar variable)
+        #
+        ncvar = fp.createVariable('emisday_calendar', 'i4', ('nemisday','ntc',),
+                                  compression='zlib', complevel=complevel)
+        for imon,_mon in enumerate(emisday_range):
+            ncvar[imon,:] = [_mon.year,_mon.month,_mon.day,0,0,0]
+        ncvar.long_name = 'emission_month_calendar'
+        ncvar.comment = f"emission month information in a format which is suitable " \
+            f"for Fortran based I/O"
+        ncvar.units = ''
+    #
+    #-- emission month
+    #
+    ncvar = fp.createVariable('emismon', str, ('nemismon',))
+    ncvar.long_name = 'emission_month'
+    ncvar.units = ''
+    ncvar[:] = np.array([ _.strftime('%Y%m%d') for _ in emismon_range ])
+    #
+    #-- emission month (as calendar variable)
+    #
+    ncvar = fp.createVariable('emismon_calendar', 'i4', ('nemismon','ntc',),
+                              compression='zlib', complevel=complevel)
+    for imon,_mon in enumerate(emismon_range):
+        ncvar[imon,:] = [_mon.year,_mon.month,_mon.day,0,0,0]
+    ncvar.long_name = 'emission_month_calendar'
+    ncvar.comment = f"emission month information in a format which is suitable " \
+        f"for Fortran based I/O"
+    ncvar.units = ''
+    #
+    #-- (monthly) observational Jacobian
+    #
+    ncvar = fp.createVariable('obs_jacobian', 'f8', ('nobs','nemismon','ng',),
+                              compression='zlib', complevel=complevel)
+    ncvar[:] = obs_jacobian_mm[:,:,:]
+    ncvar.units = obs_jacobian_mm_units
+    ncvar.comment = f"Jacobian quantifies the sensitivity of concentration at " \
+        f"observed times and locations w.r.t. to monthly total emissions."
+    if args.add_daily_obsjac:
+        #
+        #-- daily observational Jacobian
+        #
+        ncvar = fp.createVariable('obs_jacobian_daily', 'f8', ('nobs','nemisday','ng',),
+                                  compression='zlib', complevel=complevel)
+        ncvar[:] = obs_jacobian[:,:,:]
+        ncvar.units = obs_jacobian_units
+        ncvar.comment = f"Jacobian quantifies the sensitivity of concentration at " \
+            f"observed times and locations w.r.t. to daily emission rates."
+    #
+    #-- global attributes
+    #
+    # fp.obstable_filepath = str(args.obsfile_filepath)
+    # fp.footprint_pickle_filepath = str(args.pickle_filepath)
+    # fp.time_coverage_start = day_first.strftime('%Y-%m-%d')
+    # fp.time_coverage_end   = day_last.strftime('%Y-%m-%d')
+    # fp.time_coverage_resolution = "P1M"
+    try:
+        fp.processing_platform = f"{os.environ['USER']}@{os.environ['HOSTNAME']}"
+    except KeyError:
+        pass
+    fp.history = f"{' '.join(sys.argv)}"
+    fp.date_created = Timestamp.now('UTC').isoformat()
+    #
+    #-- close
+    #
+    fp.close()
+    msg = f"generated file ***{outname}***"
+    logger.info(msg)
+
+    ##################################################
+    #
+    #--       V E R I F I C A T I O N
+    #
+    if args.verify:
+        msg = f"starting verification tests with emissions from ***{str(fwd_emisdir)}***..."
+        logger.info(msg)
+        #
+        #-- emissions on FIT-IC grid-cells
+        #
+        msg = f"fitic_regions -->{fitic_regions}<--"
+        logger.debug(msg)
+        emis_info = tm5emisdir_load_emissions2D(fwd_emisdir, 'ch4emis', emisday_range, fitic_regions, drop=True)
+        emis2D = emis_info.emis2D
+        lonc1D_fitic = emis_info.lonc1D
+        latc1D_fitic = emis_info.latc1D
+        nnan = np.count_nonzero(np.isnan(emis2D))
+        msg = f"...reading emissions done nnan={nnan})"
+        logger.info(msg)
+        emis2D_mm = np.full((nemismon,ng), missval)
+        for imon,emismondayf in enumerate(emismon_range):
+            emismondayl = (emismondayf + Timedelta(days=32)).replace(day=1) - Timedelta(days=1)
+            monday_range = date_range(emismondayf, emismondayl)
+            nsecday = 86400
+            cnd_emismon = (emisday_range>=emismondayf)&(emisday_range<=emismondayl)
+            idxs_emismon = np.where(cnd_emismon)[0]
+            emis2D_mm[imon,:] = np.sum(emis2D[idxs_emismon,:]*nsecday, axis=0)
+
+        if domain_tag=='glb6x4':
+            emis_info = tm5emisdir_load_emissions2D(fwd_emisdir, 'ch4emis', emisday_range, regions, drop=False)
+            emis2D_6x4 = emis_info.emis2D
+            lonc1D_6x4 = emis_info.lonc1D
+            latc1D_6x4 = emis_info.latc1D
+            nnan = np.count_nonzero(np.isnan(emis2D_6x4))
+            msg = f"...reading emissions done nnan={nnan})"
+            logger.info(msg)
+            emis2D_6x4_mm = np.full((nemismon,ng_6x4), missval)
+            for imon,emismondayf in enumerate(emismon_range):
+                emismondayl = (emismondayf + Timedelta(days=32)).replace(day=1) - Timedelta(days=1)
+                monday_range = date_range(emismondayf, emismondayl)
+                nsecday = 86400
+                cnd_emismon = (emisday_range>=emismondayf)&(emisday_range<=emismondayl)
+                idxs_emismon = np.where(cnd_emismon)[0]
+                emis2D_6x4_mm[imon,:] = np.sum(emis2D_6x4[idxs_emismon,:]*nsecday, axis=0)
+                #--- DEBUG
+                msg = f"emissions@imon={imon}: fitic/glb6x4 = " \
+                    f"{emis2D_mm[imon,:].sum()}/{emis2D_6x4_mm[imon,:].sum()}" \
+                    f"[kgCH4/month]"
+                logger.debug(msg)
+        #
+        #-- propagate emissions forward with Jacobian
+        #
+        obs_jac2D = obs_jacobian.reshape((nobs,nemisday*ng))
+        emis1D    = emis2D.reshape(nemisday*ng)
+        linfwd_1D = np.dot(obs_jac2D, emis1D) + iniconc_1D
+        #
+        #-- propagate monthly emissions forward with Jacobian
+        #
+        obs_jac2D_mm = obs_jacobian_mm.reshape((nobs,nemismon*ng))
+        emis1D_mm    = emis2D_mm.reshape(nemismon*ng)
+        linfwd_1D_mm = np.dot(obs_jac2D_mm, emis1D_mm) + iniconc_1D
+        #
+        #-- propagation with raw 6x4 emissions
+        #
+        if domain_tag=='glb6x4':
+            obs_jac2D_6x4 = obs_jacobian_6x4.reshape((nobs,nemisday*ng_6x4))
+            emis1D_6x4    = emis2D_6x4.reshape(nemisday*ng_6x4)
+            linfwd_6x4_1D = np.dot(obs_jac2D_6x4, emis1D_6x4) + iniconc_1D
+            # monthly
+            obs_jac2D_6x4_mm = obs_jacobian_6x4_mm.reshape((nobs,nemismon*ng_6x4))
+            emis1D_6x4_mm    = emis2D_6x4_mm.reshape(nemismon*ng_6x4)
+            linfwd_6x4_1D_mm = np.dot(obs_jac2D_6x4_mm, emis1D_6x4_mm) + iniconc_1D
+        #
+        #--
+        #
+        if domain_tag=='gns1x1':
+            cmp_dict = {'time':obstime_1D,
+                        'station':obsid_1D,
+                        'iniconc':iniconc_1D,
+                        'tm5fwd': tm5fwd_1D,
+                        'linfwd':linfwd_1D,
+                        'linfwd_mm':linfwd_1D_mm,
+                        'diff_lin-full':linfwd_1D-tm5fwd_1D,
+                        'diff_linmm-lin':linfwd_1D_mm-linfwd_1D
+                        }
+        elif domain_tag=='glb6x4':
+             cmp_dict = {'time':obstime_1D,
+                         'station':stationid_1D,
+                         'iniconc':iniconc_1D,
+                         'tm5fwd': tm5fwd_1D,
+                         'linfwd':linfwd_1D,
+                         'linfwd_mm':linfwd_1D_mm,
+                         'diff_lin-full':linfwd_1D-tm5fwd_1D,
+                         'diff_linmm-lin':linfwd_1D_mm-linfwd_1D,
+                         'linfwd_6x4': linfwd_6x4_1D,
+                         'linfwd_mm_6x4': linfwd_6x4_1D_mm,
+                         'diff_lin-full_6x4': linfwd_6x4_1D-tm5fwd_1D,
+                         'diff_linmm-lin_6x4': linfwd_6x4_1D_mm-linfwd_6x4_1D
+                        }
+        dfcmp = DataFrame.from_dict(cmp_dict)
+        for col in ['diff_lin-full','diff_linmm-lin',]:
+            msg = f"{col}: min/mean/max = " \
+                f"{dfcmp[col].min()}/{dfcmp[col].mean()}/{dfcmp[col].max()}"
+            logger.info(msg)
+        outname_tokens = [f"obsjac-forward-comparison", obsid_tag, domain_tag, obsday_tag, emis_tag]
+        outname = '_'.join(outname_tokens) + '.csv'
+        if args.outdir!=None:
+            outname = args.outdir / outname
+            outname.parent.mkdir(parents=True, exist_ok=True)
+        dfcmp.to_csv(outname, index=False)
+        msg = f"generated ***{str(outname)}***"
+        logger.info(msg)
+        #
+        #-- and now plotting
+        #
+        rename_dict = {'linfwd':'linfwd_daily', 'linfwd_mm':'linfwd_monthly',
+                       'diff_lin-full':'linfwd-tm5fwd',
+                       'diff_linmm-lin':'linfwd_monthly-daily'}
+        dfcmp = dfcmp.rename(rename_dict,axis=1)
+        cols_fwd = ['tm5fwd', 'iniconc','linfwd_daily','linfwd_monthly']
+        cols_diff = ['linfwd-tm5fwd','linfwd_monthly-daily']
+        min_fwd = dfcmp.loc[:,cols_fwd].min().min()
+        max_fwd = dfcmp.loc[:,cols_fwd].max().max()
+        min_diff = dfcmp.loc[:,cols_diff].min().min()
+        max_diff = dfcmp.loc[:,cols_diff].max().max()
+        #
+        outname = '_'.join(outname_tokens) + '.html'
+        if args.outdir!=None:
+            outname = args.outdir / outname
+            outname.parent.mkdir(parents=True, exist_ok=True)
+        p = (
+            dfcmp.hvplot(x='time', y=cols_fwd, groupby='station', width=1500, height=600, grid=True, ylim=(min_fwd,max_fwd)) +
+            dfcmp.hvplot(x='time', y=cols_diff, groupby='station', width=1500, height=600, ylim=(min_diff,max_diff))
+        ).cols(1)
+        hv.save(p, outname)
+        msg = f"generated ***{str(outname)}***"
+        logger.info(msg)
+        #>> only forward
+        xoutname_tokens = [f"obsjac-forward", obsid_tag, domain_tag, obsday_tag, emis_tag]
+        outname = '_'.join(xoutname_tokens) + '.html'
+        if args.outdir!=None:
+            outname = args.outdir / outname
+            outname.parent.mkdir(parents=True, exist_ok=True)
+        p = (
+            dfcmp.hvplot(x='time', y=cols_fwd, groupby='station', width=1500, height=600, grid=True)
+        )
+        hv.save(p, outname)
+        msg = f"generated ***{str(outname)}***"
+        logger.info(msg)
+        #>> only differences
+        xoutname_tokens = [f"obsjac-differences", obsid_tag, domain_tag, obsday_tag, emis_tag]
+        outname = '_'.join(xoutname_tokens) + '.html'
+        if args.outdir!=None:
+            outname = args.outdir / outname
+            outname.parent.mkdir(parents=True, exist_ok=True)
+        p = (
+            dfcmp.hvplot(x='time', y=cols_diff, groupby='station', width=1500, height=600, grid=True)
+        )
+        hv.save(p, outname)
+        msg = f"generated ***{str(outname)}***"
+        logger.info(msg)
 
 
 def subcmd_monthly_emissions_for_inversion(args : ArgumentNamespace) -> None:
@@ -1692,12 +2271,12 @@ sparser.add_argument('--obs_lastday',
 sparser.add_argument('--stations',
                      nargs='+',
                      help="""restrict to selected stations.""")
-sparser.add_argument('--emission_dir',
-                     type=Path,
-                     help="""propagate emissions forward (and compare against reference forward results).""")
 sparser.add_argument('--add_daily_obsjac',
                      action='store_true',
                      help="""whether to add the daily observational Jacobian to NetCDF ouput (which is currently not used in the inversion environment).""")
+sparser.add_argument('--verify',
+                     action='store_true',
+                     help="""whether to perform some verification tests of linearised versus full model.""")
 sparser.add_argument('--outdir',
                      type=Path,
                      help="""destination directory for all generated outputs.""")
