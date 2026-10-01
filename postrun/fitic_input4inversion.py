@@ -1203,6 +1203,25 @@ def subcmd_prepare_obsjacobian_nopickle(args : ArgumentNamespace) -> None:
         obstable_day = obstable.loc[cnd_day,:].sort_values('obsid')
         nobs_day = len(obstable_day)
         # print(f"@{obs_day}, nobs={nobs_day}")
+        #
+        #-- pre-load footprint files
+        #   (Note: day of observation does not change with obsid)
+        #
+        curdir_date = obs_day + Timedelta(days=1)
+        fppath = footprint_dir / curdir_date.strftime(footprint_path) / 'adjemis'
+        cur_dayrange = date_range(emis_start, obs_day, freq='D')
+        footp_filecache = {}
+        for region in footp_regions:
+            region_info = fitic_region_table[region]
+            _nlat = region_info.grid.nlat
+            _nlon = region_info.grid.nlon
+            footp_filecache[region] = {'footp_shape':(_nlat,_nlon),
+                                       'footp_files':[]}
+            for idate, date in enumerate(tqdm(cur_dayrange)):
+                fpfile = fppath / f'adjemis.{region}.{date:%Y%m%d}.nc'
+                fp = xr.open_dataset(fpfile)
+                tracers = fp.tracer.str.strip().str.decode('utf8')
+                footp_filecache[region]['footp_files'].append((fp,tracers))
         for obs in obstable_day.itertuples():
             iobs += 1
             iniconc_1D[iobs] = obs.iniconc
@@ -1212,21 +1231,14 @@ def subcmd_prepare_obsjacobian_nopickle(args : ArgumentNamespace) -> None:
             obsid_1D.append(obs.obsid)
             stationid_1D.append(obs.obs_stationid)
             #
-            #- now the footprints
-            #
-            curdir_date = obs.time.date() + Timedelta(days=1)
-            fppath = footprint_dir / curdir_date.strftime(footprint_path) / 'adjemis'
             #-- load footprints in loop over emission days
-            for idate, date in enumerate(tqdm(date_range(emis_start, obs.time, freq='D'))):
+            #
+            # for idate, date in enumerate(tqdm(cur_dayrange)):
+            for idate, date in enumerate(cur_dayrange):
                 if domain_tag=='glb6x4':
-                    region = 'glb600x400'
-                    region_info = fitic_region_table[region]
-                    _nlat = region_info.grid.nlat
-                    _nlon = region_info.grid.nlon
-                    cur_footp = np.zeros((_nlat,_nlon))
-                    fpfile = fppath / f'adjemis.{region}.{date:%Y%m%d}.nc'
-                    fp = xr.open_dataset(fpfile)
-                    tracers = fp.tracer.str.strip().str.decode('utf8')
+                    footp_shape = footp_filecache[region]['footp_shape']
+                    fp,tracers = footp_filecache[region]['footp_files'][idate]
+                    cur_footp = np.zeros(footp_shape)
                     trindex = np.where(tracers == obs.obsid)[0]
                     if len(trindex) > 0:
                         ilats = fp.ilat.values[fp.itrac.values == trindex]
@@ -1234,17 +1246,13 @@ def subcmd_prepare_obsjacobian_nopickle(args : ArgumentNamespace) -> None:
                         values = fp['values'].values[fp.itrac.values == trindex]
                         cur_footp[ilats,ilons] = values
                     obs_jacobian_6x4[iobs,idate,:] = cur_footp[:]
-                    fpfile.close()
                 elif domain_tag=='gns1x1':
                     cur_footplist = []
                     for region in footp_regions:
                         region_info = fitic_region_table[region]
-                        _nlat = region_info.grid.nlat
-                        _nlon = region_info.grid.nlon
-                        cur_footp = np.zeros((_nlat,_nlon))
-                        fpfile = fppath / f'adjemis.{region}.{date:%Y%m%d}.nc'
-                        fp = xr.open_dataset(fpfile)
-                        tracers = fp.tracer.str.strip().str.decode('utf8')
+                        footp_shape = footp_filecache[region]['footp_shape']
+                        fp,tracers = footp_filecache[region]['footp_files'][idate]
+                        cur_footp = np.zeros(footp_shape)
                         trindex = np.where(tracers == obs.obsid)[0]
                         if len(trindex) > 0:
                             ilats = fp.ilat.values[fp.itrac.values == trindex]
@@ -1259,6 +1267,11 @@ def subcmd_prepare_obsjacobian_nopickle(args : ArgumentNamespace) -> None:
                     obs_jacobian[iobs,idate,:] = np.hstack(cur_footplist)
             msg = f"...{obs.obsid}@{obs.time} done"
             logger.debug(msg)
+        #-- clear file cache
+        for reg,reg_cache in footp_filecache.items():
+            for fp_tracers in reg_cache['footp_files']:
+                fp,tracers = fp_tracers
+                fp.close()
     #--
     msg = f"...reading footprint data done."
     logger.info(msg)
