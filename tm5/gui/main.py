@@ -10,6 +10,7 @@ from tm5.gui.widgets import RunSettings
 from tm5.gui.widgets.stations import StationExplorer, StatisticsViewer
 from tm5.gui.widgets.precomputed import PrecomputedInfo
 from tm5.gui.widgets.preconfsim import PreconfExperimentGUI
+from tm5.gui.widgets.upload_form import UploadEmissionForm
 from tm5.gui.css import *
 # from tm5.gui.widgets.emis import EmissionExplorer
 from tm5 import debug
@@ -23,6 +24,7 @@ pn.extension()
 pn.extension('terminal')
 pn.extension('floatpanel')
 pn.extension('tabulator')
+pn.extension('filedropper')
 #-- MVO::would potentially be nicer to differentiate (widget) loading
 #        indicator more individually...
 #   Reference: https://panel.holoviz.org/how_to/param/examples/loading.html
@@ -255,7 +257,7 @@ class FitIC_UI(pn.viewable.Viewer):
 
     @debug.timer
     def __panel__(self):
-        return pn.Tabs(self.preconfigured_tabs, dynamic=True)
+        return pn.Tabs(self.preconfigured_tabs, self.upload_tab, dynamic=True)
     @property
     def setup_tab(self):
         return ("Setup simulation", ExperimentSetupGUI(gui_settings=self.conf))
@@ -278,4 +280,10 @@ class FitIC_UI(pn.viewable.Viewer):
     def preconfigured_tabs(self):
         return (
             "Preconfigured simulations", PreconfExperimentGUI(gui_settings=self.conf)
+        )
+
+    @property
+    def upload_tab(self):
+        return (
+            "Upload emission file", UploadEmissionForm()
         )
