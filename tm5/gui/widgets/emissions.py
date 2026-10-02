@@ -64,6 +64,8 @@ class FieldSelector(pn.viewable.Viewer):
         """
         if self.filename==None:
             return
+        # msg = f"@{self.filename}, self.domain ==>{self.domain}<=="
+        # logger.debug(msg)
         available_files = get_emis_file_list(Path(self.path), self.filename)
         if len(available_files) > 0:
             ds = get_emis_dataset(available_files[0])
@@ -73,7 +75,14 @@ class FieldSelector(pn.viewable.Viewer):
 
     @param.depends('path', 'domain', watch=True)
     def update_file_choices(self):
-        available_files = get_emis_file_list(Path(self.path), '*.nc')
+        # msg = f"self.domain ==>{self.domain}<=="
+        # logger.debug(msg)
+        #-- NOTE::introduced following naming convention to
+        #         differentiate between global and regional emissions:
+        #         global_xxx_yyy_*.nc
+        #         regional_xxx_yyy_*.nc
+        ptn = f"{self.domain}_*.nc"
+        available_files = get_emis_file_list(Path(self.path), ptn)
         self.param.filename.objects = set([f.name.rsplit('_', maxsplit=1)[0] for f in available_files])
         self.filename = self.param.filename.objects[0]
 
@@ -178,7 +187,7 @@ class EmissionSettings(pn.viewable.Viewer):
     @param.depends('regions', 'switch_reg', watch=True)
     def update_visibility_regional_emissions(self):
         if len(self.regions) > 1 and self.switch_reg:
-            self.emis_reg.desc = f"Emissions for region *{self.regions[-1]}*"
+            self.emis_reg.desc = f"*{self.regions[-1]}* emissions"
             self.pane_reg.visible = True
         else:
             self.pane_reg.visible = False
