@@ -340,7 +340,14 @@ def plot_scenario_table_md(scenarios: DictConfig):
     lines = ['| **Scenario** | **Description** |']
     lines.append('| --- | --- |')
     for spec in scenarios.values():
-        lines.append(f"| {spec.get('title', '')} | {spec.get('description', '')} |")
+        title = spec.get('title', '')
+        desc = spec.get('description', '')
+        editable = spec.get('editable',False)
+        if editable:
+            title = f'<div style="background-color: #e8f5e9;">{title}</div>'
+            desc = f'<div style="background-color: #e8f5e9;">{desc}</div>'
+        cur_line = f"| {title} | {desc} |"
+        lines.append(cur_line)
     return '\n'.join(lines)
 
 
@@ -557,7 +564,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             'station_selector': pn.widgets.Select.from_param(self.param.current_site),
             'borders': gf.borders(),
             'add_category': pn.widgets.Button.from_param(self.param.add_category_event),
-            'preconf_scenario': pn.widgets.Select.from_param(self.param.preconf_scenario, name='Preconfigured scenario'),
+            'preconf_scenario': pn.widgets.Select.from_param(self.param.preconf_scenario, name='Select scenario'),
         }
         self.widgets['station_selector'].visible = False
         self.widgets['duplicate_prompt'] = pn.Row(
@@ -578,7 +585,18 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.widgets['preconf_scenario'].options = {v['title']: k for k, v in self.emission_scenarios.items()}
 
     def __panel__(self):
-        header_pane = pn.pane.Markdown('# Preconfigured prior emission scenarios')
+        intro_text =  """
+        # Introduction
+         You are running a fast demo configuration of the Flexible Inversion Tool for Inventory Compilers (FIT-IC) with a focus on central Europe and for January 2021.<br>
+         This demo allows you to select one or more scenarios from a set of methane emission scenarios and perform a forward simulation based on the selected scenario(s) and compare the simulated atmospheric signal(s) to observed methane concentrations or to perform an atmospheric transport inversion using the selected scenario(s) as prior emission field(s).<br>
+         For background see https://fit-ic.inversion-lab.com.
+         """
+        intro_pane = pn.pane.Markdown(
+            intro_text,
+            stylesheets=[preconfsim_stylesheet], 
+            css_classes=['precomp-intro']
+        )
+        header_pane = pn.pane.Markdown('# Selection of prior emission scenarios')
         scenario_table_pane = pn.pane.Markdown(
             plot_scenario_table_md(self.emission_scenarios),
             stylesheets=[preconfsim_stylesheet],
@@ -586,6 +604,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         )
 
         widgets = [
+            intro_pane,
             header_pane,
             scenario_table_pane,
             pn.Column(

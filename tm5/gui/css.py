@@ -38,7 +38,6 @@ precomp_stylesheet = """
   border-radius: 5px;
   border: 1px black solid;
 }
-
 :host(.green) .noUi-handle {
   background-color: green
 }
@@ -63,6 +62,19 @@ preconfsim_stylesheet = """
   border: 1px black solid;
 }
 
+:host(.precomp-intro) {
+  font-size: 1.45em;
+#  background: #D0EAF2;
+  background: #D5EFF7;
+  border-radius: 5px;
+  border: 1px black solid;
+#  max-width: 600px;
+  max-width: 75%;
+  padding: 15px;
+}
+:host(.scenario-highlight) {
+  background-color: #e8f5e9;
+}
 :host(.green) .noUi-handle {
   background-color: green
 }
