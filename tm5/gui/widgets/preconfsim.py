@@ -577,8 +577,10 @@ def plot_map_sites(df: DataFrame, current_site: str):
 
 class PreconfExperimentGUI(pn.viewable.Viewer):
     # emis_dataset = param.FileSelector(doc='Prior emission dataset')
-    run_forward = param.Event(doc='Do a forward run', label='Perform a forward simulation')
-    run_inv = param.Event(doc='Do an inversion', label='Perform an inversion')
+    # run_forward = param.Event(doc='Do a forward run', label='Perform a forward simulation')
+    # run_inv = param.Event(doc='Do an inversion', label='Perform an inversion')
+    run_forward = param.Event(doc='', label='Perform a forward simulation')
+    run_inv = param.Event(doc='', label='Perform an inversion')
     duplicate_scenario_event = param.Event(doc='Create a new scenario based on an existing one.', label='Duplicate scenario')
     confirm_duplicate_event = param.Event(doc='Click to create the new scenario under that name', label='Create')
     new_scenario_name = param.String(default='', doc='Name for the new scenario')
