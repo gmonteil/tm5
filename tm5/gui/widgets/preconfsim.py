@@ -634,8 +634,12 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         }
         self.widgets['station_selector'].visible = False
         self.widgets['duplicate_prompt'] = pn.Row(
-            pn.widgets.TextInput.from_param(self.param.new_scenario_name, name='New scenario name'),
-            pn.widgets.Button.from_param(self.param.confirm_duplicate_event),
+            pn.widgets.TextInput.from_param(self.param.new_scenario_name, name='New scenario name',
+                                            css_classes=["simu-select"],
+                                            stylesheets=simu_stylesheets,),
+            pn.widgets.Button.from_param(self.param.confirm_duplicate_event,
+                                         css_classes=["duplicate-button"],
+                                         stylesheets=simu_stylesheets,),
             visible=False,
         )
 
