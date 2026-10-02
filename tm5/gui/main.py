@@ -34,6 +34,33 @@ pn.extension(loading_spinner='petal', loading_color='black', template='bootstrap
 pn.param.ParamMethod.loading_indicator = True
 
 
+tab_stylesheets=[
+    """
+    /* Tab header */
+    :host(.gui-tabs) .bk-tabs-header {
+    background: #f5f7fa !important;
+    }
+    
+    /* Individual tabs */
+    :host(.gui-tabs) .bk-tab {
+    font-size: 15px;
+    color: #555;
+    }
+    
+    /* Active tab */
+    :host(.gui-tabs) .bk-tab.bk-active {
+/*    color: #2e7d32; */
+/*    color: #e63900; */
+    font-weight: 600;
+    }
+    
+    /* Content area */
+    :host(.gui-tabs) .bk-tabs {
+    background: white;
+    }
+    """,
+]
+
 def fix_env() -> None:
     import sys, os
     from pathlib import Path
@@ -257,7 +284,13 @@ class FitIC_UI(pn.viewable.Viewer):
 
     @debug.timer
     def __panel__(self):
-        return pn.Tabs(self.preconfigured_tabs, self.upload_tab, dynamic=True)
+        return pn.Tabs(
+            self.preconfigured_tabs,
+            self.upload_tab,
+            dynamic=True,
+            css_classes=["gui-tabs",],
+            stylesheets=tab_stylesheets,
+        )
     @property
     def setup_tab(self):
         return ("Setup simulation", ExperimentSetupGUI(gui_settings=self.conf))
@@ -279,7 +312,7 @@ class FitIC_UI(pn.viewable.Viewer):
     @property
     def preconfigured_tabs(self):
         return (
-            "Preconfigured simulations", PreconfExperimentGUI(gui_settings=self.conf)
+            "Run forward simulations and inversions", PreconfExperimentGUI(gui_settings=self.conf)
         )
 
     @property
