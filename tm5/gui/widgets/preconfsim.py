@@ -183,8 +183,8 @@ def conc_statistics(conc: xr.Dataset, label: str) -> DataFrame:
         stats[f"Mean bias ({case_name})"] = []
     for case_name in case_table.keys():
         stats[f"RMSE ({case_name})"] = []
-    for case_name in case_table.keys():
-        stats[f"Correlation coefficient ({case_name})"] = []
+    # for case_name in case_table.keys():
+    #     stats[f"Correlation coefficient ({case_name})"] = []
         
     for sta in stations:
         # msg = f"now @station={sta}"
@@ -213,7 +213,7 @@ def conc_statistics(conc: xr.Dataset, label: str) -> DataFrame:
             #
             stats[f'Mean bias ({case_name})'].append(_meanbias)
             stats[f'RMSE ({case_name})'].append(_rmse)
-            stats[f'Correlation coefficient ({case_name})'].append(_corrcoef)
+            # stats[f'Correlation coefficient ({case_name})'].append(_corrcoef)
     # msg = f"...loop terminated, stats -->{stats}<--"
     # logger.info(msg)
     #
@@ -414,7 +414,8 @@ def plot_scenario_table_md(scenarios: DictConfig):
 
 def plot_emission_map(emissions: xr.Dataset, emis_dataset: str):
     # print("computing emission map")
-    logger.debug("computing emission map")
+    msg = f"computing emission map for emis_dataset -->{emis_dataset}<--"
+    logger.debug(msg)
             
     cmap = 'RdBu_r'
     clim = (-0.005, 0.005)
@@ -441,13 +442,12 @@ def plot_emission_map(emissions: xr.Dataset, emis_dataset: str):
         'gns100x100': (42, 58)
     }
         
-    logger.debug("...returning emissions map now!!!")
-    
     emis_units = emissions['glb600x400'].apos.attrs['units']
     emis_month = emissions['glb600x400'].attrs['emis_month']
 
-    logger.debug(f"emis_units ==>{emis_units}<==")
-
+    msg = f"detected emis_units={emis_units}, emis_month={emis_month}"
+    logger.debug(msg)
+    
     mode = 'guillaume'
     if mode in ['glb100x100', 'eur300x200', 'gns100x100']:
         prow = pn.Row(
@@ -472,28 +472,48 @@ def plot_emission_map(emissions: xr.Dataset, emis_dataset: str):
         title = f"# emssions maps (posterior, prior, posterior-prior) ({emis_dataset})"
         p = pn.Column(pn.pane.Markdown(title), prow)
     elif mode == 'guillaume':
+        #
+        #-- posterior
+        #
         ppost = (
             emissions['glb600x400'].apos.hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
             emissions['eur300x200'].apos.hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
             emissions['gns100x100'].apos.hvplot.quadmesh(cmap=cmap, clim=clim, coastline=True, xlim=xlim, ylim=ylim, projection=projection)
         )
-        plotcfg = opts.Overlay(title=f'posterior emissions ({emis_month}, {emis_dataset})', ylabel=f"[{emis_units}]" )
+        title = f'posterior emissions ({emis_month}, {emis_dataset})'
+        plotcfg = opts.Overlay(title=title, ylabel=f"[{emis_units}]" )
         ppost.opts(plotcfg)
+        msg = f"...hvplot for posterior done"
+        logger.debug(msg)
+        #
+        #-- prior
+        #
         pprior = (
             emissions['glb600x400'].apri.hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
             emissions['eur300x200'].apri.hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
             emissions['gns100x100'].apri.hvplot.quadmesh(cmap=cmap, clim=clim, coastline=True, xlim=xlim, ylim=ylim, projection=projection)
             )
-        plotcfg = opts.Overlay(title=f'prior emissions ({emis_month}, {emis_dataset})' )
+        title = f'prior emissions ({emis_month}, {emis_dataset})'
+        plotcfg = opts.Overlay(title=title)
         pprior.opts(plotcfg)
+        msg = f"...hvplot for prior done"
+        logger.debug(msg)
+        #
+        #-- posterior - prior
+        #
         pdiff = (
             (emissions['glb600x400'].apos - emissions['glb600x400'].apri).hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
             (emissions['eur300x200'].apos - emissions['eur300x200'].apri).hvplot.quadmesh(cmap=cmap, clim=clim, xlim=xlim, ylim=ylim, projection=projection) *
             (emissions['gns100x100'].apos - emissions['gns100x100'].apri).hvplot.quadmesh(cmap=cmap, clim=clim, coastline=True, xlim=xlim, ylim=ylim, projection=projection)
             )
-        plotcfg = opts.Overlay(title=f'posterior-prior emissions ({emis_month}, {emis_dataset})')
+        title = title=f'posterior-prior emissions ({emis_month}, {emis_dataset})'
+        plotcfg = opts.Overlay(title)
         pdiff.opts(plotcfg)
-        
+        msg = f"...hvplot for differences done"
+        logger.debug(msg)
+        #
+        #-- combining hvplots
+        #
         prow = (
             ppost + pprior + pdiff
         )
@@ -585,7 +605,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     confirm_duplicate_event = param.Event(doc='Click to create the new scenario under that name', label='Create')
     new_scenario_name = param.String(default='', doc='Name for the new scenario')
     alert = param.String(doc='Generic object for error messages or others ...', default='')
-    current_site = param.Selector(doc='Current site to be displayed', default=None)
+    # current_site = param.Selector(doc='Current site to be displayed', default=None)
+    current_site = param.Selector(doc='d', default=None)
     sites_list = param.List(default=[], doc='List of observation sites available (for internal use ...)')
     simul_type = param.Selector(objects=['fwd', 'inv'], allow_None=True, default=None)
     correlation_switch = param.Selector(
@@ -624,7 +645,9 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
         # Globally accessible widgets
         self.widgets = {
-            'station_selector': pn.widgets.Select.from_param(self.param.current_site),
+            'station_selector': pn.widgets.Select.from_param(self.param.current_site,
+                                                             css_classes=["simu-select"],
+                                                             stylesheets=simu_stylesheets,),
             'borders': gf.borders(),
             'add_category': pn.widgets.Button.from_param(self.param.add_category_event),
             'select_scenario': pn.widgets.Select.from_param(self.param.select_scenario,
