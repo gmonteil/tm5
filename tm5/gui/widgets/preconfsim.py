@@ -33,6 +33,67 @@ from tm5.gui.widgets.stations import calc_statistics
 from tm5.gui.widgets.widget_utils import experiment_desc, plot_site_info, load_observations_metadata
 
 
+simu_stylesheets = [
+    """
+    :host(.forward-button) .bk-btn {
+    background-color: #cfd9e2 !important;
+    border-color: #cfd9e2 !important;
+    color: white;
+    /*border: none;*/
+    font-size: 1.25em;
+    border: 1px solid #388E3C;
+    border-radius: 6px;
+    }
+    :host(.forward-button) .bk-btn:hover {
+    background-color: #00cc66 !important;
+    border-color: #00cc66 !important;
+    }
+    :host(.inversion-button) .bk-btn {
+    background-color: #cfd9e2 !important;
+    border-color: #cfd9e2 !important;
+    color: white;
+    border: none;
+    font-size: 1.25em;
+    border: 1px solid #388E3C;
+    border-radius: 6px;
+    }
+    :host(.inversion-button) .bk-btn:hover {
+    background-color: #00cc66 !important;
+    border-color: #00cc66 !important;
+    }
+    :host(.duplicate-button) .bk-btn {
+    background-color: #c8d9ea !important;
+    border-color: #c8d9ea !important;
+    color: white;
+    border: none;
+    font-size: 1.25em;
+    border: 1px solid #388E3C;
+    border-radius: 6px;
+    }
+    :host(.duplicate-button) .bk-btn:hover {
+    background-color: #00cc66 !important;
+    border-color: #00cc66 !important;
+    }
+    :host(.simu-select) .bk-input {
+/*    background-color: #f0f8ff;*/
+    color: #222;
+    border: 1px solid #1976d2;
+    border: 1px solid #000000;
+    border-radius: 6px;
+    font-weight: 500;
+    font-size: 1.25em;
+    }
+    :host(.simu-select) .bk-input:focus {
+    border-color: #0d47a1;
+    box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+    }
+    :host(.simu-select) .bk-input-group > label {
+    font-size: 1.25em;
+    font-weight: 600;
+    color: #444;
+    }
+    """]
+
 @debug.timer
 def simulation_read_targets(output_path: Path) -> Tuple[np.ndarray, DataFrame]:
     """
@@ -531,7 +592,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         label="Resolution of Emission space (Please note that option 'fixed patterns' is not implemented yet)",
     )
     add_category_event = param.Event(doc='Add a new emission category', label='Add category')
-    preconf_scenario = param.Selector(default=None, allow_None=True, doc='Preconfigured emission scenario')
+    select_scenario = param.Selector(default=None, allow_None=True, doc='Selection or preparation of emission scenario')
     show_details = param.Boolean(default=True, label="Show details of emssions scenario")
     # Data containers:
     conc        = param.ClassSelector(class_=xr.Dataset)
@@ -564,7 +625,10 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             'station_selector': pn.widgets.Select.from_param(self.param.current_site),
             'borders': gf.borders(),
             'add_category': pn.widgets.Button.from_param(self.param.add_category_event),
-            'preconf_scenario': pn.widgets.Select.from_param(self.param.preconf_scenario, name='Select scenario'),
+            'select_scenario': pn.widgets.Select.from_param(self.param.select_scenario,
+                                                            name='Select scenario',
+                                                            css_classes=["simu-select"],
+                                                            stylesheets=simu_stylesheets,),
         }
         self.widgets['station_selector'].visible = False
         self.widgets['duplicate_prompt'] = pn.Row(
@@ -573,18 +637,21 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             visible=False,
         )
 
-        self.param.preconf_scenario.objects = list(self.emission_scenarios.keys())
+        self.param.select_scenario.objects = list(self.emission_scenarios.keys())
         self._fix_scenario_display_name()
-        self.preconf_scenario = 'default'
+        self.select_scenario = 'default'
 
     def _fix_scenario_display_name(self):
         """
         Ensure that the "preconfigured scenarios" menu items reflect the "title"
         key of the scenarios (from the yaml file), and not the section name.
         """
-        self.widgets['preconf_scenario'].options = {v['title']: k for k, v in self.emission_scenarios.items()}
+        self.widgets['select_scenario'].options = {v['title']: k for k, v in self.emission_scenarios.items()}
 
     def __panel__(self):
+        #
+        #--
+        #
         intro_text =  """
         # Introduction
          You are running a fast demo configuration of the Flexible Inversion Tool for Inventory Compilers (FIT-IC) with a focus on central Europe and for January 2021.<br>
@@ -609,19 +676,36 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             scenario_table_pane,
             pn.Column(
                 pn.Row(
-                    self.widgets['preconf_scenario'],
-                    pn.widgets.Button.from_param(self.param.duplicate_scenario_event),
+                    self.widgets['select_scenario'],
+                    pn.widgets.Button.from_param(self.param.duplicate_scenario_event,
+                                                 css_classes=["duplicate-button"],
+                                                 stylesheets=simu_stylesheets,),
                     self.widgets['duplicate_prompt'],
                 ),
                 self.emission_scenario_widgets,
                 self.widgets['add_category']
             ),
             pn.Row(
-                    pn.widgets.Button.from_param(self.param.run_forward),
+                    pn.widgets.Button.from_param(self.param.run_forward,
+                                                 css_classes=["forward-button"],
+                                                 stylesheets=simu_stylesheets,
+                                                 ),
                     pn.Column(
-                        pn.widgets.Button.from_param(self.param.run_inv),
-                        pn.widgets.Select.from_param(self.param.correlation_switch)
+                        pn.widgets.Button.from_param(self.param.run_inv,
+                                                     css_classes=["inversion-button"],
+                                                     stylesheets=simu_stylesheets),
+                        pn.widgets.Select.from_param(self.param.correlation_switch,
+                                                     css_classes=["simu-select"],
+                                                     stylesheets=simu_stylesheets),
                     ),
+                sizing_mode="stretch_width",
+                styles={
+                    "min-width": "0",
+                    "background": "#f5f7fa",
+                    "border": "1px solid #ddd",
+                    "border-radius": "8px",
+                    "padding": "10px",
+                }
             ),
             self._alert,
             self.widgets['station_selector'],
@@ -660,7 +744,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             self.emissions = load_emissions(output_path)
             # msg = f"...computing conc statistics"
             # logger.debug(msg)
-            self.stats4conc = conc_statistics(self.conc, self.preconf_scenario)
+            self.stats4conc = conc_statistics(self.conc, self.select_scenario)
             # msg = f"...reading simulation targets from directory ***{str(output_path)}***"
             # logger.debug(msg)
             self.tgt_table = simulation_read_targets(output_path)
@@ -671,7 +755,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             regions=['global', 'regional'],
             path=self.gui_settings.emissions.path,
             remove_callback=self._remove_emission_category,
-            visible=self.emission_scenarios[self.preconf_scenario].get('editable', False),
+            visible=self.emission_scenarios[self.select_scenario].get('editable', False),
         )
 
     @param.depends('duplicate_scenario_event', watch=True)
@@ -684,7 +768,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
         # Get the value from the "new_scenario_name" widget, once the user has clicked to confirm.
         new_key = self.new_scenario_name.strip()
-        if self.preconf_scenario is None or new_key == '':
+        if self.select_scenario is None or new_key == '':
             return
 
         # Prevent editing an existing scenario
@@ -693,18 +777,18 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             return
 
         # Copy the "source scenario"
-        source = self.emission_scenarios[self.preconf_scenario]
+        source = self.emission_scenarios[self.select_scenario]
 
         # Create the new one based on it
         self.emission_scenarios[new_key] = {
             'title': new_key,
-            'description': f"Duplicated from \"{source.get('title', self.preconf_scenario)}\"",
+            'description': f"Duplicated from \"{source.get('title', self.select_scenario)}\"",
             'categories': source.get('categories', {}),
             'editable': True,
         }
 
-        # Update the "preconf_scenario" object (re-create it completely in fact)
-        self.param.preconf_scenario.objects = list(self.param.preconf_scenario.objects) + [new_key]
+        # Update the "select_scenario" object (re-create it completely in fact)
+        self.param.select_scenario.objects = list(self.param.select_scenario.objects) + [new_key]
 
         # Fix the drop-down menu:
         self._fix_scenario_display_name()
@@ -714,7 +798,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.widgets['duplicate_prompt'].visible = False
 
         # Set the current scenario to the scenario we just created
-        self.preconf_scenario = new_key
+        self.select_scenario = new_key
 
     @param.depends('add_category_event', watch=True)
     def _add_emission_category(self, catname: str = None):
@@ -728,11 +812,11 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.emission_scenario.remove(es)
         self.emission_scenario_widgets.objects = [e.__panel__() for e in self.emission_scenario]
 
-    @param.depends('preconf_scenario', watch=True)
+    @param.depends('select_scenario', watch=True)
     def _load_scenario(self):
-        if self.preconf_scenario is None:
+        if self.select_scenario is None:
             return
-        scenario = self.emission_scenarios[self.preconf_scenario]
+        scenario = self.emission_scenarios[self.select_scenario]
         self.widgets['add_category'].visible = scenario.get('editable', False)
         emission_scenario = []
         for catname, spec in scenario.get('categories', {}).items():
@@ -760,13 +844,13 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         dfc = dfc[dfc.station == self.current_site]
         # msg = f"...@{self.simul_type},cur_exp={cur_exp}: calling plot_conc_timeseries..."
         # logger.debug(msg)
-        return plot_conc_timeseries(dfc, self.simul_type, self.preconf_scenario)
+        return plot_conc_timeseries(dfc, self.simul_type, self.select_scenario)
 
     @param.depends('stats4conc')
     def conc_stats_table(self):
         if self.stats4conc is None:
             return ''
-        return plot_stats_table(self.stats4conc, self.preconf_scenario)
+        return plot_stats_table(self.stats4conc, self.select_scenario)
 
     @param.depends('emissions')
     def map_emissions(self):
@@ -774,14 +858,14 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             # print("resetting emission map")
             logger.debug("resetting emission map")
             return 
-        return plot_emission_map(self.emissions, self.preconf_scenario)
+        return plot_emission_map(self.emissions, self.select_scenario)
 
     @param.depends('tgt_table')
     def target_table(self):
         if self.tgt_table is None:
             logger.debug("returning None")
             return ''
-        return plot_target_table(self.tgt_table, self.preconf_scenario)
+        return plot_target_table(self.tgt_table, self.select_scenario)
 
     @param.depends('current_site', 'sites_list')
     def map_sites(self):
@@ -823,7 +907,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         settings = {
             # 'emis': self.emis_dataset,
             'emissions': {
-                'name': self.preconf_scenario,
+                'name': self.select_scenario,
                 'start': self.gui_settings.start,
                 'end': self.gui_settings.end,
                 'regions': OmegaConf.to_container(self.gui_settings.regions),
@@ -872,16 +956,16 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         # msg = f"@task={task} for {self.emis_dataset} yields output_path ***{str(output_path)}***"
         # logger.debug(msg)
         if task == 'inversion':
-            self.cache_inv[self.preconf_scenario] = output_path
+            self.cache_inv[self.select_scenario] = output_path
         else:
-            self.cache_fwd[self.preconf_scenario] = output_path
+            self.cache_fwd[self.select_scenario] = output_path
         return output_path
         
     def _read_concentrations(self, path: Path, task: str):
         if task == 'inversion':
-            conc = load_inversion_concentrations(path, self.preconf_scenario)
+            conc = load_inversion_concentrations(path, self.select_scenario)
         else:
-            conc = load_forward_concentrations(path, self.preconf_scenario)
+            conc = load_forward_concentrations(path, self.select_scenario)
         # msg = f"...@task={task}, loading concentrations done."
         # logger.debug(msg)
         if self.conc is None:
