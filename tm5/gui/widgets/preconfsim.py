@@ -853,9 +853,9 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         # msg = f"@task={task} for {self.emis_dataset} yields output_path ***{str(output_path)}***"
         # logger.debug(msg)
         if task == 'inversion':
-            self.cache_inv[self.emis_dataset] = output_path
+            self.cache_inv[self.preconf_scenario] = output_path
         else:
-            self.cache_fwd[self.emis_dataset] = output_path
+            self.cache_fwd[self.preconf_scenario] = output_path
         return output_path
         
     def _read_concentrations(self, path: Path, task: str):
