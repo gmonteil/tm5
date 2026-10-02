@@ -83,7 +83,10 @@ class FieldSelector(pn.viewable.Viewer):
         #         regional_xxx_yyy_*.nc
         ptn = f"{self.domain}_*.nc"
         available_files = get_emis_file_list(Path(self.path), ptn)
-        self.param.filename.objects = set([f.name.rsplit('_', maxsplit=1)[0] for f in available_files])
+        #-- drop '.nc' extension for the selection
+        selectable_files = sorted([_.stem for _ in available_files])
+        # self.param.filename.objects = set([f.name.rsplit('_', maxsplit=1)[0] for f in available_files])
+        self.param.filename.objects = selectable_files
         self.filename = self.param.filename.objects[0]
 
     @param.depends('filename', 'fieldname', watch=True)
