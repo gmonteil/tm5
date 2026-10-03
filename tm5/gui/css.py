@@ -60,7 +60,7 @@ preconfsim_stylesheet = """
   background: #D0EAF2;
   border-radius: 5px;
   border: 1px black solid;
-  max-width: 90%;
+  max-width: 80%;
 }
 
 :host(.precomp-intro) {

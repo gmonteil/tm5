@@ -704,16 +704,17 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             stylesheets=[preconfsim_stylesheet], 
             css_classes=['precomp-intro']
         )
-        header_pane = pn.pane.Markdown('# Selection of prior emission scenario')
+        scenario_table_md = plot_scenario_table_md(self.emission_scenarios)
+        scenario_table_md = f"# Selection of prior emission scenario\n{scenario_table_md}"
         scenario_table_pane = pn.pane.Markdown(
-            plot_scenario_table_md(self.emission_scenarios),
+            scenario_table_md,
             stylesheets=[preconfsim_stylesheet],
             css_classes=['precomp-right']
         )
 
         widgets = [
             intro_pane,
-            header_pane,
+            # header_pane,
             scenario_table_pane,
             pn.Column(
                 pn.Row(
