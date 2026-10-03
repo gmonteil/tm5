@@ -64,7 +64,7 @@ preconfsim_stylesheet = """
 }
 
 :host(.precomp-intro) {
-  font-size: 1.45em;
+  font-size: 1.3em;
 #  background: #D0EAF2;
   background: #D5EFF7;
   border-radius: 5px;

@@ -617,7 +617,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     )
     add_category_event = param.Event(doc='Add a new emission category', label='Add category')
     # hide_categories_event = param.Event(doc='Hide emissione categories', label='Hide categories')
-    select_scenario = param.Selector(default=None, allow_None=True, doc='Selection or preparation of emission scenario')
+    select_scenario = param.Selector(default=None, allow_None=True, doc='Selection or configurationtion of emission scenario')
     show_details = param.Boolean(default=True, label="Show details of emssions scenario")
     # Data containers:
     conc        = param.ClassSelector(class_=xr.Dataset)
@@ -685,19 +685,19 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         #--
         #
         intro_text =  """
-        # Introduction
+        ## Introduction
          You are running a fast demo configuration of the Flexible Inversion Tool for Inventory Compilers (FIT-IC) with a focus on central Europe and for January 2021.<br>
         This demo allows you to select or configure one or more<br>
         <ul>
         <li>preconfigured emission scenarios (marked in orange below)</li>
-        <li>assemble own emission scenarios (marked in green below)</li>
+        <li>modify a preconfigured emission scenario (using the duplicate button)</li>
+        <li>create own emission scenarios (marked in green below)</li>
         <li>upload user defined emission scenarios (by switchting to the 'upload emissions tab')</li>
         </ul>
-        <br>
         and to perform a forward simulation based on the selected scenario(s) and compare the simulated atmospheric signal(s) to observed methane concentrations or to perform an atmospheric transport inversion using the selected scenario(s) as prior emission field(s).
         <br>
         <br>
-         For background see <a href="https://fit-ic.inversion-lab.com">FIT-IC website</a>.
+         For further background on the tool see <a href="https://fit-ic.inversion-lab.com">FIT-IC website</a>.
          """
         intro_pane = pn.pane.Markdown(
             intro_text,
@@ -705,7 +705,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             css_classes=['precomp-intro']
         )
         scenario_table_md = plot_scenario_table_md(self.emission_scenarios)
-        scenario_table_md = f"# Selection of prior emission scenario\n{scenario_table_md}"
+        scenario_table_md = f"## Description of prior emission scenarios\n{scenario_table_md}"
         scenario_table_pane = pn.pane.Markdown(
             scenario_table_md,
             stylesheets=[preconfsim_stylesheet],
@@ -717,29 +717,35 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             # header_pane,
             scenario_table_pane,
             pn.Column(
-                pn.Row(
+                pn.Column(
+                    pn.pane.Markdown("## Select or configure prior emission scenario"),
+                    pn.Row(
+                        
                     self.widgets['select_scenario'],
                     pn.widgets.Button.from_param(self.param.duplicate_scenario_event,
                                                  css_classes=["duplicate-button"],
                                                  stylesheets=simu_stylesheets,),
                     self.widgets['duplicate_prompt'],
-                   sizing_mode="stretch_width",
-                   styles={
-                       "min-width": "0",
-                       "background": "#f5f7fa",
-                       "border": "2px solid #ddd",
-                       "border-radius": "8px",
-                       "max-width": "75%",
-                       "padding": "15px",
-                   }
                 ),
                 self.emission_scenario_widgets,
                 pn.Row(
                     self.widgets['add_category'],
                     # self.widgets['hide_categories'],
                     )
+                ),
+                sizing_mode="stretch_width",
+                styles={
+                    "min-width": "0",
+                    "background": "#f5f7fa",
+                    "border": "2px solid #ddd",
+                    "border-radius": "8px",
+                    "max-width": "75%",
+                    "padding": "15px",
+                }
             ),
-            pn.Row(
+            pn.Column(
+                pn.pane.Markdown("## Running a prior emission scenario"),
+                pn.Row(
                     pn.widgets.Button.from_param(self.param.run_forward,
                                                  css_classes=["forward-button"],
                                                  stylesheets=simu_stylesheets,
@@ -752,6 +758,16 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                                                      css_classes=["simu-select"],
                                                      stylesheets=simu_stylesheets),
                     ),
+                    # sizing_mode="stretch_width",
+                    # styles={
+                    #     "min-width": "0",
+                    #     "background": "#f5f7fa",
+                    #     "border": "2px solid #ddd",
+                    #     "border-radius": "8px",
+                    #     "max-width": "75%",
+                    #     "padding": "15px",
+                    # }
+                ),
                 sizing_mode="stretch_width",
                 styles={
                     "min-width": "0",
@@ -760,7 +776,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                     "border-radius": "8px",
                     "max-width": "75%",
                     "padding": "15px",
-                }
+              }  
             ),
             self._alert,
             self.widgets['station_selector'],
