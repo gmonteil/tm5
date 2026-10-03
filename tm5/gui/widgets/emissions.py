@@ -142,7 +142,7 @@ class EmissionSettings(pn.viewable.Viewer):
     # emis_glo = FieldSelector(desc='Global emissions')
     switch_reg = param.Boolean(doc="Switch alternate source for regional emissions")
     remove_event = param.Event(doc='Remove this emission category', label='Remove category')
-    visible = param.Boolean(default=True, doc='False for anything but the "custom" scenario')
+    visible = param.Boolean(default=True, doc='False for preconfigured emission scenarios')
 
     def __init__(self, remove_callback: callable, **params):
         super().__init__(**params)
