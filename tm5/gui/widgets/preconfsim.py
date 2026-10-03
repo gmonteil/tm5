@@ -406,7 +406,8 @@ def plot_scenario_table_md(scenarios: DictConfig):
         editable = spec.get('editable',False)
         if editable:
             title = f'<div style="background-color: #e8f5e9;">{title}</div>'
-            desc = f'<div style="background-color: #e8f5e9;">{desc}</div>'
+        else:
+            title = f'<div style="background-color: #F2D2B8;">{title}</div>'
         cur_line = f"| {title} | {desc} |"
         lines.append(cur_line)
     return '\n'.join(lines)
@@ -615,6 +616,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         label="Resolution of Emission space (Please note that option 'fixed patterns' is not implemented yet)",
     )
     add_category_event = param.Event(doc='Add a new emission category', label='Add category')
+    # hide_categories_event = param.Event(doc='Hide emissione categories', label='Hide categories')
     select_scenario = param.Selector(default=None, allow_None=True, doc='Selection or preparation of emission scenario')
     show_details = param.Boolean(default=True, label="Show details of emssions scenario")
     # Data containers:
@@ -650,6 +652,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                                                              stylesheets=simu_stylesheets,),
             'borders': gf.borders(),
             'add_category': pn.widgets.Button.from_param(self.param.add_category_event),
+            # 'hide_categories': pn.widgets.Button.from_param(self.param.hide_categories_event),
             'select_scenario': pn.widgets.Select.from_param(self.param.select_scenario,
                                                             name='Select scenario',
                                                             css_classes=["simu-select"],
@@ -684,15 +687,24 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         intro_text =  """
         # Introduction
          You are running a fast demo configuration of the Flexible Inversion Tool for Inventory Compilers (FIT-IC) with a focus on central Europe and for January 2021.<br>
-         This demo allows you to select one or more scenarios from a set of methane emission scenarios and perform a forward simulation based on the selected scenario(s) and compare the simulated atmospheric signal(s) to observed methane concentrations or to perform an atmospheric transport inversion using the selected scenario(s) as prior emission field(s).<br>
-         For background see https://fit-ic.inversion-lab.com.
+        This demo allows you to select or configure one or more<br>
+        <ul>
+        <li>preconfigured emission scenarios (marked in orange below)</li>
+        <li>assemble own emission scenarios (marked in green below)</li>
+        <li>upload user defined emission scenarios (by switchting to the 'upload emissions tab')</li>
+        </ul>
+        <br>
+        and to perform a forward simulation based on the selected scenario(s) and compare the simulated atmospheric signal(s) to observed methane concentrations or to perform an atmospheric transport inversion using the selected scenario(s) as prior emission field(s).
+        <br>
+        <br>
+         For background see <a href="https://fit-ic.inversion-lab.com">FIT-IC website</a>.
          """
         intro_pane = pn.pane.Markdown(
             intro_text,
             stylesheets=[preconfsim_stylesheet], 
             css_classes=['precomp-intro']
         )
-        header_pane = pn.pane.Markdown('# Selection of prior emission scenarios')
+        header_pane = pn.pane.Markdown('# Selection of prior emission scenario')
         scenario_table_pane = pn.pane.Markdown(
             plot_scenario_table_md(self.emission_scenarios),
             stylesheets=[preconfsim_stylesheet],
@@ -710,9 +722,21 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                                                  css_classes=["duplicate-button"],
                                                  stylesheets=simu_stylesheets,),
                     self.widgets['duplicate_prompt'],
+                   sizing_mode="stretch_width",
+                   styles={
+                       "min-width": "0",
+                       "background": "#f5f7fa",
+                       "border": "2px solid #ddd",
+                       "border-radius": "8px",
+                       "max-width": "75%",
+                       "padding": "15px",
+                   }
                 ),
                 self.emission_scenario_widgets,
-                self.widgets['add_category']
+                pn.Row(
+                    self.widgets['add_category'],
+                    # self.widgets['hide_categories'],
+                    )
             ),
             pn.Row(
                     pn.widgets.Button.from_param(self.param.run_forward,
@@ -731,9 +755,10 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                 styles={
                     "min-width": "0",
                     "background": "#f5f7fa",
-                    "border": "1px solid #ddd",
+                    "border": "2px solid #ddd",
                     "border-radius": "8px",
-                    "padding": "10px",
+                    "max-width": "75%",
+                    "padding": "15px",
                 }
             ),
             self._alert,
@@ -837,6 +862,12 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.emission_scenario.append(es)
         self.emission_scenario_widgets.append(es.__panel__())
 
+    # @param.depends('hide_categories_event', watch=True)
+    # def _hide_emission_categories(self):
+    #     self.emission_scenario.layout.visible = False
+    #     for e in self.emission_scenario:
+    #         e.__panel__().visible = False
+
     def _remove_emission_category(self, es: EmissionSettings):
         self.emission_scenario.remove(es)
         self.emission_scenario_widgets.objects = [e.__panel__() for e in self.emission_scenario]
@@ -847,6 +878,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             return
         scenario = self.emission_scenarios[self.select_scenario]
         self.widgets['add_category'].visible = scenario.get('editable', False)
+        # self.widgets['hide_categories'].visible = scenario.get('editable', False)
         emission_scenario = []
         for catname, spec in scenario.get('categories', {}).items():
             es = self._build_emission_category(catname)
