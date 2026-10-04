@@ -925,9 +925,10 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         if self.select_scenario is None:
             return
         scenario = self.emission_scenarios[self.select_scenario]
+        editable = scenario.get('editable', False)
         if visible==None: 
-            visible = scenario.get('editable', False)
-        self.widgets['add_category'].visible = visible
+            visible = editable
+        self.widgets['add_category'].visible = editable
         self.widgets['hide_categories'].visible = visible
         self.widgets['show_categories'].visible = not visible
         emission_scenario = []
