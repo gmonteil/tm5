@@ -74,6 +74,19 @@ simu_stylesheets = [
     background-color: #00cc66 !important;
     border-color: #00cc66 !important;
     }
+    :host(.category-button) .bk-btn {
+    background-color: #c8d9ea !important;
+    border-color: #c8d9ea !important;
+    color: white;
+    border: none;
+    font-size: 1.25em;
+    border: 1px solid #388E3C;
+    border-radius: 6px;
+    }
+    :host(.category-button) .bk-btn:hover {
+    background-color: #00cc66 !important;
+    border-color: #00cc66 !important;
+    }
     :host(.simu-select) .bk-input {
 /*    background-color: #f0f8ff;*/
     color: #222;
@@ -616,9 +629,9 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         label="Resolution of Emission space (Please note that option 'fixed patterns' is not implemented yet)",
     )
     add_category_event = param.Event(doc='Add a new emission category', label='Add category')
-    # hide_categories_event = param.Event(doc='Hide emissione categories', label='Hide categories')
+    hide_categories_event = param.Event(doc='Hide emissione categories', label='Hide categories')
+    show_categories_event = param.Event(doc='Show emissione categories', label='Show categories')
     select_scenario = param.Selector(default=None, allow_None=True, doc='Selection or configurationtion of emission scenario')
-    show_details = param.Boolean(default=True, label="Show details of emssions scenario")
     # Data containers:
     conc        = param.ClassSelector(class_=xr.Dataset)
     stats4conc  = param.DataFrame()
@@ -652,7 +665,12 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                                                              stylesheets=simu_stylesheets,),
             'borders': gf.borders(),
             'add_category': pn.widgets.Button.from_param(self.param.add_category_event),
-            # 'hide_categories': pn.widgets.Button.from_param(self.param.hide_categories_event),
+            'hide_categories': pn.widgets.Button.from_param(self.param.hide_categories_event,
+                                                            css_classes=["category-button"],
+                                                            stylesheets=simu_stylesheets,),
+            'show_categories': pn.widgets.Button.from_param(self.param.show_categories_event,
+                                                            css_classes=["category-button"],
+                                                            stylesheets=simu_stylesheets,),
             'select_scenario': pn.widgets.Select.from_param(self.param.select_scenario,
                                                             name='Select scenario',
                                                             css_classes=["simu-select"],
@@ -732,7 +750,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                 self.emission_scenario_widgets,
                 pn.Row(
                     self.widgets['add_category'],
-                    # self.widgets['hide_categories'],
+                    self.widgets['hide_categories'],
+                    self.widgets['show_categories'],
                     )
                 ),
                 sizing_mode="stretch_width",
@@ -822,13 +841,15 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             # logger.debug(msg)
             self.tgt_table = simulation_read_targets(output_path)
 
-    def _build_emission_category(self, catname: str) -> EmissionSettings:
+    def _build_emission_category(self, catname: str, visible : bool|None = None) -> EmissionSettings:
+        if visible==None:
+            visible = self.emission_scenarios[self.select_scenario].get('editable', False)
         return EmissionSettings(
             catname=catname,
             regions=['global', 'regional'],
             path=self.gui_settings.emissions.path,
             remove_callback=self._remove_emission_category,
-            visible=self.emission_scenarios[self.select_scenario].get('editable', False),
+            visible=visible,
         )
 
     @param.depends('duplicate_scenario_event', watch=True)
@@ -870,6 +891,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.new_scenario_name = ''
         self.widgets['duplicate_prompt'].visible = False
 
+        #
+        self.widgets['show_categories'].visible = False
         # Set the current scenario to the scenario we just created
         self.select_scenario = new_key
 
@@ -881,26 +904,35 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.emission_scenario.append(es)
         self.emission_scenario_widgets.append(es.__panel__())
 
-    # @param.depends('hide_categories_event', watch=True)
-    # def _hide_emission_categories(self):
-    #     self.emission_scenario.layout.visible = False
-    #     for e in self.emission_scenario:
-    #         e.__panel__().visible = False
+    @param.depends('hide_categories_event', watch=True)
+    def _hide_emission_categories(self):
+        self._load_scenario(visible=False)
+        self.widgets['show_categories'].visible = True
+        self.widgets['hide_categories'].visible = False
+
+    @param.depends('show_categories_event', watch=True)
+    def _show_emission_categories(self):
+        self._load_scenario(visible=True)
+        self.widgets['show_categories'].visible = False
+        self.widgets['hide_categories'].visible = True
 
     def _remove_emission_category(self, es: EmissionSettings):
         self.emission_scenario.remove(es)
         self.emission_scenario_widgets.objects = [e.__panel__() for e in self.emission_scenario]
 
     @param.depends('select_scenario', watch=True)
-    def _load_scenario(self):
+    def _load_scenario(self, visible : bool|None = None):
         if self.select_scenario is None:
             return
         scenario = self.emission_scenarios[self.select_scenario]
-        self.widgets['add_category'].visible = scenario.get('editable', False)
-        # self.widgets['hide_categories'].visible = scenario.get('editable', False)
+        if visible==None: 
+            visible = scenario.get('editable', False)
+        self.widgets['add_category'].visible = visible
+        self.widgets['hide_categories'].visible = visible
+        self.widgets['show_categories'].visible = not visible
         emission_scenario = []
         for catname, spec in scenario.get('categories', {}).items():
-            es = self._build_emission_category(catname)
+            es = self._build_emission_category(catname, visible=visible)
             es.set_category(spec)
             emission_scenario.append(es)
         self.emission_scenario = emission_scenario
