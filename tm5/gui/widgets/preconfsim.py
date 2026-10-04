@@ -681,21 +681,23 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.widgets['select_scenario'].options = {v['title']: k for k, v in self.emission_scenarios.items()}
 
     def __panel__(self):
-        #
-        #--
+        #        #--
         #
         intro_text =  """
         ## Introduction
          You are running a fast demo configuration of the Flexible Inversion Tool for Inventory Compilers (FIT-IC) with a focus on central Europe and for January 2021.<br>
-        This demo allows you to select or configure one or more<br>
+        This demo allows you<br>
         <ul>
-        <li>preconfigured emission scenarios (marked in orange below)</li>
-        <li>modify a preconfigured emission scenario (using the duplicate button)</li>
-        <li>create own emission scenarios (marked in green below)</li>
-        <li>upload user defined emission scenarios (by switchting to the 'upload emissions tab')</li>
+        <li>to select preconfigured emission scenarios (marked in orange below)</li>
+        <li>to modify a preconfigured emission scenario (using the duplicate button)</li>
+        <li>to create own emission scenarios starting from scratch or from FIT-IC default (marked in green below)</li>
+        <li>to upload a prepared user defined emission scenario (by switchting to the 'upload emissions tab')</li>
         </ul>
-        and to perform a forward simulation based on the selected scenario(s) and compare the simulated atmospheric signal(s) to observed methane concentrations or to perform an atmospheric transport inversion using the selected scenario(s) as prior emission field(s).
-        <br>
+        and to perform
+        <ul>
+        <li>a forward simulation based on the selected scenario(s) and compare the simulated atmospheric signal(s) to observed methane concentrations</li>
+        <li>perform an atmospheric transport inversion using the selected scenario as prior emission field.</li>
+        </ul>
         <br>
          For further background on the tool see <a href="https://fit-ic.inversion-lab.com">FIT-IC website</a>.
          """
