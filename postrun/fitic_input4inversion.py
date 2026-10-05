@@ -44,6 +44,7 @@ from tm5.fitic import get_fitic_region_table
 from tm5.fitic import ojac_glb6x4_redistribute_to_fitic
 from tm5.fitic import ojac_glb6x4_redistribute_to_fitic_lessmem
 
+
 def set_outname(optionsORdir : Union[str, argparse.Namespace], aname : str, only_dir=False):
     """Function to assemble name of an output file according to a suggested name
     and settings made on command line.
@@ -865,15 +866,22 @@ def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None:
 def subcmd_prepare_obsjacobian_nopickle(args : ArgumentNamespace) -> None: 
     """
     """
-    complevel = args.__dict__.get('complevel',4)
-    #--
+    #
+    #-- arguments
+    #
     mode = args.mode
     obs_lastday = args.obs_lastday
+    complevel = args.__dict__.get('complevel',4)
+    #
     #-- fixed settings
+    #
     simu_start = Timestamp(2020, 10, 1) #-- TOD::should not be hard-coded here
     obs_firstday = Timestamp(2021,1,1)  #-- TOD::should not be hard-coded here
     dir_end = obs_lastday + Timedelta(days=1)
-    # 
+    #
+    #-- path/file settings currently hardcoded
+    #   (but depend on whether "global flask" or "target domain continuous" Jacobian shall be built)
+    #
     if mode=='gns1x1':
         pathtable = pathtable_gns1x1
         regions = ['glb600x400', 'eur300x200', 'gns100x100',]
@@ -885,22 +893,25 @@ def subcmd_prepare_obsjacobian_nopickle(args : ArgumentNamespace) -> None:
     tm5_fwd_path   = pathtable.tm5_fwd_path
     long_mode = mode.replace('1x1','100x100').replace('6x4','600x400')
     #
+    #
+    #
     domain_tag = args.mode
     time_tag = f"{simu_start.strftime('%Y%m%d')}--{obs_lastday.strftime('%Y%m%d')}"
     obstime_tag = f"{obs_firstday.strftime('%Y%m%d')}--{obs_lastday.strftime('%Y%m%d')}"
     station_tag = None
     if args.stations!=None:
         station_tag = '--'.join(args.stations)
-
+    #
+    #-- determine emissions directory used for the full TM5 forward simulation
+    #
     tm5_fwd_config = tm5_fwd_path / 'tm5.yaml'
-
     fwd_conf = OmegaConf.load(tm5_fwd_config)
     fwd_emisdir = fwd_conf['host'].paths.emissions
     if not Path(fwd_emisdir).exists():
         msg = f"emission directory used for the forward simulation not found " \
             f"on system!! (***{fwd_emisdir}***)"
         raise RuntimeError(msg)
-    
+
     # ------------------------------------
     # 1./2. Load observations AND forward simulation
     #
@@ -996,9 +1007,8 @@ def subcmd_prepare_obsjacobian_nopickle(args : ArgumentNamespace) -> None:
         logger.debug(msg)
         outname_tokens += [station_tag,]
     #
-    #-- add generic station identifier
-    #   which is similar for flask and  ICOS stations
-    #   (Note: for flask stations the 'obsid' additionally contains
+    #-- add generic station identifier (similar for flask and ICOS stations)
+    #   (NOTE: for flask stations the 'obsid' additionally contains
     #          the observational timepoint, which will be dropped here)
     #
     obsid_values = obstable.loc[:,'obsid'].values
@@ -1014,7 +1024,8 @@ def subcmd_prepare_obsjacobian_nopickle(args : ArgumentNamespace) -> None:
     msg = f"generated ***{str(outname)}***"
     logger.debug(msg)
     #
-    #-- assume coordinates and altitude do not depend on time
+    #-- build list of stations
+    #   NOTE: assuming coordinates and altitude do not depend on time
     #
     station_table = obstable.sort_values('obs_stationid')[['obs_stationid','time','lon','lat','alt',]].groupby('obs_stationid').first()
     staname_list = list(station_table.index)
@@ -1128,6 +1139,7 @@ def subcmd_prepare_obsjacobian_nopickle(args : ArgumentNamespace) -> None:
     logger.info(f"generated ***{str(outname)}***")
     msg = f"...initial concentrations loaded len(obstable)={len(obstable)}"
     logger.info(msg)
+
     #
     #--
     #
@@ -1147,7 +1159,8 @@ def subcmd_prepare_obsjacobian_nopickle(args : ArgumentNamespace) -> None:
     emismon_range = date_range(emis_start, obs_lastday, freq='MS')
     nemismon = len(emismon_range)
     #
-    #-- load region table ***FIT-IC compliant***
+    #-- load ***FIT-IC compliant*** region table
+    #   TODO: code below should be moved to dedicated container/class!!
     #
     fitic_region_table = get_fitic_region_table()
     fitic_regions = list(fitic_region_table.keys())
@@ -1171,7 +1184,7 @@ def subcmd_prepare_obsjacobian_nopickle(args : ArgumentNamespace) -> None:
         else:
             lat_1D= np.hstack((lat_1D,lat_reg))
     #
-    msg = f"1D grid vector with ng={ng} for -->{fitic_regions}<--"
+    msg = f"...1D grid vector with ng={ng} for FIT-IC domains-->{fitic_regions}<--"
     logger.info(msg)
     ##################################################
     #
