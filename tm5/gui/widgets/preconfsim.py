@@ -648,10 +648,6 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self._message = ''
         self.gui_settings = gui_settings
 
-        # Load the file list
-        # self.param.emis_dataset.path = self.gui_settings.emissions.glob_pattern
-        # self.emis_dataset = self.param.emis_dataset.objects[0]
-
         self.emission_scenario_widgets = pn.Column()
 
         # Copy the settings since this may get edited (I think it's cleaner to keep 
@@ -664,7 +660,9 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                                                              css_classes=["simu-select"],
                                                              stylesheets=simu_stylesheets,),
             'borders': gf.borders(),
-            'add_category': pn.widgets.Button.from_param(self.param.add_category_event),
+            'add_category': pn.widgets.Button.from_param(self.param.add_category_event,
+                                                         css_classes=["category-button"],
+                                                         stylesheets=simu_stylesheets,),
             'hide_categories': pn.widgets.Button.from_param(self.param.hide_categories_event,
                                                             css_classes=["category-button"],
                                                             stylesheets=simu_stylesheets,),
@@ -731,10 +729,36 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             stylesheets=[preconfsim_stylesheet],
             css_classes=['precomp-right']
         )
-
+        #
+        #-- spinners indicating the forward/inversion are (still) active
+        #
+        self.spinner = pn.indicators.LoadingSpinner(
+            value=False,
+            width=25,
+            height=25,
+        )
+        self.running_msg = f"...running operation on backend"
+        self.running_pane = pn.Row(
+            self.spinner,
+            pn.Spacer(width=10),
+            pn.pane.Markdown(f"{self.running_msg}",
+                             styles={
+                                 "font-size": "1.25em",
+                             }),
+            align="center",
+            styles={
+                "min-width": "0",
+                "background": "#FCC6BB",
+                "border": "1px solid #ddd",
+                "border-radius": "8px",
+            }
+        )
+        self.running_pane.visible = False
+        #
+        #--
+        #
         widgets = [
             intro_pane,
-            # header_pane,
             scenario_table_pane,
             pn.Column(
                 pn.Column(
@@ -765,30 +789,24 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                 }
             ),
             pn.Column(
-                pn.pane.Markdown("## Running a prior emission scenario"),
-                pn.Row(
-                    pn.widgets.Button.from_param(self.param.run_forward,
-                                                 css_classes=["forward-button"],
-                                                 stylesheets=simu_stylesheets,
-                                                 ),
-                    pn.Column(
-                        pn.widgets.Button.from_param(self.param.run_inv,
-                                                     css_classes=["inversion-button"],
-                                                     stylesheets=simu_stylesheets),
-                        pn.widgets.Select.from_param(self.param.correlation_switch,
-                                                     css_classes=["simu-select"],
-                                                     stylesheets=simu_stylesheets),
+                pn.Column(
+                    pn.pane.Markdown("## Running a prior emission scenario"),
+                    pn.Row(
+                        pn.widgets.Button.from_param(self.param.run_forward,
+                                                     css_classes=["forward-button"],
+                                                     stylesheets=simu_stylesheets,
+                                                     ),
+                        pn.Column(
+                            pn.widgets.Button.from_param(self.param.run_inv,
+                                                         css_classes=["inversion-button"],
+                                                         stylesheets=simu_stylesheets),
+                            pn.widgets.Select.from_param(self.param.correlation_switch,
+                                                         css_classes=["simu-select"],
+                                                         stylesheets=simu_stylesheets),
+                        ),
                     ),
-                    # sizing_mode="stretch_width",
-                    # styles={
-                    #     "min-width": "0",
-                    #     "background": "#f5f7fa",
-                    #     "border": "2px solid #ddd",
-                    #     "border-radius": "8px",
-                    #     "max-width": "75%",
-                    #     "padding": "15px",
-                    # }
                 ),
+                self.running_pane,
                 sizing_mode="stretch_width",
                 styles={
                     "min-width": "0",
@@ -797,7 +815,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                     "border-radius": "8px",
                     "max-width": "75%",
                     "padding": "15px",
-              }  
+                }
             ),
             self._alert,
             self.widgets['station_selector'],
@@ -1048,6 +1066,12 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         logger.debug(msg)
 
         yaml_conf =  OmegaConf.to_yaml(settings)
+        #
+        #-- start processing, activate spinner
+        #
+        # self.running_msg = f"...running {task} on backend"
+        self.running_pane.visible = True
+        self.spinner.value = True
         try:
             r = requests.post(url, data={'conf':yaml_conf})
         except requests.exceptions.ConnectionError:
@@ -1062,7 +1086,12 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         except requests.exceptions.JSONDecodeError:
             self.alert = f"{task} run failed: backend returned non-JSON for " \
                 f"configuration *****{yaml_conf}**** at {url}. Body: {r.text[:500]}"
-            return
+            retur
+        #-- processing done, disable spinner
+        self.running_pane.visible = False
+        self.spinner.value = False
+        self.running_msg = None
+        #-- reset alert
         self.alert = ''
 
         output_path = Path(payload['output'])
