@@ -30,14 +30,17 @@ class FieldSelector(pn.viewable.Viewer):
     domain = param.String(doc="title of the section")
     visible = param.Boolean(default=True, doc='False for anything but the "custom" scenario')
 
-    def __init__(self, **params):
+    def __init__(self, editable : bool = False, **params):
         super().__init__(**params)
+        self.editable = editable
         self.widgets = dict(
             file=pn.widgets.Select.from_param(self.param.filename),
             field=pn.widgets.Select.from_param(self.param.fieldname),
             info=pn.pane.Markdown(width=300),
             title=pn.pane.Markdown(width=300),
         )
+        self.widgets['file'].disabled = not editable
+        self.widgets['field'].disabled = not editable
         self.update_desc()
         self.update_widgets_visibility()
 
@@ -83,9 +86,12 @@ class FieldSelector(pn.viewable.Viewer):
         #         regional_xxx_yyy_*.nc
         ptn = f"{self.domain}_*.nc"
         available_files = get_emis_file_list(Path(self.path), ptn)
+        msg = f"available_files ==>{available_files}<=="
+        logger.debug(msg)
         #-- drop '.nc' extension for the selection
         selectable_files = sorted([_.stem for _ in available_files])
-        # self.param.filename.objects = set([f.name.rsplit('_', maxsplit=1)[0] for f in available_files])
+        msg = f"selectable_files ==>{selectable_files}<=="
+        logger.debug(msg)
         self.param.filename.objects = selectable_files
         self.filename = self.param.filename.objects[0]
 
@@ -144,11 +150,12 @@ class EmissionSettings(pn.viewable.Viewer):
     remove_event = param.Event(doc='Remove this emission category', label='Remove category')
     visible = param.Boolean(default=True, doc='False for preconfigured emission scenarios')
 
-    def __init__(self, remove_callback: callable, **params):
+    def __init__(self, remove_callback: callable, editable : bool = False, **params):
         super().__init__(**params)
         self.removeme = remove_callback  # method of the parent object that needs to be called when removing the category (see _handle_remove method below)
-        self.emis_reg = FieldSelector(desc='Emissions for the regional domain', domain=self.regions[-1], visible=True)
-        self.emis_glo = FieldSelector(desc='Global emissions', domain=self.regions[0], visible=True)
+        self.editable = editable
+        self.emis_reg = FieldSelector(desc='Emissions for the regional domain', domain=self.regions[-1], visible=True, editable=self.editable)
+        self.emis_glo = FieldSelector(desc='Global emissions', domain=self.regions[0], visible=True, editable=self.editable)
         self.emis_glo.path = self.path
         self.emis_reg.path = self.path
         self.pane_glo = pn.Column(self.emis_glo, stylesheets=[setup_stylesheet,], css_classes=['setup-tracer'])
@@ -158,6 +165,7 @@ class EmissionSettings(pn.viewable.Viewer):
             remove=pn.widgets.Button.from_param(self.param.remove_event),
             switch=pn.widgets.Switch.from_param(self.param.switch_reg, align='center'),
         )
+        
         self.switch_button = pn.Row(
             self.widgets['switch'],
             pn.pane.Markdown("Use different regional emissions", stylesheets=[setup_stylesheet,], css_classes=['setup-tracer']),
@@ -177,6 +185,12 @@ class EmissionSettings(pn.viewable.Viewer):
             stylesheets=[setup_stylesheet,], css_classes=['setup-tracer'],
             margin=(5, 0),
         )
+        self.widgets['catname'].editable = False
+        self.widgets['remove'].editable = False
+        self.widgets['switch'].editable = False
+        self.widgets['catname'].disabled = not editable
+        self.widgets['remove'].disabled = not editable
+        self.widgets['switch'].disabled = not editable
         self.update_visibility_regional_emissions()
         self.update_visible()
 

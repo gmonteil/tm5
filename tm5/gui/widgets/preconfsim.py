@@ -860,14 +860,16 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             self.tgt_table = simulation_read_targets(output_path)
 
     def _build_emission_category(self, catname: str, visible : bool|None = None) -> EmissionSettings:
+        editable = self.emission_scenarios[self.select_scenario].get('editable', False)
         if visible==None:
-            visible = self.emission_scenarios[self.select_scenario].get('editable', False)
+            visible = editable
         return EmissionSettings(
             catname=catname,
             regions=['global', 'regional'],
             path=self.gui_settings.emissions.path,
             remove_callback=self._remove_emission_category,
             visible=visible,
+            editable=editable
         )
 
     @param.depends('duplicate_scenario_event', watch=True)
