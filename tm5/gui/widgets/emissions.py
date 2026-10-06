@@ -86,12 +86,12 @@ class FieldSelector(pn.viewable.Viewer):
         #         regional_xxx_yyy_*.nc
         ptn = f"{self.domain}_*.nc"
         available_files = get_emis_file_list(Path(self.path), ptn)
-        msg = f"available_files ==>{available_files}<=="
-        logger.debug(msg)
+        # msg = f"available_files ==>{available_files}<=="
+        # logger.debug(msg)
         #-- drop '.nc' extension for the selection
         selectable_files = sorted([_.stem for _ in available_files])
-        msg = f"selectable_files ==>{selectable_files}<=="
-        logger.debug(msg)
+        # msg = f"selectable_files ==>{selectable_files}<=="
+        # logger.debug(msg)
         self.param.filename.objects = selectable_files
         self.filename = self.param.filename.objects[0]
 
