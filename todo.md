@@ -1,27 +1,17 @@
 # Tasks (by order of priority)
 - GUI development steps
-    - [ ] (0) MV to copy the adapted switch between fixed patterns vs full grid into Guillaumes GUI update 
-    - [ ] (1) MV to Guillaumes GUI update with current Fortran version and verify that results with previous GUI version are reproduced
-    - [ ] (2) GM to implement the following change: The light blue boxes that indicate the details of a pre-configured emission scenario are initially not displayed but there is a button "details of emission scenario" that makes these boxes appear
-    - [ ] (3) MV/txk to adapt fortran code such that both the short demo version and the full one year version both rely on the same file for the Jacobian and the observations, the demo version just reads in and uses only the fraction needed to cover Jan 2021 for the obs and the period from Oct 2020 to Jan 2021 for the Jacobian (need to observe CPU time for the demo version, it should remain as quick as it is now)
+    - [ ] (1) GM complete file upload, file to be stored in subdirectory guillaume, in /data/avengers/fit-ic ... emissions etc
+    - [ ] (2) MV/txk to adapt fortran code such that both the short demo version and the full one year version both rely on the same file for the Jacobian and the observations, the demo version just reads in and uses only the fraction needed to cover Jan 2021 for the obs and the period from Oct 2020 to Jan 2021 for the Jacobian (need to observe CPU time for the demo version, it should remain as quick as it is now)
+    - [ ] (3) MV to make this line invisible to the user: "yamlfile='/srv/data/AVENGERS/fit_ic/gui/gui-new_ilabdesk.yml'"
     - [ ] (4) MV to adapt the GUI such that the choice of the configuration is between "Fast version Jan 2021" and "Slower version for full year 2021"
     - [ ] (5) MV/txk to adapt fortran code such that the choice under item (4) is read in and used
-- GUI (setup)
-    - [ ] (1) MV to integrate script into environment that creates the global Jacobian, local for one year requires update of preprocessing software
-    - [ ] (2) GM to include an example GUI element for namelist parameters: "Resolution of Emission space" fixed patters/full grid
-    - [ ] (5) GM to improve performance on emission plots, potentially also seasonal cycles, or bar plot ... 
-    - [ ] (1) GM to "combine the two tabs "setup simulation" and "preconfigured simulation"
 - GUI (analysis)
     - [x partly] Add Chi2 with sigma = sqrt (sigma_obs**2 + sigma_model **2), and sigma model from a crude approximation derived from short scale variability of the obs, or the variability of the meteo (representation error approximation from slopes may also be there ...
     - [ ] (8) GM: Integrate some visualisation of the emission budget in configuration part of the GUI (to allow perform a quick sanity check)
-    - [ ] GM: Add plot or table that indicates relative contribution of each sector to total signal at each site (only if we run sectors separately), this is not urgent, can be added later ...
-- GUI (extension)    
-    - [ ] (re) implement possibility to pass defaults through a YAML file
-    - [ ] implement a few default configurations, add the option to transport emission categories separately (with a warning on performance)
-    - [ ] improve the location and extend the content of the config file  
-    - [ ] extend station explorer so the user can select time series from a list of completed experiments
-    - [ ] implement submitting with same job ID would overwrite the previous job with the same ID, to avoid submitting the same job twice, to save resources (not needed immediately)
-    - [ ] think about permission for co-working on same code base
+    - [ ] (9) GM: to implement that option of making an uploaded emission file public (e.g. only show the user specific subdir in the emissions folder to that very user); maybe we also need to validate the file ourselves before it is allowed to be public
+    - [ ] (10) GM: Add plot or table that indicates relative contribution of each sector to total signal at each site (only if we run sectors separately), this is not urgent, can be added later ...
+- GUI (extension)
+    - [ ] try to extend the current logic that allows us to retrieve results from previous experiments beyond the current session (use checksum of config file)
 - TM5 speedup
     - [ ] GM: speedup reading emissions
     - [ ] GM: 7200 seconds for 7 tracer run was much longer than for the single-tracer run (~4800 seconds) -> probably irrelevant of we use the Jacobian for the forward simulation 
@@ -33,11 +23,9 @@
 - Documentation
     - [ ] properly setup github pages with mkdocs
 - Inversion
-    - [ ] GM: to check whether the adjoint read the proper OH field
-    - [ ] MV: revise python postprocessor of footprints to take a full year long Jacobian as input     
+    - [ ] GM (2): to check whether the adjoint read the proper OH field     
     - [ ] TXK/MV: draft a kind of tutorial guiding the user through one of the experiments
-    - [ ] TXK to exclude spinup from target Jacobian
-    - [ ] postprocessing of the global flask Jacobian such that the sensitivity with respect to the grid cells over the zoom domain is distributed to sensitivities on the zoom grid according to the fraction of each zoom domain grid cell area in the global resolution's grid cell. Like this the emission dimension of the global and zoom domain contributions to the overall Jacobian are the same  
+    - [ ] TXK to exclude spinup from target Jacobian  
             
 # Task ideas / discussion
 - avoid misuse through implementation of "accepted ranges" => *That's essentially built-in the GUI*
