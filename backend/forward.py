@@ -24,7 +24,6 @@ datapath = args.data
 
 # The following constructs the emission file, unless it already exists:
 emis_conf = OmegaConf.load(args.emis_conf)
-emfile = gen_emfile(emis_conf, args.emis_cache_dir)
 
 # Create the run directory and copy the files in it
 # MVO-CHANGED: this is now already done in server.py
@@ -34,6 +33,20 @@ emfile = gen_emfile(emis_conf, args.emis_cache_dir)
 if not outpath.exists():
     msg = f"...expected output directory {str(outpath)} not found on system!"
     raise RuntimeError(msg)
+
+#
+#-- use emission file prepared on frontend (if provided),
+#   otherwise need to run emission preparation on backend
+#
+if 'emission_file' in emis_conf:
+    msg = f"...using emissions file prepared on frontend ***{emis_conf.emission_file}***"
+    logger.debug(msg)
+    emfile = emis_conf.emission_file
+else:
+    msg = f"...start emission file generation on backend"
+    logger.debug(msg)
+    emfile = gen_emfile(emis_conf, args.emis_cache_dir)
+
 
 #
 #-- required links from the datapath

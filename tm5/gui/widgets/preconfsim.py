@@ -28,6 +28,7 @@ from cartopy import crs
 from tm5 import debug
 from tm5.util import get_dict_checksum as dict_checksum
 from tm5.gui.css import *
+from tm5.gui.fitic_emfile import gen_emfile
 from tm5.gui.widgets.emissions import EmissionSettings
 from tm5.gui.widgets.stations import calc_statistics
 from tm5.gui.widgets.widget_utils import experiment_desc, plot_site_info, load_observations_metadata
@@ -737,14 +738,14 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             width=25,
             height=25,
         )
-        self.running_msg = f"...running operation on backend"
+        self.operation_pane = pn.pane.Markdown(f"",
+                                               styles={
+                                                   "font-size": "1.25em",
+                                               })
         self.running_pane = pn.Row(
             self.spinner,
             pn.Spacer(width=10),
-            pn.pane.Markdown(f"{self.running_msg}",
-                             styles={
-                                 "font-size": "1.25em",
-                             }),
+            self.operation_pane,
             align="center",
             styles={
                 "min-width": "0",
@@ -1036,44 +1037,70 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
         msg = f"self.emission_scenario ***{self.emission_scenario}***"
         logger.debug(msg)
-        
-        settings = {
-            # 'emis': self.emis_dataset,
-            'emissions': {
-                'name': self.select_scenario,
-                'start': self.gui_settings.start,
-                'end': self.gui_settings.end,
-                'regions': OmegaConf.to_container(self.gui_settings.regions),
-                'categories': {
-                    es.catname: {
-                        'global': {
-                            'file': f'{es.emis_glo.path}/{es.emis_glo.filename}' if f'{es.emis_glo.path}/{es.emis_glo.filename}'.endswith('.nc') else f'{es.emis_glo.path}/{es.emis_glo.filename}*.nc',
-                            'field': es.emis_glo.fieldname},
-                        **({'regional': {
-                            'file': f'{es.emis_reg.path}/{es.emis_reg.filename}' if f'{es.emis_reg.path}/{es.emis_reg.filename}'.endswith('.nc') else f'{es.emis_reg.path}/{es.emis_reg.filename}*.nc',
-                            'field': es.emis_reg.fieldname}} if es.switch_reg else {}
-                        )
-                    }
-                    for es in self.emission_scenario
-                },
+
+        emis_conf = {
+            'start': self.gui_settings.start,
+            'end': self.gui_settings.end,
+            'regions': OmegaConf.to_container(self.gui_settings.regions),
+            'categories': {
+                es.catname: {
+                    'global': {
+                        'file': f'{es.emis_glo.path}/{es.emis_glo.filename}' if f'{es.emis_glo.path}/{es.emis_glo.filename}'.endswith('.nc') else f'{es.emis_glo.path}/{es.emis_glo.filename}*.nc',
+                        'field': es.emis_glo.fieldname},
+                    **({'regional': {
+                        'file': f'{es.emis_reg.path}/{es.emis_reg.filename}' if f'{es.emis_reg.path}/{es.emis_reg.filename}'.endswith('.nc') else f'{es.emis_reg.path}/{es.emis_reg.filename}*.nc',
+                        'field': es.emis_reg.fieldname}} if es.switch_reg else {}
+                       )
+                }
+                for es in self.emission_scenario
             },
+        }
+        #
+        #-- checksum must *not* depend on name of the configuration!
+        #
+        emis_conf_chksum = dict_checksum(emis_conf)
+        emis_conf['name'] = self.select_scenario
+        
+        msg = f"@self.emission_scenario ***{self.emission_scenario}*** yields checksum " \
+            f"-->{emis_conf_chksum}<--"
+        logger.debug(msg)
+
+        #
+        #-- settings passed to backend
+        #
+        settings = {
+            'emissions': emis_conf,
             'task': task,
             'namelist': {
                 'fix': (self.correlation_switch=='fixed patterns')
             }
         }
 
-        msg = f"@self.emission_scenario ***{self.emission_scenario}*** yields checksum " \
-            f"-->{dict_checksum(settings['emissions'])}<--"
-        logger.debug(msg)
-
-        yaml_conf =  OmegaConf.to_yaml(settings)
         #
         #-- start processing, activate spinner
         #
         # self.running_msg = f"...running {task} on backend"
         self.running_pane.visible = True
         self.spinner.value = True
+        #
+        #-- emission preparation on frontend
+        #
+        if 'cache' in self.gui_settings.emissions:
+            self.operation_pane.object = "...emission preparation on frontend"
+            msg = f"...generating FIT-IC input emissions on front-end ({emis_conf.keys()})"
+            logger.debug(msg)
+            cache_dir = Path(self.gui_settings.emissions['cache'])
+            cache_dir.mkdir(exist_ok=True, parents=True)
+            emis_in = OmegaConf.create(emis_conf)
+            emis_file = gen_emfile(emis_in, emis_conf_chksum, cache_dir)
+            msg  = f"...generated {str(emis_file)}"
+            logger.debug(msg)
+            settings['emissions']['emission_file'] = str(emis_file)
+        #
+        #-- processing on backend
+        #
+        self.operation_pane.object = f"...running task **{task}** on backend"
+        yaml_conf =  OmegaConf.to_yaml(settings)
         try:
             r = requests.post(url, data={'conf':yaml_conf})
         except requests.exceptions.ConnectionError:
@@ -1092,7 +1119,6 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         #-- processing done, disable spinner
         self.running_pane.visible = False
         self.spinner.value = False
-        self.running_msg = None
         #-- reset alert
         self.alert = ''
 
