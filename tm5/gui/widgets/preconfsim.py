@@ -1099,6 +1099,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         #
         #-- processing on backend
         #
+        msg = f"start operation on backend for task -->{task}<--..."
+        logger.debug(msg)
         self.operation_pane.object = f"...running task **{task}** on backend"
         yaml_conf =  OmegaConf.to_yaml(settings)
         try:
@@ -1121,6 +1123,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.spinner.value = False
         #-- reset alert
         self.alert = ''
+        msg = f"...operation on backend terminated (task -->{task}<--)"
+        logger.debug(msg)
 
         output_path = Path(payload['output'])
         # msg = f"@task={task} for {self.emis_dataset} yields output_path ***{str(output_path)}***"
