@@ -5,20 +5,20 @@ build-backend = 'setuptools.build_meta'
 
 [project]
 name = "fitic"
-version = '2026.99.99'
+version = '2026.99.100'
 authors = [
     {name = "Guillaume Monteil", email = "gmonteil@ik.me"},
     {name = 'Michael Vossbeck', email = 'michael.vossbeck@inversion-lab.com'},
     {name = 'Thomas Kaminski', email = 'thomas.kaminski@inversion-lab.com'}]
 readme = "README.md"
 dependencies = ['numpy', 'ipython', 'pandas', 'xarray', 'h5py', 'netcdf4', 'loguru', 'omegaconf', 'pint', 'tqdm', 'dask', 'bottleneck', 'xxhash']
-requires-python = '>=3.10'
+requires-python = '>=3.12'
 
 
 [tool.setuptools.packages.find]
 #include = ['tm5']
 #-- 2026-05-27: otherwise some files are missing when installing with 'pip install .'
-#               (reason not yet clear...)
+#               (for unknown reason yet...)
 #-- 2026-09-29: 'postrun' added, since subcmd_monthly_emissions_for_inversion is
 #               currently required within the backend pipeline
 #               !!!SHOULD BE REVERTED AGAIN!!!
@@ -26,7 +26,7 @@ include = ['tm5', 'tm5.gui', 'tm5.gui.widgets', 'postrun']
 
 [project.optional-dependencies]
 dev = ['ipython', 'mkdocs']
-fitic = ['flask', 'jupyter', 'jupyter_bokeh', 'panel', 'param', 'hvplot', 'geoviews', 'holoviews', 'cartopy',]
+fitic = ['flask', 'jupyter>=1.1.1', 'jupyter_bokeh', 'bokeh>=3.9.1', 'panel>=1.9.3', 'param>=2.4.1', 'hvplot>=0.12.2', 'geoviews>=1.15.1', 'holoviews>=1.23.1', 'cartopy>=0.25.0',]
 
 
 [project.scripts]
