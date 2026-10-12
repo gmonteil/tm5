@@ -4,76 +4,210 @@ from pathlib import Path
 import xarray as xr
 
 
-class UploadEmissionForm(pn.viewable.Viewer):
-    file_chooser = param.Parameter(doc='Choose an emission file to upload. It should ne in netCDF format')
-    move_event = param.Event(doc='Validate the submission. The files will become available in the Simulations tab', label='Validate')
-    cancel_event = param.Event(label='Cancel')
-    error = param.String(default='', doc='Generic object for error messages')
-    selected_vars = param.ListSelector(default=[], objects=[], doc='Data variables selected for import')
+class VariableSelector(pn.viewable.Viewer):
+    varname = param.String(doc='Name of the variable')
+    newname = param.String(doc='Import the variable as', label='Import variable as:')
+    description = param.String(doc='Variable description')
+    var_selected = param.Boolean(doc='Variable selected for import', label='')
 
-    def __init__(self, **params):
+    def __init__(self, da: xr.DataArray, **params):
         super().__init__(**params)
-        self.widgets = dict(
-            file_chooser=pn.widgets.FileDropper.from_param(self.param.file_chooser),
-            move_button=pn.widgets.Button.from_param(self.param.move_event),
-            cancel_button=pn.widgets.Button.from_param(self.param.cancel_event),
-            varlist=pn.widgets.CheckBoxGroup.from_param(self.param.selected_vars, visible=False),
+        self.varname = da.name
+        self.newname = da.name
+        self.description = da.attrs.get('description', '')
+
+    def __panel__(self):
+        return pn.Row(
+            pn.pane.Markdown(f'Import variable **{self.varname}**:', align='end', stylesheets=['p { margin: 0}']),
+            pn.widgets.Checkbox.from_param(self.param.var_selected, align='end'),
+            pn.widgets.TextInput.from_param(self.param.newname, align='end'),
+            pn.widgets.TextInput.from_param(self.param.description, align='end'),
+            align='end'
         )
+
+
+class FileValidator(pn.viewable.Viewer):
+    dataset_name = param.String(doc='The dataset will appear under this name once imported in the FIT-IC.')
+    dataset_description = param.String(doc='The description will appear in the FIT-IC interface when this dataset is selected')
+    filename = param.String(doc='Name of the file as uploaded')
+    error = param.String(default='', doc='Generic object for error messages')
+    remove_button = param.Event(doc='Remove this file from the list', label='Remove')
+    import_button = param.Event(doc='Validate the submission. The files will become available in the Simulations tab', label='Import into FIT-IC')
+
+    lat_dim = param.Selector(doc='Name of the latitude dimension')
+    lon_dim = param.Selector(doc='Name of the longitude dimension')
+    time_dim = param.Selector(doc='Name of the time dimension')
+
+    def __init__(self, content: bytes, filename, remove_callback: callable, **params):
+        super().__init__(**params)
+        self.content = content  # the raw uploaded bytes, handed over once, no link back to the FileDropper
+        self.filename = filename
+        self.variables = []
+        self.removeme = remove_callback  # method of the parent object that needs to be called when this file is removed (see _handle_remove below)
+        self.widgets = dict(
+            label=pn.pane.Markdown(f'**{self.filename}**'),
+            dim_selector = pn.Row(
+                pn.widgets.Select.from_param(self.param.lat_dim),
+                pn.widgets.Select.from_param(self.param.lon_dim),
+                pn.widgets.Select.from_param(self.param.time_dim),
+                visible=False),
+            variables=pn.Column(),
+            import_button = pn.widgets.Button.from_param(self.param.import_button, disabled=True)
+        )
+        self.check_file()
+
+    @param.depends('dataset_name', 'error', watch=True)
+    def _update_importable_status(self):
+        disabled = (
+            (len(self.dataset_name.strip()) > 0) &
+            (len(self.error) == 0)
+        )
+        self.widgets['import_button'].disabled = not disabled
 
     def __panel__(self):
         return pn.Column(
-            self.widgets['file_chooser'],
+            self.widgets['label'],
             self._alert,
-            self.widgets['varlist'],
             pn.Row(
-                self.widgets['move_button'],
-                self.widgets['cancel_button']
+                pn.widgets.TextInput.from_param(self.param.dataset_name, placeholder='Give a name to your dataset'),
+                pn.widgets.TextAreaInput.from_param(self.param.dataset_description, placeholder='Write a description for your dataset. It will appear in the FIT-IC interface once selected', auto_grow=True)
+            ),
+            self.widgets['dim_selector'],
+            self.widgets['variables'],
+            pn.Row(
+                self.widgets['import_button'],
+                pn.widgets.Button.from_param(self.param.remove_button)
             )
         )
 
-    @param.depends('file_chooser', watch=True)
-    def validate_file(self):
+    @param.depends('import_button', watch=True)
+    def import_file(self):
+        ds = xr.open_dataset('emis.tmp.nc')
+
+        selected_variables = [_.varname for _ in self.variables if _.var_selected]
+        ds = ds[selected_variables]
+
+        # Rename coordinates
+        ds = ds.rename({
+            self.lat_dim: 'latitude',
+            self.lon_dim: 'longitude',
+            self.time_dim: 'time'
+        })
+
+        # Set the variable attributes:
+        for v in self.variables:
+            ds[v].attrs['description'] = v.description
+
+        # Rename/select variables
+        ds = ds.rename({v.varname: v.newname for v in self.variables})
+
+        # Write the file to somewhere
+        ds.to_netcdf(...)
+
+        # Push it to the VM? 
+        # ???
+
+    @param.depends('remove_button', watch=True)
+    def _handle_remove(self):
+        self.removeme(self)
+
+    def check_file(self):
         """
         Try opening the file with xarray. If it fails, the file is invalid, write a warning. If valid, displays the list of variables inside, allowing the userr to choose. This is just a placeholder for something more advanced (we can do some checks on the resolution, allow user to crop the file, provide metadata, etc.
         """
         self.error = ''
-        if not self.file_chooser:
-            return
+
+        # 1. Check that the file is a valid netCDF file
+        tmp_path = 'emis.tmp.nc'
+        with open(tmp_path, 'wb') as f:
+            f.write(self.content)
 
         try:
-            # One issue is that the file chooser allows several files. I haven't
-            # had time to find a cleaner solution. Currently causes bug if trying to
-            # upload successively one file in the wrong format, then one in the good
-            # format (the 2nd isn't detected). Probably also buggy if trying to 
-            # upload several files in a sequence ...
-            file_bytes = list(self.file_chooser.values())[0]
-            
-            # intentionally a named file, for debug. will be switched to a proper
-            # tempfile later
-            tmp_path = 'temp_emis.nc'  
-            with open(tmp_path, 'wb') as f:
-                f.write(file_bytes)
-
-            # very basic check: it should be openable with xarray, if not, warn.
             ds = xr.open_dataset(tmp_path)
-            varlist = list(ds.data_vars)
-
-        except Exception:
-            self.error = 'File not recognized'
-            self.param.selected_vars.objects = []
-            self.selected_vars = []
-            self.widgets['varlist'].visible = False
+        except ValueError:
+            self.error = 'Not a netCDF file'
             return
 
-        # Set the widget values (all vars selected by default)
-        self.param.selected_vars.objects = varlist
-        self.selected_vars = varlist
+        # 2. Check the dimensions of the file
+        if not self._check_dims(ds):
+            return
 
-        # Widget was invisible as an empty list looks kind of buggy on screen
-        self.widgets['varlist'].visible = True
+        # 3. Fill in the "description" field, if already available
+        if 'description' in ds.attrs:
+            self.dataset_description = ds.attrs['description']
+
+        # 3. Select the variables
+        self._select_variables(ds)
+
+    def _check_dims(self, ds: xr.Dataset):
+        dims_in_file = list(ds.sizes)
+        if len(dims_in_file) < 3:
+            self.error = f"The emissions should have three dimensions (lat, lon, time). Only {len(dims_in_file)} detected in the file: {dims_in_file}. The file won't be imported."
+            return False
+
+        self.param.lon_dim.objects = dims_in_file
+        self.param.lat_dim.objects = dims_in_file
+        self.param.time_dim.objects = dims_in_file
+        for dimname in dims_in_file:
+            if 'lat' in dimname:
+                self.lat_dim = dimname
+            if 'lon' in dimname:
+                self.lon_dim = dimname
+            if 'time' in dimname:
+                self.time_dim = dimname
+
+        self.widgets['dim_selector'].visible = True
+        return True
+
+    def _select_variables(self, ds: xr.Dataset):
+        dimnames = {self.lat_dim, self.lon_dim, self.time_dim}
+        varnames = [v for v in ds.data_vars if len(dimnames - set(ds[v].sizes)) == 0]
+        for varname in varnames:
+            variable = VariableSelector(ds[varname])
+            self.widgets['variables'].append(variable)
+            self.variables.append(variable)
 
     @param.depends('error')
     def _alert(self):
         if self.error == '':
             return ''
         return pn.pane.Alert(self.error, alert_type='danger')
+
+
+class UploadEmissionForm(pn.viewable.Viewer):
+    def __init__(self, **params):
+        super().__init__(**params)
+        self.validators = []  # plain list of FileValidator, mirrors tracers.TracerSettings.emissions
+        self.validators_widgets = pn.Column()  # display-only, rebuilt from validators
+
+        # The "FileDropper" widget doesn't use the same logic as the other ones, it modifies the content of its "value" dict
+        # whereas the others modify the object itself, so it doesn't change reference, which makes changes impossible to track
+        # through the "@panel.depends" logic.
+        self.file_chooser = pn.widgets.FileDropper(multiple=True)
+        self.file_chooser.param.watch(self.on_files_change, 'value')
+
+        self.layout = pn.Column(self.file_chooser, self.validators_widgets)
+
+    def __panel__(self):
+        return self.layout
+
+    def on_files_change(self, event):
+        if not event:
+            return
+        
+        # Find files that need to be added to the "validators" list
+        # (removal is handled by FileValidator itself, via _remove_validator)
+        existing = {v.filename for v in self.validators}
+        for filename in set(event.new) - existing:
+            validator = FileValidator(self.file_chooser.value[filename], filename, remove_callback=self._remove_validator)
+            self.validators.append(validator)
+            self.validators_widgets.append(validator.__panel__())
+
+        # Reset the FileDropper widget, since we don't want to use it for removing the files (if needed).
+        self.file_chooser = pn.widgets.FileDropper(multiple=True)
+        self.file_chooser.param.watch(self.on_files_change, 'value')
+        self.layout[0] = self.file_chooser
+
+    def _remove_validator(self, validator):
+        self.validators.remove(validator)
+        self.validators_widgets.objects = [v.__panel__() for v in self.validators]
