@@ -92,6 +92,15 @@ pathtable_glb6x4 = SimpleNamespace(
     tm5_fwd_path = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir/runs_fitic-forward_with-chemistry/glb6x4-simu-default_flask-obs_20201001-20220101'),
 )
 
+#    footprint_dir = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir/testruns_without-chemistry'),
+pathtable_gns1x1_test_without_chemistry = SimpleNamespace(
+    footprint_dir = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir/testruns_without-chemistry.v2/footprints_gns100x100_20201001--20211231'),
+    footprint_path = 'footprints_gns100x100_20201001--%Y%m%d',
+    #--> now using full reference simulation from Oct 1, 2020 to Dec 31, 2021
+    tm5_fwd_path = Path('/lunarc/nobackup/projects/ghg_inv/michael/TM5/expdir/testruns_without-chemistry/fitic-simu-default_20201001--20220101_gfortran'),
+)
+
+
 
 def subcmd_prepare_obsjacobian(args : ArgumentNamespace) -> None: 
     """
@@ -869,33 +878,27 @@ def subcmd_prepare_obsjacobian_nopickle(args : ArgumentNamespace) -> None:
     #
     #-- arguments
     #
-    mode = args.mode
+    # mode = args.mode
+    obs_firstday = args.obs_firstday
     obs_lastday = args.obs_lastday
     complevel = args.__dict__.get('complevel',4)
     #
     #-- fixed settings
     #
     simu_start = Timestamp(2020, 10, 1) #-- TOD::should not be hard-coded here
-    obs_firstday = Timestamp(2021,1,1)  #-- TOD::should not be hard-coded here
+    dir_start = obs_firstday +  Timedelta(days=1)
     dir_end = obs_lastday + Timedelta(days=1)
     #
     #-- path/file settings currently hardcoded
     #   (but depend on whether "global flask" or "target domain continuous" Jacobian shall be built)
     #
-    if mode=='gns1x1':
-        pathtable = pathtable_gns1x1
-        regions = ['glb600x400', 'eur300x200', 'gns100x100',]
-    else:
-        pathtable = pathtable_glb6x4
-        regions = ['glb600x400',]
-    footprint_dir  = pathtable.footprint_dir
-    footprint_path = pathtable.footprint_path
-    tm5_fwd_path   = pathtable.tm5_fwd_path
-    long_mode = mode.replace('1x1','100x100').replace('6x4','600x400')
-    #
-    #
-    #
-    domain_tag = args.mode
+    config = OmegaConf.load(args.ojac_config)
+    footprint_dir  = Path(config.post.footprint_directory)
+    footprint_path = config.post.footprint_path
+    tm5_fwd_path   = Path(config.post.fwdrun_path)
+    regions = config.post.regions
+    domain_tag = config.post.domain_tag
+    
     time_tag = f"{simu_start.strftime('%Y%m%d')}--{obs_lastday.strftime('%Y%m%d')}"
     obstime_tag = f"{obs_firstday.strftime('%Y%m%d')}--{obs_lastday.strftime('%Y%m%d')}"
     station_tag = None
@@ -993,7 +996,7 @@ def subcmd_prepare_obsjacobian_nopickle(args : ArgumentNamespace) -> None:
     # ------------------------------------
     # 2(a). restrict to selected observational period and/or selected stations
     #
-    cnd_time = obstable['time']<dir_end
+    cnd_time = (obstable['time']>=obs_firstday)&(obstable['time']<dir_end)
     obstable = obstable.loc[cnd_time,:]
     nobs_act = len(obstable)
     msg = f"...restricted to {obstime_tag} ({nobs_act} observations remaining"
@@ -1204,6 +1207,7 @@ def subcmd_prepare_obsjacobian_nopickle(args : ArgumentNamespace) -> None:
         ng_6x4 = _nlat*_nlon
         obs_jacobian_6x4 = np.zeros((nobs,nemisday,_nlat,_nlon))
         footp_regions = ['glb600x400',]
+
     iniconc_1D = np.full((nobs,), missval)
     obsconc_1D = np.full((nobs,), missval)
     tm5fwd_1D  = np.full((nobs,), missval)
@@ -2239,6 +2243,125 @@ def subcmd_obsjac_verification_visu(args):
     logger.info(msg)
 
 
+def subcmd_tm5fwd_comparison(args):
+    tm5dir1, tm5dir2 = args.tm5_dirs
+
+    tm5fwd_tables = []
+    for adir in args.tm5_dirs:
+        tm5config = OmegaConf.load(adir / 'tm5.yaml')
+        regions = tm5config.run.regions
+        # ------------------------------------
+        # 1./2. Load observations AND forward simulation
+        #
+        # ATTENTION:
+        # - information is loaded from the reference run,
+        #   which *MUST* done with the exact same setup
+        #   as the footprint simulations, i.e.
+        #   - same observations (location/time)
+        #
+        msg = f"loading observations and TM5 forward simulation from reference run..."
+        logger.info(msg)
+        outpfile = adir / 'point/point_output.nc4'
+        inpfile  = adir / 'point_input.nc4'
+        with File(inpfile) as inpf:
+            with File(outpfile) as oupf:
+                #-- collect fields from point_output.nc4
+                tm5mix, station_id, ido, reg = [], [], [], []
+                for region in regions:
+                    if 'CH4' in oupf[region]:
+                        tm5mix.extend(oupf[region]['CH4']['mixing_ratio'])
+                        station_id.extend(oupf[region]['CH4']['station_id'])
+                        ido.extend(oupf[region]['CH4']['id'])
+                        reg.extend([region] * oupf[region]['CH4']['id'].shape[0])
+                tm5mix = np.array(tm5mix)
+                station_id = np.array(station_id)
+                ido = np.array(ido)
+                #-- fields from point_input.nc4
+                idi = inpf['CH4']['id'][:]
+                #-- time stamp
+                vartime = inpf['CH4']['time']
+                time_units = vartime.attrs['units'].decode('UTF-8')
+                if time_units.startswith('hours since '):
+                    reftime = Timestamp(time_units.replace('hours since ',''))
+                    time = reftime +  to_timedelta(vartime[:], unit='hour')
+                elif time_units.startswith('seconds since '):
+                    reftime = Timestamp(time_units.replace('seconds since ',''))
+                    time = reftime +  to_timedelta(vartime[:], unit='second')
+                else:
+                    msg = f"...unexpected time-units -->{time_units}<-- @{str(inpfile)}"
+                    raise RuntimeError(msg)
+                lon = inpf['CH4']['lon'][:]
+                lat = inpf['CH4']['lat'][:]
+                alt = inpf['CH4']['alt'][:]
+                obsmix = inpf['CH4']['mixing_ratio'][:]
+                obsmixerr = inpf['CH4']['mixing_ratio_err'][:]
+                time_window_length = inpf['CH4']['time_window_length'][:]
+                sampling_strategy = inpf['CH4']['sampling_strategy'][:]
+                station_id = inpf['CH4']['station_id'][:]
+                tracer = inpf['CH4']['tracer'][:]
+                obsid = inpf['CH4']['obsid'][:]
+                # Construct a DataFrame with mix, obsid and time
+                obstable = DataFrame(
+                    { 'time': time,
+                      'lon':lon,
+                      'lat':lat,
+                      'alt':alt,
+                      'mixing_ratio':obsmix,
+                      'mixing_ratio_err':obsmixerr,
+                      'time_window_length':time_window_length,
+                      'sampling_strategy':sampling_strategy,
+                      'station_id':station_id,
+                      'tracer':tracer,
+                      'obsid': obsid,
+                      'index': idi,
+                      'region': reg }
+                ).set_index('index')
+                #-- add output
+                obstable.loc[ido, 'tm5_fwd'] = tm5mix
+                #-- convert byte-string to normal string
+                obstable.loc[:, 'obsid'] = obstable.obsid.str.decode('utf8')
+                obstable.loc[:, 'tracer'] = obstable.tracer.str.decode('utf8')
+        #
+        # outname = f"reference-obstable_with-tm5-fwd_{process_tag}.csv"
+        # obstable.to_csv(outname)
+        nobsall = len(obstable)
+        msg = f"...obstable done (overall {nobsall} observations)"
+        logger.info(msg)
+        obsid_values = obstable.loc[:,'obsid'].values
+        if len(obsid_values[0].split('_'))==2:
+            obstable.loc[:,'obs_stationid'] = obsid_values
+        elif len(obsid_values[0].split('_'))==3:
+            obstable.loc[:,'obs_stationid'] = ['_'.join(_.split('_')[:2]) for _ in obsid_values]
+        tm5fwd_tables.append(obstable)
+        print(obstable.columns)
+
+    #--
+    table1,table2 = tm5fwd_tables
+    desc1,desc2 = args.desc
+    dfcmp = table1[['time','mixing_ratio','obs_stationid','tm5_fwd',]]
+    dfcmp = dfcmp.rename(
+        {'mixing_ratio':'obs',
+         'obs_stationid':'station',
+         'tm5_fwd': f'{desc1}',
+         }, axis=1)
+    dfcmp.loc[:,f'{desc2}'] = table2.loc[:,'tm5_fwd']
+    #
+    #-- prefer interactive html output
+    #
+    outname = f"{desc1}--vs--{desc2}.html"
+    if args.outdir!=None:
+        outname = args.outdir / outname
+        outname.parent.mkdir(parents=True, exist_ok=True)
+    cols_visu = [f'{desc1}',f'{desc2}',]
+    # p = (
+    #     dfcmp.hvplot(x='time', y=cols_visu, groupby='station_id', width=1500, height=600, grid=True,)
+    # ).cols(1)
+    p =  dfcmp.hvplot(x='time', y=cols_visu, groupby='station', width=1500, height=600, grid=True,)
+    hv.save(p, outname)
+    msg = f"generated ***{str(outname)}***"
+    logger.info(msg)
+
+
 ################################################################################
 #
 #                   p a r s e r
@@ -2287,9 +2410,15 @@ sparser.add_argument('--outdir',
 #
 sparser = subparsers.add_parser('prepare_obsjacobian_nopickle',
                                 help="""preparation of NetCDF file providing an observational Jacobian and further inputs required for FIT-IC inversion system.""")
-sparser.add_argument('mode',
-                     choices=['gns1x1','glb6x4',],
-                     help="""create Jacobian based on footprint simulations for ICOS observations within innermost domain or for global flask stations.""")
+sparser.add_argument('ojac_config',
+                     help="""configuration with paths for footprints, forward-runs, ...""")
+# sparser.add_argument('mode',
+#                      choices=['gns1x1','glb6x4','gns1x1_nochem',],
+#                      help="""create Jacobian based on footprint simulations for ICOS observations within innermost domain or for global flask stations.""")
+sparser.add_argument('--obs_firstday',
+                     type=Timestamp,
+                     default=Timestamp(2021,1,1),
+                     help="""last observational day (default:%(default)s).""")
 sparser.add_argument('--obs_lastday',
                      type=Timestamp,
                      default=Timestamp(2021,1,1),
@@ -2380,6 +2509,27 @@ sparser.add_argument('--outdir',
                      help="""top-level directory for any generated outputs..""")
 
 
+#
+#--
+#
+sparser = subparsers.add_parser('tm5fwd_comparison',
+                                help="""comparison of two TM5 forward simulations (with observational output).""")
+sparser.add_argument('tm5_dirs',
+                     nargs=2,
+                     type=Path,
+                     help="""TM5 forward run directories.""")
+sparser.add_argument('--desc',
+                     nargs=2,
+                     default=['file1','file2'],
+                     help="""short descriptional tag for both files.""")
+sparser.add_argument('--outname',
+                     type=Path,
+                     help="""explict name of generated file (suffix may be different).""")
+sparser.add_argument('--outdir',
+                     type=Path,
+                     help="""top-level directory for any generated outputs..""")
+
+
 
 ################################################################################
 #
@@ -2406,6 +2556,9 @@ def main(args):
 
     if args.subcmds=='obsjac_verification_visu':
         subcmd_obsjac_verification_visu(args)
+
+    if args.subcmds=='tm5fwd_comparison':
+        subcmd_tm5fwd_comparison(args)
 
     #
     te = Timestamp.now('UTC')
