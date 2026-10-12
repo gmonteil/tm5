@@ -395,7 +395,7 @@ def prepare_emissions(conf: DictConfig) -> None:
             # Do the actual coarsening.
             for catname, cat in tracer.categories.items():
                 if 'overwrite' in cat:
-                    print(f"@{region}, {catname}: ***{cat}***")
+                    # print(f"@{region}, {catname}: ***{cat}***")
                     ds = coarsen_file_with_overwrite(cat, reg, start, end, drop_domain=drop_domain)
                     datasets[catname] = ds[cat.field]
                 else:
