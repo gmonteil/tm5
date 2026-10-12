@@ -88,19 +88,27 @@ def gen_emfile(conf: dict, conf_checksum : str, cache_dir: Path) -> Path:
             cat_dict[catname]['overwrite']['path'] = cat['regional']['file']
             cat_dict[catname]['overwrite']['field'] = cat['regional']['field']
     prefix = f'{scratch_dir}/ch4emis'
+    #
+    #-- dropping emissions?
+    #
+    if 'drop_domain' in conf:
+        drop_domain = [conf.drop_domain['west'],conf.drop_domain['east'],
+                       conf.drop_domain['south'],conf.drop_domain['north'],]
+    else:
+        drop_domain = None
     emis_dict = {
         'run': {'start': str(conf.start), 'end': str(conf.end), 'regions': region_names},
         'regions': region_block(region_names),
-        'emissions': {'CH4': {'prefix': prefix, 'categories': cat_dict } },
+        'emissions': {'CH4': {'prefix': prefix, 'categories': cat_dict, 'drop_domain': drop_domain, } },
     }
-#    msg = f"...calling prepare_emissions with emis_dict **********\n" \
-#        f"{emis_dict}\n**********"
-#    logger.debug(msg)
+    #
+    #-- preparation of daily inputs, suitable as input for TM5
+    #
+    msg = f"...calling prepare_emissions with emis_dict **********\n" \
+        f"{emis_dict}\n**********"
+    logger.debug(msg)
         
     emis_dconf = OmegaConf.create(emis_dict)
-#    msg = f"...prepare_emissions being called with emis_dconf ******************************\n" \
-#    f"{emis_dconf}\n******************************"
-#    logger.debug(msg)
     prepare_emissions(emis_dconf)
     #
     #-- generate spatially 1D emissions for FIT-IC Fortran system.
@@ -112,6 +120,9 @@ def gen_emfile(conf: dict, conf_checksum : str, cache_dir: Path) -> Path:
         outdir=None,
         outname=str(outname),
     )
+    #
+    #-- preparation of monthly emission inputs, suitable as input for FIT-IC gui
+    #
     # msg = f"...calling subcmd_monthly_emissions_for_inversion with args ==>{args}<=="
     # logger.debug(msg)
     subcmd_monthly_emissions_for_inversion(args)

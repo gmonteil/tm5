@@ -197,6 +197,7 @@ def conc_statistics(conc: xr.Dataset, label: str) -> DataFrame:
         stats[f"Mean bias ({case_name})"] = []
     for case_name in case_table.keys():
         stats[f"RMSE ({case_name})"] = []
+    #-- Note: Thomas had asked for to currently not show correlations in the GUI
     # for case_name in case_table.keys():
     #     stats[f"Correlation coefficient ({case_name})"] = []
         
@@ -672,6 +673,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                                                             stylesheets=simu_stylesheets,),
             'select_scenario': pn.widgets.Select.from_param(self.param.select_scenario,
                                                             name='Select scenario',
+                                                            width_policy="max",
                                                             css_classes=["simu-select"],
                                                             stylesheets=simu_stylesheets,),
         }
@@ -919,10 +921,11 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
     @param.depends('add_category_event', watch=True)
     def _add_emission_category(self, catname: str = None):
+        ncat = len(self.emission_scenario['emiscat_list'])
         if catname is None:
-            catname = f'category_{len(self.emission_scenario) + 1}'
+            catname = f'category_{ncat + 1}'
         es = self._build_emission_category(catname)
-        self.emission_scenario.append(es)
+        self.emission_scenario['emiscat_list'].append(es)
         self.emission_scenario_widgets.append(es.__panel__())
 
     @param.depends('hide_categories_event', watch=True)
@@ -938,8 +941,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.widgets['hide_categories'].visible = True
 
     def _remove_emission_category(self, es: EmissionSettings):
-        self.emission_scenario.remove(es)
-        self.emission_scenario_widgets.objects = [e.__panel__() for e in self.emission_scenario]
+        self.emission_scenario['emiscat_list'].remove(es)
+        self.emission_scenario_widgets.objects = [e.__panel__() for e in self.emission_scenario['emiscat_list']]
 
     @param.depends('select_scenario', watch=True)
     def _load_scenario(self, visible : bool|None = None):
@@ -952,13 +955,15 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self.widgets['add_category'].visible = editable
         self.widgets['hide_categories'].visible = visible
         self.widgets['show_categories'].visible = not visible
-        emission_scenario = []
+        emiscat_list = []
         for catname, spec in scenario.get('categories', {}).items():
             es = self._build_emission_category(catname, visible=visible)
             es.set_category(spec)
-            emission_scenario.append(es)
-        self.emission_scenario = emission_scenario
-        self.emission_scenario_widgets.objects = [e.__panel__() for e in self.emission_scenario]
+            emiscat_list.append(es)
+        self.emission_scenario = { 'emiscat_list':emiscat_list,
+                                   'drop_domain':scenario.get('drop_domain', None)
+                                  }
+        self.emission_scenario_widgets.objects = [e.__panel__() for e in self.emission_scenario['emiscat_list']]
 
     @param.depends('alert')
     def _alert(self):
@@ -1052,9 +1057,29 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                         'field': es.emis_reg.fieldname}} if es.switch_reg else {}
                        )
                 }
-                for es in self.emission_scenario
+                for es in self.emission_scenario['emiscat_list']
             },
         }
+        # msg = f"...generated emis_conf (stage1) \n{emis_conf}\n" \
+        #     f"(checksum: {dict_checksum(emis_conf)})"
+        # logger.debug(msg)
+        if self.emission_scenario['drop_domain']!=None:
+            drop_domain = self.emission_scenario['drop_domain']
+            #-- MVO-TODO::
+            #   - conceptually drop_domain is a list,
+            #     for some reason the generation of the checksum
+            #     below failed if this list is added as is.
+            #   - it works when converting to dictionary
+            #     (but this must be converted back in fitic_emfile.py:gen_emfile!!)
+            #
+            drop_dict = {}
+            for kv in zip(['west','east','south','north'],drop_domain):
+                k,v = kv
+                drop_dict[k] = v
+            emis_conf['drop_domain'] = drop_dict
+            # emis_conf['drop_domain'] = self.emission_scenario['drop_domain']
+            # msg = f"...drop domain set"
+            # logger.debug(msg)
         #
         #-- checksum must *not* depend on name of the configuration!
         #
@@ -1079,7 +1104,6 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         #
         #-- start processing, activate spinner
         #
-        # self.running_msg = f"...running {task} on backend"
         self.running_pane.visible = True
         self.spinner.value = True
         #
