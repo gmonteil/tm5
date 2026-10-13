@@ -870,6 +870,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             catname=catname,
             regions=['global', 'regional'],
             path=self.gui_settings.emissions.path,
+            extra_paths=[self.gui_settings.emissions.get('upload_path')],
             remove_callback=self._remove_emission_category,
             visible=visible,
             editable=editable
@@ -939,6 +940,13 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         self._load_scenario(visible=True)
         self.widgets['show_categories'].visible = False
         self.widgets['hide_categories'].visible = True
+
+    def refresh_emission_files(self):
+        """
+        Make the file lists of all emission categories pick up newly available files (e.g. uploaded ones).
+        """
+        for es in self.emission_scenario['emiscat_list']:
+            es.refresh_file_choices()
 
     def _remove_emission_category(self, es: EmissionSettings):
         self.emission_scenario['emiscat_list'].remove(es)

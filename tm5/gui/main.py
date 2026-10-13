@@ -284,13 +284,28 @@ class FitIC_UI(pn.viewable.Viewer):
 
     @debug.timer
     def __panel__(self):
-        return pn.Tabs(
-            self.preconfigured_tabs,
+        preconf_tab = self.preconfigured_tabs
+
+        # WARNING: the "on_tab_change" function below relies on the position of the tabs, If it is reordered, the function need to be adjusted
+        tabs = pn.Tabs(
+            preconf_tab,
             self.upload_tab,
             dynamic=True,
             css_classes=["gui-tabs",],
             stylesheets=tab_stylesheets,
         )
+
+        # Files may have been uploaded while the user was on the upload tab, so the emission file lists of the
+        # simulation tab are refreshed when the user comes back to it.
+
+        # tabs.param.watch(fn, 'active') => run the "fn" function when the "active" attribute of "tabs" changes.
+        def on_tab_change(active_tab):
+            if active_tab.new == 0:
+                preconf_tab[1].refresh_emission_files()
+
+        tabs.param.watch(on_tab_change, 'active')
+        return tabs
+        
     @property
     def setup_tab(self):
         return ("Setup simulation", ExperimentSetupGUI(gui_settings=self.conf))
@@ -318,5 +333,5 @@ class FitIC_UI(pn.viewable.Viewer):
     @property
     def upload_tab(self):
         return (
-            "Upload emission file", UploadEmissionForm()
+            "Upload emission file", UploadEmissionForm(upload_path=self.conf.emissions.upload_path)
         )

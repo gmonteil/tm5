@@ -1,3 +1,6 @@
+import re
+import traceback
+import numpy as np
 import panel as pn
 import param
 from pathlib import Path
@@ -38,12 +41,14 @@ class FileValidator(pn.viewable.Viewer):
     lon_dim = param.Selector(doc='Name of the longitude dimension')
     time_dim = param.Selector(doc='Name of the time dimension')
 
-    def __init__(self, content: bytes, filename, remove_callback: callable, **params):
+    def __init__(self, content: bytes, filename, remove_callback: callable, import_callback: callable, upload_path: Path, **params):
         super().__init__(**params)
+        self.upload_path = Path(upload_path)
         self.content = content  # the raw uploaded bytes, handed over once, no link back to the FileDropper
         self.filename = filename
         self.variables = []
         self.removeme = remove_callback  # method of the parent object that needs to be called when this file is removed (see _handle_remove below)
+        self.imported = import_callback  # method of the parent object called with (self, target_path) once the file has been written
         self.widgets = dict(
             label=pn.pane.Markdown(f'**{self.filename}**'),
             dim_selector = pn.Row(
@@ -82,30 +87,45 @@ class FileValidator(pn.viewable.Viewer):
 
     @param.depends('import_button', watch=True)
     def import_file(self):
-        ds = xr.open_dataset('emis.tmp.nc')
+        selected = [v for v in self.variables if v.var_selected]
+        if len(selected) == 0:
+            self.error = 'Please select at least one variable to import.'
+            return
 
-        selected_variables = [_.varname for _ in self.variables if _.var_selected]
-        ds = ds[selected_variables]
+        name = self.dataset_name.strip()
+        if re.fullmatch(r'[A-Za-z0-9_.\-]+', name) is None or name.startswith('.'):
+            self.error = 'The dataset name may only contain letters, digits, "_", "-" and ".".'
+            return
 
-        # Rename coordinates
-        ds = ds.rename({
-            self.lat_dim: 'latitude',
-            self.lon_dim: 'longitude',
-            self.time_dim: 'time'
-        })
+        with xr.open_dataset('emis.tmp.nc') as ds:
+            ds = ds[[v.varname for v in selected]].rename({
+                self.lat_dim: 'latitude',
+                self.lon_dim: 'longitude',
+                self.time_dim: 'time',
+            })
+            ds = ds.rename({v.varname: v.newname for v in selected})
+            for v in selected:
+                ds[v.newname].attrs['description'] = v.description
+            ds.attrs['description'] = self.dataset_description
 
-        # Set the variable attributes:
-        for v in self.variables:
-            ds[v].attrs['description'] = v.description
+            # Coordinates are cell centers of a 1-degree grid, so the boundaries are +/- 0.5 degree
+            lon, lat = ds['longitude'], ds['latitude']
+            is_global = (
+                np.isclose(float(lon.max() - lon.min()) + 1.0, 360.0)
+                and np.isclose(float(lat.max()) + 0.5, 90.0)
+                and np.isclose(float(lat.min()) - 0.5, -90.0)
+            )
+            prefix = 'global' if is_global else 'regional'
 
-        # Rename/select variables
-        ds = ds.rename({v.varname: v.newname for v in self.variables})
+            self.upload_path.mkdir(parents=True, exist_ok=True)
+            target = self.upload_path / f'{prefix}_{name}.nc'
+            if target.exists():
+                self.error = f'{target.name} already exists. Choose another dataset name.'
+                return
+            ds.load().to_netcdf(target)
 
-        # Write the file to somewhere
-        ds.to_netcdf(...)
-
-        # Push it to the VM? 
-        # ???
+        self.error = ''
+        self.imported(self, target)
 
     @param.depends('remove_button', watch=True)
     def _handle_remove(self):
@@ -175,38 +195,59 @@ class FileValidator(pn.viewable.Viewer):
 
 
 class UploadEmissionForm(pn.viewable.Viewer):
-    def __init__(self, **params):
+    def __init__(self, upload_path: str | Path, **params):
         super().__init__(**params)
+        self.upload_path = Path(upload_path)
         self.validators = []  # plain list of FileValidator, mirrors tracers.TracerSettings.emissions
         self.validators_widgets = pn.Column()  # display-only, rebuilt from validators
 
         # The "FileDropper" widget doesn't use the same logic as the other ones, it modifies the content of its "value" dict
         # whereas the others modify the object itself, so it doesn't change reference, which makes changes impossible to track
         # through the "@panel.depends" logic.
-        self.file_chooser = pn.widgets.FileDropper(multiple=True)
-        self.file_chooser.param.watch(self.on_files_change, 'value')
-
-        self.layout = pn.Column(self.file_chooser, self.validators_widgets)
+        self.file_chooser = self._new_file_chooser()
+        self.alert = pn.pane.Alert('', visible=False)
+        self.layout = pn.Column(self.file_chooser, self.alert, self.validators_widgets)
 
     def __panel__(self):
         return self.layout
 
+    def _new_file_chooser(self):
+        # Small chunks keep each websocket message below the size limit of the Jupyter server (the Panel default of 10 MB is too large once base64-encoded)
+        file_chooser = pn.widgets.FileDropper(multiple=True, chunk_size=1_000_000)
+        file_chooser.param.watch(self.on_files_change, 'value')
+        return file_chooser
+
     def on_files_change(self, event):
         if not event:
             return
-        
+
+        # Exceptions raised in a callback only reach the server log (invisible in a notebook), so show them in the UI
+        self.alert.visible = False
+        try:
+            self._add_validators(event)
+        except Exception:
+            self.alert.alert_type = 'danger'
+            self.alert.object = f'```\n{traceback.format_exc()}\n```'
+            self.alert.visible = True
+
+        # Reset the FileDropper widget, since we don't want to use it for removing the files (if needed).
+        self.file_chooser = self._new_file_chooser()
+        self.layout[0] = self.file_chooser
+
+    def _add_validators(self, event):
         # Find files that need to be added to the "validators" list
         # (removal is handled by FileValidator itself, via _remove_validator)
         existing = {v.filename for v in self.validators}
         for filename in set(event.new) - existing:
-            validator = FileValidator(self.file_chooser.value[filename], filename, remove_callback=self._remove_validator)
+            validator = FileValidator(self.file_chooser.value[filename], filename, remove_callback=self._remove_validator, import_callback=self._on_imported, upload_path=self.upload_path)
             self.validators.append(validator)
             self.validators_widgets.append(validator.__panel__())
 
-        # Reset the FileDropper widget, since we don't want to use it for removing the files (if needed).
-        self.file_chooser = pn.widgets.FileDropper(multiple=True)
-        self.file_chooser.param.watch(self.on_files_change, 'value')
-        self.layout[0] = self.file_chooser
+    def _on_imported(self, validator, target: Path):
+        self._remove_validator(validator)
+        self.alert.alert_type = 'success'
+        self.alert.object = f'**{validator.filename}** was imported as `{target}`.'
+        self.alert.visible = True
 
     def _remove_validator(self, validator):
         self.validators.remove(validator)
