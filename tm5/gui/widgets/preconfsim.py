@@ -922,12 +922,36 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
     @param.depends('add_category_event', watch=True)
     def _add_emission_category(self, catname: str = None):
+        # scenario = self.emission_scenarios[self.select_scenario]
+        # msg = f"current scenario settings for -->{self.select_scenario}<--:\n"
+        # for k,v in scenario['category'].items():
+        #     msg += f"{k}: {v}" + '\n'
+        # logger.debug(msg)
         ncat = len(self.emission_scenario['emiscat_list'])
         if catname is None:
             catname = f'category_{ncat + 1}'
+        # msg = f"@{self.select_scenario}, adding category -->{catname}<--"
+        # logger.debug(msg)
         es = self._build_emission_category(catname)
+        # msg = f"...new emission category built"
+        # logger.debug(msg)
         self.emission_scenario['emiscat_list'].append(es)
+        # msg = f"...appended to 'emiscat_list'"
+        # logger.debug(msg)
         self.emission_scenario_widgets.append(es.__panel__())
+        # msg = f"...widget added"
+        # logger.debug(msg)
+        # ####
+        # esnew = es._toconfig()
+        # for k,v in esnew.items():
+        #     msg = f"{k}: {v}"
+        #     logger.debug(msg)
+        # self.emission_scenarios[self.select_scenario]['categories'][k] = v
+        # scenario = self.emission_scenarios[self.select_scenario]
+        # msg = f"updated scenario settings for -->{self.select_scenario}<--:\n"
+        # for k,v in scenario['category'].items():
+        #     msg += f"{k}: {v}" + '\n'
+        # logger.debug(msg)
 
     @param.depends('hide_categories_event', watch=True)
     def _hide_emission_categories(self):
@@ -949,8 +973,24 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             es.refresh_file_choices()
 
     def _remove_emission_category(self, es: EmissionSettings):
+        # msg = f"currently available scenarios -->{list(self.emission_scenarios.keys())}<--"
+        # logger.debug(msg)
+        # msg = f"@{self.select_scenario}, emiscat_list before removal {len(self.emission_scenario['emiscat_list'])}"
+        # logger.debug(msg)
         self.emission_scenario['emiscat_list'].remove(es)
+        # msg = f"emiscat_list after removal {len(self.emission_scenario['emiscat_list'])}"
+        # logger.debug(msg)
         self.emission_scenario_widgets.objects = [e.__panel__() for e in self.emission_scenario['emiscat_list']]
+        # msg = f"...updated self.emission_scenario_widgets.objects"
+        # logger.debug(msg)
+        #-- ATTENTION: we must also remove the category from the current's scenario
+        #              configuration dictionary
+        self.emission_scenarios[self.select_scenario]['categories'].pop(es.catname)
+        # self.emission_scenarios[self.select_scenario] = self.emission_scenario
+        # msg = f"...updated dictionary entry for {self.select_scenario}"
+        # logger.debug(msg)
+        # msg = f"scenario name -->{self.select_scenario}<-- with categories ==>{list(self.emission_scenarios[self.select_scenario].get('categries').keys())}<=="
+        # logger.debug(msg)
 
     @param.depends('select_scenario', watch=True)
     def _load_scenario(self, visible : bool|None = None):
