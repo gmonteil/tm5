@@ -31,8 +31,8 @@ def gen_emfile(conf: dict, conf_checksum : str, cache_dir: Path) -> Path:
         return outname
     else:
         emisfile_list = list(cache_dir.glob('*.nc'))
-        msg = f"for configuration checksum ==>{conf_checksum}<== looking up equal scenario in " \
-            f"*****{emisfile_list}*****"
+        msg = f"looking up for equal scenario for configuration checksum ==>{conf_checksum}<== " \
+            f"(*****{[str(_) for _ in emisfile_list]}*****("
         logger.debug(msg)
         
         for ifile,emisfile in enumerate(emisfile_list):
@@ -41,11 +41,11 @@ def gen_emfile(conf: dict, conf_checksum : str, cache_dir: Path) -> Path:
             msg = f"emisfile.stem ==>{emisfile.stem}<=="
             logger.debug(msg)
             tokens = emisfile.stem.split('_')
-            msg = f"tokens ==>{tokens}<=="
-            logger.debug(msg)
+            # msg = f"tokens ==>{tokens}<=="
+            # logger.debug(msg)
             #-- checksum is last token in filename
             cur_chksum = tokens[-1]
-            msg = f"...found existing checksum ==>{cur_chksum}<=="
+            msg = f"...comparison against existing checksum ==>{cur_chksum}<=="
             logger.debug(msg)
 
             if cur_chksum==conf_checksum:
