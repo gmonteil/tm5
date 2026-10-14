@@ -16,8 +16,11 @@ from tqdm.auto import tqdm
 
 def coarsen_file(path_or_pattern : str, reg : TM5Grids, start : Timestamp, end : Timestamp, use_esmf_regridder : bool = False, drop_domain : list = None) -> xr.Dataset:
     # Open the source file(s). It should be on a global 1x1 resolution (for now ...)
+    # msg = f"operating for path_or_pattern ==>{path_or_pattern}<=="
+    # logger.debug(msg)
     ds = xr.open_mfdataset(path_or_pattern)
-
+    # msg = f"...yields ds\n{ds}\n"
+    # logger.debug(msg)
     #-- expected grid of global emission inputs
     # !!!TODO:should add consistency check
     glb1x1 = TM5Grids.global1x1()
@@ -402,19 +405,23 @@ def prepare_emissions(conf: DictConfig) -> None:
                     ds = coarsen_file(cat.path, reg, start, end, drop_domain=drop_domain)
                     # print(f"MVO-DEBUG::@{region},{cat.field} total={ds[cat.field].sum()}")
                     datasets[catname] = ds[cat.field]
-                
-            # Ensure that the dest path exists!
-            Path(tracer.prefix).parent.mkdir(exist_ok=True, parents=True)
-
+                msg = f"...coarsening done for -->{catname}<--"
+                logger.debug(msg)
             #-- probably better raise warning here
             if len(datasets)==0:
                 msg = f"no emissions to be generated for {trname}@{region}"
                 logger.warning(msg)
                 continue
-            
+            # Ensure that the dest path exists!
+            msg = f"...try creating directory ***{str(Path(tracer.prefix).parent)}***"
+            logger.debug(msg)
+            Path(tracer.prefix).parent.mkdir(exist_ok=True, parents=True)
+
             datasets = xr.Dataset(datasets)
 
             # group the datasets in daily emission files for that region and tracer:
             for day in tqdm(date_range(start, end, freq='D'), desc=f'Writing emission files for {trname} in region {region}'):
                 destfile = f'{tracer.prefix}.{trname}.{region}.{day:%Y%m%d}.nc'
+                # msg = f"...should be writing ***{str(destfile)}***"
+                # logger.debug(msg)
                 datasets.sel(time=day).to_netcdf(destfile)
