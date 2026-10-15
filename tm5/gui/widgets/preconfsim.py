@@ -630,10 +630,15 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         objects=["fixed patterns", "full grid"],
         label="Resolution of Emission space (Please note that option 'fixed patterns' is not implemented yet)",
     )
-    add_category_event = param.Event(doc='Add a new emission category', label='Add category')
-    hide_categories_event = param.Event(doc='Hide emissione categories', label='Hide categories')
-    show_categories_event = param.Event(doc='Show emissione categories', label='Show categories')
-    select_scenario = param.Selector(default=None, allow_None=True, doc='Selection or configurationtion of emission scenario')
+    add_category_event = param.Event(doc='Add a new emission category',
+                                     label='Add category')
+    save_categories_event = param.Event(doc='Changes applied to emission categories or adding new categories must be saved explicitly!',
+                                        label='Save category settings')
+    hide_categories_event = param.Event(doc='Hides emission categories panel again',
+                                        label='Hide categories')
+    show_categories_event = param.Event(doc='Show emission categories',
+                                        label='Show categories')
+    select_scenario = param.Selector(default=None, allow_None=True, doc='Selection or configuration of emission scenario')
     # Data containers:
     conc        = param.ClassSelector(class_=xr.Dataset)
     stats4conc  = param.DataFrame()
@@ -655,7 +660,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         # Copy the settings since this may get edited (I think it's cleaner to keep 
         # settings read-only).
         self.emission_scenarios = copy.deepcopy(self.gui_settings.emissions.scenarios)
-
+        self.emission_scenario = None
         # Globally accessible widgets
         self.widgets = {
             'station_selector': pn.widgets.Select.from_param(self.param.current_site,
@@ -665,6 +670,9 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             'add_category': pn.widgets.Button.from_param(self.param.add_category_event,
                                                          css_classes=["category-button"],
                                                          stylesheets=simu_stylesheets,),
+            'save_categories': pn.widgets.Button.from_param(self.param.save_categories_event,
+                                                            css_classes=["category-button"],
+                                                            stylesheets=simu_stylesheets,),
             'hide_categories': pn.widgets.Button.from_param(self.param.hide_categories_event,
                                                             css_classes=["category-button"],
                                                             stylesheets=simu_stylesheets,),
@@ -777,6 +785,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                 self.emission_scenario_widgets,
                 pn.Row(
                     self.widgets['add_category'],
+                    self.widgets['save_categories'],
                     self.widgets['hide_categories'],
                     self.widgets['show_categories'],
                     )
@@ -922,36 +931,48 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
     @param.depends('add_category_event', watch=True)
     def _add_emission_category(self, catname: str = None):
-        # scenario = self.emission_scenarios[self.select_scenario]
-        # msg = f"current scenario settings for -->{self.select_scenario}<--:\n"
-        # for k,v in scenario['category'].items():
-        #     msg += f"{k}: {v}" + '\n'
-        # logger.debug(msg)
         ncat = len(self.emission_scenario['emiscat_list'])
         if catname is None:
             catname = f'category_{ncat + 1}'
-        # msg = f"@{self.select_scenario}, adding category -->{catname}<--"
-        # logger.debug(msg)
+        msg = f"@{self.select_scenario}, adding category -->{catname}<--"
+        logger.debug(msg)
         es = self._build_emission_category(catname)
-        # msg = f"...new emission category built"
-        # logger.debug(msg)
+        msg = f"...new emission category built"
+        logger.debug(msg)
+        escat_config = es.getconfig()[catname]
+        msg = f"catname={catname}, config ***{escat_config}***"
+        logger.debug(msg)
         self.emission_scenario['emiscat_list'].append(es)
-        # msg = f"...appended to 'emiscat_list'"
-        # logger.debug(msg)
         self.emission_scenario_widgets.append(es.__panel__())
-        # msg = f"...widget added"
-        # logger.debug(msg)
-        # ####
-        # esnew = es._toconfig()
-        # for k,v in esnew.items():
-        #     msg = f"{k}: {v}"
-        #     logger.debug(msg)
-        # self.emission_scenarios[self.select_scenario]['categories'][k] = v
-        # scenario = self.emission_scenarios[self.select_scenario]
-        # msg = f"updated scenario settings for -->{self.select_scenario}<--:\n"
-        # for k,v in scenario['category'].items():
-        #     msg += f"{k}: {v}" + '\n'
-        # logger.debug(msg)
+        #-- ATTENTION:must also transfer information from EmissionSettings
+        #             back into the scenario defining dictionary,
+        #             otherwise this will be lost.
+        self.emission_scenarios[self.select_scenario]['categories'][catname] = escat_config
+
+    @param.depends('save_categories_event', watch=True)
+    def _save_emission_categories(self):
+        #-- for safety
+        #   (but we should enter here only, in case a scenario was/is already loaded)
+        if self.emission_scenario is None:
+            return
+        es_settings = self.emission_scenario['emiscat_list']
+        ncat = len(es_settings)
+        escat_list = [_.catname for _ in es_settings]
+        msg = f"current emission categories ==>{escat_list}<=="
+        logger.debug(msg)
+        #
+        #-- transfer back EmissionSettings into defining dictionary
+        #
+        msg = f"updating scenario={self.select_scenario} from EmissionSettings"
+        logger.debug(msg)
+        self.emission_scenarios[self.select_scenario]['categories'] = {}
+        for _es in es_settings:
+            _escat_config = _es.getconfig()[_es.catname]
+            msg = f"...updating settings for category={_es.catname} to {_escat_config}"
+            logger.debug(msg)
+            self.emission_scenarios[self.select_scenario]['categories'][_es.catname] = _escat_config
+
+            
 
     @param.depends('hide_categories_event', watch=True)
     def _hide_emission_categories(self):
@@ -973,34 +994,40 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             es.refresh_file_choices()
 
     def _remove_emission_category(self, es: EmissionSettings):
-        # msg = f"currently available scenarios -->{list(self.emission_scenarios.keys())}<--"
-        # logger.debug(msg)
         # msg = f"@{self.select_scenario}, emiscat_list before removal {len(self.emission_scenario['emiscat_list'])}"
         # logger.debug(msg)
         self.emission_scenario['emiscat_list'].remove(es)
-        # msg = f"emiscat_list after removal {len(self.emission_scenario['emiscat_list'])}"
-        # logger.debug(msg)
         self.emission_scenario_widgets.objects = [e.__panel__() for e in self.emission_scenario['emiscat_list']]
-        # msg = f"...updated self.emission_scenario_widgets.objects"
-        # logger.debug(msg)
-        #-- ATTENTION: we must also remove the category from the current's scenario
-        #              configuration dictionary
-        self.emission_scenarios[self.select_scenario]['categories'].pop(es.catname)
-        # self.emission_scenarios[self.select_scenario] = self.emission_scenario
-        # msg = f"...updated dictionary entry for {self.select_scenario}"
-        # logger.debug(msg)
-        # msg = f"scenario name -->{self.select_scenario}<-- with categories ==>{list(self.emission_scenarios[self.select_scenario].get('categries').keys())}<=="
-        # logger.debug(msg)
+        #-- MVO::any changes in the category pane,
+        #        must now be confirmed by the 'save_categories' button
+        # #-- ATTENTION: we must also remove the category from the current's scenario
+        # #              configuration dictionary
+        # self.emission_scenarios[self.select_scenario]['categories'].pop(es.catname)
 
     @param.depends('select_scenario', watch=True)
     def _load_scenario(self, visible : bool|None = None):
         if self.select_scenario is None:
             return
+        #-- DEBUGGING
+        # if self.emission_scenario!=None:
+        #     es_settings = self.emission_scenario['emiscat_list']
+        #     es_catnames = [ _.catname for _ in es_settings]
+        #     msg = f"...catnames from EmissionSettings -->{es_catnames}<--"
+        #     logger.debug(msg)
+        #
+        #-- load settings for currently selected scenario
+        #
         scenario = self.emission_scenarios[self.select_scenario]
+        # msg = f"selected scenario ***\n{scenario}\n***"
+        # logger.debug(msg)
         editable = scenario.get('editable', False)
         if visible==None: 
             visible = editable
-        self.widgets['add_category'].visible = editable
+        # categories = scenario.get('categories', {}).keys()
+        # msg = f"@{self.select_scenario}, editable={editable}, visible={visible}, categories -->{categories}<--"
+        # logger.debug(msg)
+        self.widgets['add_category'].visible = (editable and visible)
+        self.widgets['save_categories'].visible = (editable and visible)
         self.widgets['hide_categories'].visible = visible
         self.widgets['show_categories'].visible = not visible
         emiscat_list = []
@@ -1008,6 +1035,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             es = self._build_emission_category(catname, visible=visible)
             es.set_category(spec)
             emiscat_list.append(es)
+            # msg = f"...emission settings added for {catname} with spec -->{spec}<--"
+            # logger.debug(msg)
         self.emission_scenario = { 'emiscat_list':emiscat_list,
                                    'drop_domain':scenario.get('drop_domain', None)
                                   }

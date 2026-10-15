@@ -284,3 +284,20 @@ class EmissionSettings(pn.viewable.Viewer):
         newem.emis_reg.fieldname = str(self.emis_reg.fieldname)
         newem.update_visibility_regional_emissions()
         return newem
+
+    def getconfig(self):
+        emis_dict = {}
+        globname = self.emis_glo.filename
+        globfield = self.emis_glo.fieldname
+        emis_dict[self.catname] = {
+            'global': { 'filename': str(self.emis_glo.filename),
+                        'field': str(self.emis_glo.fieldname) }
+            }
+        if self.switch_reg:
+            emis_dict[self.catname]['regional'] = {
+                'filename': str(self.emis_reg.filename),
+                'field': str(self.emis_reg.fieldname)
+            }
+        # msg = f"returning emis_dict ***{emis_dict}***"
+        # logger.debug(msg)
+        return emis_dict
