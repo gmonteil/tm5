@@ -15,16 +15,20 @@ from tqdm.auto import tqdm
 
 
 def coarsen_file(path_or_pattern : str, reg : TM5Grids, start : Timestamp, end : Timestamp, use_esmf_regridder : bool = False, drop_domain : list = None) -> xr.Dataset:
+    if not (reg.dlat - int(reg.dlat) == 0) & (reg.dlon - int(reg.dlon) == 0):
+        msg = f"lat and lon steps must be multiple of the base (1°) step"
+        logger.fatal(msg)
+        raise RuntimeError(msg)
     # Open the source file(s). It should be on a global 1x1 resolution (for now ...)
     # msg = f"operating for path_or_pattern ==>{path_or_pattern}<=="
     # logger.debug(msg)
     ds = xr.open_mfdataset(path_or_pattern)
-    # msg = f"...yields ds\n{ds}\n"
+    # msg = f"...data_vars -->{ds.data_vars}<-- ({use_esmf_regridder})"
     # logger.debug(msg)
     #-- expected grid of global emission inputs
     # !!!TODO:should add consistency check
     glb1x1 = TM5Grids.global1x1()
-
+    
     #
     #-- MVO 2025-03-14::
     #   - re-gridding results seem not appropriate
@@ -52,10 +56,15 @@ def coarsen_file(path_or_pattern : str, reg : TM5Grids, start : Timestamp, end :
             if da_name=='area':
                 continue
             da = ds[da_name]
+            # msg = f"...now @{da_name} units -->{da.units}<--"
+            # logger.debug(msg)
+            #-- make sure units is as expected
+            if not da.units=='kg/cl/s':
+                msg = f"emission {da_name} with unexpected units ==>{da.units}<=="
+                raise RuntimeError(msg)
             #
             #--
             #
-            # print(f"MVODEBUG@coarsen_file, {da_name}, total={da.values.sum()}")
             if drop_domain!=None:
                 drop_west,drop_east,drop_south,drop_north = drop_domain
                 lon_slice = slice(drop_west, drop_east)
@@ -66,16 +75,13 @@ def coarsen_file(path_or_pattern : str, reg : TM5Grids, start : Timestamp, end :
                 msg = f"...@{da_name}, dropping domain -->{drop_domain} " \
                     f"changes total before/after {total_before}/{total_after}"
                 logger.info(msg)
-            #-- make sure units is as expected
-            if not da.units=='kg/cl/s':
-                msg = f"emission {da_name} with unexpected units ==>{da.units}<=="
-                raise RuntimeError(msg)
             #-- (1) crop (result is numpy array)
             data_out = da.sel(lat=slice(reg.south, reg.north),
                               lon=slice(reg.west, reg.east)).values
             #-- (2) coarsen (only if needed):
             if (reg.dlat!=glb1x1.dlat) or (reg.dlon!=glb1x1.dlon):
-                assert (reg.dlat - int(reg.dlat) == 0) & (reg.dlon - int(reg.dlon) == 0), "lat and lon steps must be multiple of the base (1°) step"
+                # assert (reg.dlat - int(reg.dlat) == 0) & (reg.dlon - int(reg.dlon) == 0), \
+                #     "lat and lon steps must be multiple of the base (1°) step"
                 nt, nlat, nlon = data_out.shape
                 data_out = data_out.reshape(nt, -1, int(reg.dlat), nlon).sum(2)
                 nlat = data_out.shape[1]
@@ -98,7 +104,6 @@ def coarsen_file(path_or_pattern : str, reg : TM5Grids, start : Timestamp, end :
                         time=ds['time']),
             data_vars=data_coarse_dict
             )
-
     #
     # ensure result is on a daily time step (at least for  now ...)
     #
@@ -397,6 +402,8 @@ def prepare_emissions(conf: DictConfig) -> None:
             
             # Do the actual coarsening.
             for catname, cat in tracer.categories.items():
+                # msg = f"start coarsening for cat -->{catname}<--"
+                # logger.debug(msg)
                 if 'overwrite' in cat:
                     # print(f"@{region}, {catname}: ***{cat}***")
                     ds = coarsen_file_with_overwrite(cat, reg, start, end, drop_domain=drop_domain)
