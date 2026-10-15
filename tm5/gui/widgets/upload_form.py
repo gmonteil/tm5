@@ -97,10 +97,14 @@ class FileValidator(pn.viewable.Viewer):
             self.error = 'The dataset name may only contain letters, digits, "_", "-" and ".".'
             return
 
+        #-- MVO, 2026-10-15:
+        #   renamed longitude->lon,latitude->lat
+        #   (as these are currently expected in routine emissions::coarsen_file)
+        #   TODO: we should definitely relax this condition!!
         with xr.open_dataset('emis.tmp.nc') as ds:
             ds = ds[[v.varname for v in selected]].rename({
-                self.lat_dim: 'latitude',
-                self.lon_dim: 'longitude',
+                self.lat_dim: 'lat',
+                self.lon_dim: 'lon',
                 self.time_dim: 'time',
             })
             ds = ds.rename({v.varname: v.newname for v in selected})
@@ -109,7 +113,7 @@ class FileValidator(pn.viewable.Viewer):
             ds.attrs['description'] = self.dataset_description
 
             # Coordinates are cell centers of a 1-degree grid, so the boundaries are +/- 0.5 degree
-            lon, lat = ds['longitude'], ds['latitude']
+            lon, lat = ds['lon'], ds['lat']
             is_global = (
                 np.isclose(float(lon.max() - lon.min()) + 1.0, 360.0)
                 and np.isclose(float(lat.max()) + 0.5, 90.0)
