@@ -595,21 +595,17 @@ def plot_map_sites(df: DataFrame, current_site: str):
         hover_cols = ['station',]
     # msg = f"...@{current_site}, xlim/ylim = {xlim}/{ylim}"
     # logger.debug(msg)
-    emis_map = df.hvplot.points(
+    site_map = df.hvplot.points(
         x='station_lon', y='station_lat', color='cur_site', cmap=['LightSlateGray', 'red'],
         geo=True, coastline=True,
         hover_cols=hover_cols,
         xlim=xlim, ylim=ylim, colorbar=False, tiles=tiles
     )
-    return emis_map
+    return site_map
     #-- widgets-boarders currently make problems
     #   on exploredata.icos-cp.eu,
     #   disabled for NCGG10
-    # return df.hvplot.points(
-    #     x='station_lon', y='station_lat', color='cur_site', cmap=['LightSlateGray', 'red'],
-    #     geo=True, coastline=True, xlim=xlim, ylim=ylim, colorbar=False, tiles=tiles
-    # ) * self.widgets['borders']
-
+    # return site_map * gf.border
 
 class PreconfExperimentGUI(pn.viewable.Viewer):
     # emis_dataset = param.FileSelector(doc='Prior emission dataset')
@@ -617,8 +613,12 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
     # run_inv = param.Event(doc='Do an inversion', label='Perform an inversion')
     run_forward = param.Event(doc='', label='Perform a forward simulation')
     run_inv = param.Event(doc='', label='Perform an inversion')
-    duplicate_scenario_event = param.Event(doc='Create a new scenario based on an existing one.', label='Duplicate scenario')
-    confirm_duplicate_event = param.Event(doc='Click to create the new scenario under that name', label='Create')
+    duplicate_scenario_event = param.Event(doc='Create a new emission scenario based on a the selected scenario.',
+                                           label='Duplicate scenario')
+    new_scenario_event = param.Event(doc='Create a new emission scenario from scratch.',
+                                     label='Configure new scenario')
+    confirm_createscenario_event = param.Event(doc='Click to create the new scenario under that name',
+                                            label='Create')
     new_scenario_name = param.String(default='', doc='Name for the new scenario')
     alert = param.String(doc='Generic object for error messages or others ...', default='')
     # current_site = param.Selector(doc='Current site to be displayed', default=None)
@@ -661,6 +661,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         # settings read-only).
         self.emission_scenarios = copy.deepcopy(self.gui_settings.emissions.scenarios)
         self.emission_scenario = None
+        self.new_scenario_type = None
         # Globally accessible widgets
         self.widgets = {
             'station_selector': pn.widgets.Select.from_param(self.param.current_site,
@@ -686,11 +687,11 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                                                             stylesheets=simu_stylesheets,),
         }
         self.widgets['station_selector'].visible = False
-        self.widgets['duplicate_prompt'] = pn.Row(
+        self.widgets['createscenario_prompt'] = pn.Row(
             pn.widgets.TextInput.from_param(self.param.new_scenario_name, name='New scenario name',
                                             css_classes=["simu-select"],
                                             stylesheets=simu_stylesheets,),
-            pn.widgets.Button.from_param(self.param.confirm_duplicate_event,
+            pn.widgets.Button.from_param(self.param.confirm_createscenario_event,
                                          css_classes=["duplicate-button"],
                                          stylesheets=simu_stylesheets,),
             visible=False,
@@ -716,9 +717,9 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         This demo allows you<br>
         <ul>
         <li>to select preconfigured emission scenarios (marked in orange below)</li>
-        <li>to modify a preconfigured emission scenario (using the duplicate button)</li>
-        <li>to create own emission scenarios starting from scratch or from FIT-IC default (marked in green below)</li>
-        <li>to upload a prepared user defined emission scenario (by switchting to the 'upload emissions tab')</li>
+        <li>to modify a preconfigured emission scenario (using the 'Duplicate scenario' button)</li>
+        <li>to create own emission scenarios starting from scratch (using the 'Configure new scenario' buttion)</li>
+        <li>to upload a user prepared emission scenario (switch to the 'upload emissions tab')</li>
         </ul>
         and to perform
         <ul>
@@ -775,19 +776,23 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                 pn.Column(
                     pn.pane.Markdown("## Select or configure prior emission scenario"),
                     pn.Row(
-                        
-                    self.widgets['select_scenario'],
-                    pn.widgets.Button.from_param(self.param.duplicate_scenario_event,
-                                                 css_classes=["duplicate-button"],
-                                                 stylesheets=simu_stylesheets,),
-                    self.widgets['duplicate_prompt'],
-                ),
-                self.emission_scenario_widgets,
-                pn.Row(
-                    self.widgets['add_category'],
-                    self.widgets['save_categories'],
-                    self.widgets['hide_categories'],
-                    self.widgets['show_categories'],
+                        self.widgets['select_scenario'],
+                        pn.Column(
+                            pn.widgets.Button.from_param(self.param.duplicate_scenario_event,
+                                                         css_classes=["duplicate-button"],
+                                                         stylesheets=simu_stylesheets,),
+                            pn.widgets.Button.from_param(self.param.new_scenario_event,
+                                                         css_classes=["duplicate-button"],
+                                                         stylesheets=simu_stylesheets,),
+                            ),
+                        self.widgets['createscenario_prompt'],
+                    ),
+                    self.emission_scenario_widgets,
+                    pn.Row(
+                        self.widgets['add_category'],
+                        self.widgets['save_categories'],
+                        self.widgets['hide_categories'],
+                        self.widgets['show_categories'],
                     )
                 ),
                 sizing_mode="stretch_width",
@@ -887,10 +892,16 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
     @param.depends('duplicate_scenario_event', watch=True)
     def _show_duplicate_prompt(self):
-        self.widgets['duplicate_prompt'].visible = True
+        self.new_scenario_type = 'preconfigured'
+        self.widgets['createscenario_prompt'].visible = True
 
-    @param.depends('confirm_duplicate_event', watch=True)
-    def _duplicate_scenario(self):
+    @param.depends('new_scenario_event', watch=True)
+    def _show_new_prompt(self):
+        self.new_scenario_type = 'scratch'
+        self.widgets['createscenario_prompt'].visible = True
+
+    @param.depends('confirm_createscenario_event', watch=True)
+    def _create_scenario(self):
         self.alert = ''
 
         # Get the value from the "new_scenario_name" widget, once the user has clicked to confirm.
@@ -903,16 +914,24 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             self.alert = f"a scenario named '{new_key}' already exists, pick another name"
             return
 
-        # Copy the "source scenario"
-        source = self.emission_scenarios[self.select_scenario]
+        if self.new_scenario_type=='preconfigured':
+            # Copy the "source scenario"
+            source = self.emission_scenarios[self.select_scenario]
 
-        # Create the new one based on it
-        self.emission_scenarios[new_key] = {
-            'title': new_key,
-            'description': f"Duplicated from \"{source.get('title', self.select_scenario)}\"",
-            'categories': source.get('categories', {}),
-            'editable': True,
-        }
+            # Create the new one based on it
+            self.emission_scenarios[new_key] = {
+                'title': new_key,
+                'description': f"Duplicated from \"{source.get('title', self.select_scenario)}\"",
+                'categories': source.get('categories', {}),
+                'editable': True,
+            }
+        elif self.new_scenario_type=='scratch':
+            self.emission_scenarios[new_key] = {
+                'title': new_key,
+                'description': f"Emission scenario configured from scratch",
+                'categories': {},
+                'editable': True,
+            }
 
         # Update the "select_scenario" object (re-create it completely in fact)
         self.param.select_scenario.objects = list(self.param.select_scenario.objects) + [new_key]
@@ -922,7 +941,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
         # Reset "edit" widgets
         self.new_scenario_name = ''
-        self.widgets['duplicate_prompt'].visible = False
+        self.widgets['createscenario_prompt'].visible = False
 
         #
         self.widgets['show_categories'].visible = False
@@ -931,6 +950,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
     @param.depends('add_category_event', watch=True)
     def _add_emission_category(self, catname: str = None):
+        self.alert = ''
         ncat = len(self.emission_scenario['emiscat_list'])
         if catname is None:
             catname = f'category_{ncat + 1}'
@@ -944,13 +964,15 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         logger.debug(msg)
         self.emission_scenario['emiscat_list'].append(es)
         self.emission_scenario_widgets.append(es.__panel__())
-        #-- ATTENTION:must also transfer information from EmissionSettings
-        #             back into the scenario defining dictionary,
-        #             otherwise this will be lost.
-        self.emission_scenarios[self.select_scenario]['categories'][catname] = escat_config
+        #-- UPDATE:this is now done by 'save_categories_settings'
+        # #-- ATTENTION:must also transfer information from EmissionSettings
+        # #             back into the scenario defining dictionary,
+        # #             otherwise this will be lost.
+        # self.emission_scenarios[self.select_scenario]['categories'][catname] = escat_config
 
     @param.depends('save_categories_event', watch=True)
     def _save_emission_categories(self):
+        self.alert = ''
         #-- for safety
         #   (but we should enter here only, in case a scenario was/is already loaded)
         if self.emission_scenario is None:
@@ -976,12 +998,14 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
     @param.depends('hide_categories_event', watch=True)
     def _hide_emission_categories(self):
+        self.alert = ''
         self._load_scenario(visible=False)
         self.widgets['show_categories'].visible = True
         self.widgets['hide_categories'].visible = False
 
     @param.depends('show_categories_event', watch=True)
     def _show_emission_categories(self):
+        self.alert = ''
         self._load_scenario(visible=True)
         self.widgets['show_categories'].visible = False
         self.widgets['hide_categories'].visible = True
@@ -1006,6 +1030,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
     @param.depends('select_scenario', watch=True)
     def _load_scenario(self, visible : bool|None = None):
+        self.alert = ''
         if self.select_scenario is None:
             return
         #-- DEBUGGING
@@ -1023,7 +1048,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         editable = scenario.get('editable', False)
         if visible==None: 
             visible = editable
-        # categories = scenario.get('categories', {}).keys()
+        categories = scenario.get('categories', {}).keys()
+        ncat = len(categories)
         # msg = f"@{self.select_scenario}, editable={editable}, visible={visible}, categories -->{categories}<--"
         # logger.debug(msg)
         self.widgets['add_category'].visible = (editable and visible)
@@ -1110,16 +1136,21 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             - 100: something went wrong ...
             - 101: result is not valid json
         """
-        # if self.emis_dataset in self.cache_inv and task == 'inversion':
-        #     return self.cache_inv[self.emis_dataset]
-        # elif self.emis_dataset in self.cache_fwd and task == 'forward':
-        #     return self.cache_fwd[self.emis_dataset]
-
         url = f"{self.gui_settings.backend_url}/forward"
 
         msg = f"self.emission_scenario ***{self.emission_scenario}***"
         logger.debug(msg)
 
+        #
+        #-- cannot run without emissions
+        #
+        if len(self.emission_scenario['emiscat_list'])==0:
+            self.alert = f"scenario ->{self.select_scenario}<- has no emissions at all, " \
+                f"running -->{task}<-- not possible. Please update your scenario."
+            return
+        #
+        #-- assemble emissions configuration
+        #
         emis_conf = {
             'start': self.gui_settings.start,
             'end': self.gui_settings.end,
@@ -1137,6 +1168,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                 for es in self.emission_scenario['emiscat_list']
             },
         }
+        
         # msg = f"...generated emis_conf (stage1) \n{emis_conf}\n" \
         #     f"(checksum: {dict_checksum(emis_conf)})"
         # logger.debug(msg)
@@ -1161,6 +1193,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         #-- checksum must *not* depend on name of the configuration!
         #
         emis_conf_chksum = dict_checksum(emis_conf)
+        #-- add name  of configuraion
         emis_conf['name'] = self.select_scenario
         
         msg = f"@self.emission_scenario ***{self.emission_scenario}*** yields checksum " \
@@ -1218,7 +1251,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         except requests.exceptions.JSONDecodeError:
             self.alert = f"{task} run failed: backend returned non-JSON for " \
                 f"configuration *****{yaml_conf}**** at {url}. Body: {r.text[:500]}"
-            retur
+            return
         #-- processing done, disable spinner
         self.running_pane.visible = False
         self.spinner.value = False
