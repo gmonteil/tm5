@@ -124,7 +124,7 @@ simu_stylesheets = [
     font-weight: 600;
     color: #444;
     }
-    :host(.column-configure-pane) {
+    :host(.configure-pane) {
     min-width: 0;
     background: #f5f7fa;
     border: 2px solid #ddd;
@@ -132,7 +132,7 @@ simu_stylesheets = [
     max-width: 75%;
     padding: 15px;
     }
-    :host(.column-running-pane) {
+    :host(.running-pane) {
     min-width: 0;
     background: #f5f7fa;
     border: 2px solid #ddd;
@@ -834,9 +834,12 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         #
         #--
         #
-        result_widgets = [ self.widgets['station_selector'],
-                           pn.Row(self.conc_plot, self.map_sites),
-                           pn.Row(self.conc_stats_table, self.target_table),]
+        result_widgets = [
+            pn.pane.Markdown("## Results"),
+            self.widgets['station_selector'],
+            pn.Row(self.conc_plot, self.map_sites),
+            pn.Row(self.conc_stats_table, self.target_table),
+        ]
         # if self.gui_settings.get('show_emismap', False):
         #     result_widgets.append(self.map_emissions)
         #-- combine result elements into one column pane
@@ -852,8 +855,17 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         #--
         #
         widgets = [
+            #
+            #-- introduction
+            #
             intro_pane,
+            #
+            #-- scenario descriptions
+            #
             scenario_table_pane,
+            #
+            #-- scenario configuration
+            #
             pn.Column(
                 pn.Column(
                     pn.pane.Markdown("## Select or configure prior emission scenario"),
@@ -877,10 +889,14 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                         self.widgets['show_categories'],
                     )
                 ),
+                margin=(2, 0, 2, 0),  # top, right, bottom, left
                 sizing_mode="stretch_width",
                 stylesheets=simu_stylesheets,
-                css_classes=['column-configure-pane'],
+                css_classes=['configure-pane'],
             ),
+            #
+            #-- running scenario
+            #
             pn.Column(
                 pn.Column(
                     pn.pane.Markdown("## Running a prior emission scenario"),
@@ -900,11 +916,18 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                     ),
                 ),
                 self.running_feedback_pane,
+                margin=(2, 0, 2, 0),  # top, right, bottom, left
                 sizing_mode="stretch_width",
                 stylesheets=simu_stylesheets,
-                css_classes=['column-running-pane'],
+                css_classes=['running-pane'],
             ),
+            #
+            #-- alert
+            #
             self._alert,
+            #
+            #-- results
+            #
             self.result_pane,
         ]
         #-- MVO-TODO::should be included in result_pane,
