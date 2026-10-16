@@ -33,9 +33,26 @@ from tm5.gui.widgets.emissions import EmissionSettings
 from tm5.gui.widgets.stations import calc_statistics
 from tm5.gui.widgets.widget_utils import experiment_desc, plot_site_info, load_observations_metadata
 
-
+#-- TODO: styling of widgets hard-coded here,
+#         this should eventually being read from stylesheet file...
 simu_stylesheets = [
     """
+    :host(.intro) {
+    font-size: 1.3em;
+    background: #D5EFF7;
+    border-radius: 8px;
+    border: 2px #050505 solid;
+    /*max-width: 600px;*/
+    max-width: 75%;
+    padding: 15px;
+    }
+    :host(.scenario-table) {
+    font-size: 1.25em;
+    background: #D0EAF2;
+    border-radius: 8px;
+    border: 2px #050505 solid;
+    max-width: 80%;
+    }
     :host(.forward-button) .bk-btn {
     background-color: #cfd9e2 !important;
     border-color: #cfd9e2 !important;
@@ -46,8 +63,10 @@ simu_stylesheets = [
     border-radius: 6px;
     }
     :host(.forward-button) .bk-btn:hover {
-    background-color: #00cc66 !important;
-    border-color: #00cc66 !important;
+/*    background-color: #1DB86D !important;*/
+/*    border-color: #1DB86D !important;*/
+    background-color: #A3D6B1 !important;
+    border-color: #050505 !important;
     }
     :host(.inversion-button) .bk-btn {
     background-color: #cfd9e2 !important;
@@ -59,10 +78,10 @@ simu_stylesheets = [
     border-radius: 6px;
     }
     :host(.inversion-button) .bk-btn:hover {
-    background-color: #00cc66 !important;
-    border-color: #00cc66 !important;
+    background-color: #A3D6B1 !important;
+    border-color: #050505 !important;
     }
-    :host(.duplicate-button) .bk-btn {
+    :host(.scenario-config-button) .bk-btn {
     background-color: #c8d9ea !important;
     border-color: #c8d9ea !important;
     color: white;
@@ -71,9 +90,9 @@ simu_stylesheets = [
     border: 1px solid #388E3C;
     border-radius: 6px;
     }
-    :host(.duplicate-button) .bk-btn:hover {
-    background-color: #00cc66 !important;
-    border-color: #00cc66 !important;
+    :host(.scenario-config-button) .bk-btn:hover {
+    background-color: #A3D6B1 !important;
+    border-color: #050505 !important;
     }
     :host(.category-button) .bk-btn {
     background-color: #c8d9ea !important;
@@ -85,13 +104,12 @@ simu_stylesheets = [
     border-radius: 6px;
     }
     :host(.category-button) .bk-btn:hover {
-    background-color: #00cc66 !important;
-    border-color: #00cc66 !important;
+    background-color: #A3D6B1 !important;
+    border-color: #050505 !important;
     }
     :host(.simu-select) .bk-input {
 /*    background-color: #f0f8ff;*/
     color: #222;
-    border: 1px solid #1976d2;
     border: 1px solid #000000;
     border-radius: 6px;
     font-weight: 500;
@@ -106,7 +124,55 @@ simu_stylesheets = [
     font-weight: 600;
     color: #444;
     }
-    """]
+    :host(.column-configure-pane) {
+    min-width: 0;
+    background: #f5f7fa;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    max-width: 75%;
+    padding: 15px;
+    }
+    :host(.column-running-pane) {
+    min-width: 0;
+    background: #f5f7fa;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    max-width: 75%;
+    padding: 15px;
+    }
+    :host(.running-feedback-pane) {
+    min-width: 0;
+    background: #FCC6BB;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    }
+    :host(.result-pane) {
+    min-width: 0;
+    background: #fafcff;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    max-width: 85%;
+    padding: 15px;
+    }
+    :host(.station-select) .bk-input {
+/*    background-color: #f0f8ff;*/
+    color: #222;
+    border: 1px solid #000000;
+    border-radius: 6px;
+    font-weight: 500;
+    font-size: 1.25em;
+    }
+    :host(.station-select) .bk-input:focus {
+    border-color: #0d47a1;
+    box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+    }
+    :host(.station-select) .bk-input-group > label {
+    font-size: 1.25em;
+    font-weight: 600;
+    color: #444;
+    }
+    """,
+]
 
 @debug.timer
 def simulation_read_targets(output_path: Path) -> Tuple[np.ndarray, DataFrame]:
@@ -661,7 +727,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         # settings read-only).
         self.emission_scenarios = copy.deepcopy(self.gui_settings.emissions.scenarios)
         self.emission_scenario = None
-        self.new_scenario_type = None
+        self.new_scenario_type = None #'preconfigured' or 'from_scratch'
         # Globally accessible widgets
         self.widgets = {
             'station_selector': pn.widgets.Select.from_param(self.param.current_site,
@@ -686,20 +752,23 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                                                             css_classes=["simu-select"],
                                                             stylesheets=simu_stylesheets,),
         }
-        self.widgets['station_selector'].visible = False
+        #-- NOTE: station_selector widget now included in self.result_pane,
+        #         where visibility is controlled.
+        # self.widgets['station_selector'].visible = False
         self.widgets['createscenario_prompt'] = pn.Row(
             pn.widgets.TextInput.from_param(self.param.new_scenario_name, name='New scenario name',
-                                            css_classes=["simu-select"],
+                                            css_classes=["station-select"],
                                             stylesheets=simu_stylesheets,),
             pn.widgets.Button.from_param(self.param.confirm_createscenario_event,
-                                         css_classes=["duplicate-button"],
+                                         css_classes=["scenario-config-button"],
                                          stylesheets=simu_stylesheets,),
             visible=False,
         )
 
         self.param.select_scenario.objects = list(self.emission_scenarios.keys())
         self._fix_scenario_display_name()
-        self.select_scenario = 'default'
+        #-- whether there is 'default' depends on the configuration file
+        self.select_scenario = self.param.select_scenario.objects[0] #'default'
 
     def _fix_scenario_display_name(self):
         """
@@ -731,15 +800,15 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
          """
         intro_pane = pn.pane.Markdown(
             intro_text,
-            stylesheets=[preconfsim_stylesheet], 
-            css_classes=['precomp-intro']
+            stylesheets=simu_stylesheets, 
+            css_classes=['intro']
         )
         scenario_table_md = plot_scenario_table_md(self.emission_scenarios)
         scenario_table_md = f"## Description of prior emission scenarios\n{scenario_table_md}"
         scenario_table_pane = pn.pane.Markdown(
             scenario_table_md,
-            stylesheets=[preconfsim_stylesheet],
-            css_classes=['precomp-right']
+            stylesheets=simu_stylesheets,
+            css_classes=['scenario-table']
         )
         #
         #-- spinners indicating the forward/inversion are (still) active
@@ -753,19 +822,32 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                                                styles={
                                                    "font-size": "1.25em",
                                                })
-        self.running_pane = pn.Row(
+        self.running_feedback_pane = pn.Row(
             self.spinner,
             pn.Spacer(width=10),
             self.operation_pane,
             align="center",
-            styles={
-                "min-width": "0",
-                "background": "#FCC6BB",
-                "border": "1px solid #ddd",
-                "border-radius": "8px",
-            }
+            stylesheets=simu_stylesheets,
+            css_classes=['running-feedback-pane'],
         )
-        self.running_pane.visible = False
+        self.running_feedback_pane.visible = False
+        #
+        #--
+        #
+        result_widgets = [ self.widgets['station_selector'],
+                           pn.Row(self.conc_plot, self.map_sites),
+                           pn.Row(self.conc_stats_table, self.target_table),]
+        # if self.gui_settings.get('show_emismap', False):
+        #     result_widgets.append(self.map_emissions)
+        #-- combine result elements into one column pane
+        self.result_pane = pn.Column(
+            *result_widgets,
+            sizing_mode="stretch_width",
+            # sizing_mode="scale_width",
+            stylesheets=simu_stylesheets,
+            css_classes=['result-pane'],
+        )
+        self.result_pane.visible = False
         #
         #--
         #
@@ -779,10 +861,10 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                         self.widgets['select_scenario'],
                         pn.Column(
                             pn.widgets.Button.from_param(self.param.duplicate_scenario_event,
-                                                         css_classes=["duplicate-button"],
+                                                         css_classes=["scenario-config-button"],
                                                          stylesheets=simu_stylesheets,),
                             pn.widgets.Button.from_param(self.param.new_scenario_event,
-                                                         css_classes=["duplicate-button"],
+                                                         css_classes=["scenario-config-button"],
                                                          stylesheets=simu_stylesheets,),
                             ),
                         self.widgets['createscenario_prompt'],
@@ -796,14 +878,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                     )
                 ),
                 sizing_mode="stretch_width",
-                styles={
-                    "min-width": "0",
-                    "background": "#f5f7fa",
-                    "border": "2px solid #ddd",
-                    "border-radius": "8px",
-                    "max-width": "75%",
-                    "padding": "15px",
-                }
+                stylesheets=simu_stylesheets,
+                css_classes=['column-configure-pane'],
             ),
             pn.Column(
                 pn.Column(
@@ -823,24 +899,20 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                         ),
                     ),
                 ),
-                self.running_pane,
+                self.running_feedback_pane,
                 sizing_mode="stretch_width",
-                styles={
-                    "min-width": "0",
-                    "background": "#f5f7fa",
-                    "border": "2px solid #ddd",
-                    "border-radius": "8px",
-                    "max-width": "75%",
-                    "padding": "15px",
-                }
+                stylesheets=simu_stylesheets,
+                css_classes=['column-running-pane'],
             ),
             self._alert,
-            self.widgets['station_selector'],
-            pn.Row(self.conc_plot, self.map_sites),
-            pn.Row(self.conc_stats_table, self.target_table)
+            self.result_pane,
         ]
+        #-- MVO-TODO::should be included in result_pane,
+        #             but the maps then remain blank.
+        #             Thus keep it still separate for now...
         if self.gui_settings.get('show_emismap', False):
             widgets.append(self.map_emissions)
+        #
         return pn.Column(*widgets)
 
     # ------------------------------------------------
@@ -897,7 +969,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
 
     @param.depends('new_scenario_event', watch=True)
     def _show_new_prompt(self):
-        self.new_scenario_type = 'scratch'
+        self.new_scenario_type = 'from_scratch'
         self.widgets['createscenario_prompt'].visible = True
 
     @param.depends('confirm_createscenario_event', watch=True)
@@ -925,7 +997,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                 'categories': source.get('categories', {}),
                 'editable': True,
             }
-        elif self.new_scenario_type=='scratch':
+        elif self.new_scenario_type=='from_scratch':
             self.emission_scenarios[new_key] = {
                 'title': new_key,
                 'description': f"Emission scenario configured from scratch",
@@ -1214,7 +1286,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         #
         #-- start processing, activate spinner
         #
-        self.running_pane.visible = True
+        self.running_feedback_pane.visible = True
         self.spinner.value = True
         #
         #-- emission preparation on frontend
@@ -1253,7 +1325,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
                 f"configuration *****{yaml_conf}**** at {url}. Body: {r.text[:500]}"
             return
         #-- processing done, disable spinner
-        self.running_pane.visible = False
+        self.running_feedback_pane.visible = False
         self.spinner.value = False
         #-- reset alert
         self.alert = ''
@@ -1297,7 +1369,8 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
             self.current_site = self.param.current_site.objects[0]
             # msg = f"...self.current_site now set to -->{self.current_site}<--"
             # logger.debug(msg)
-            self.widgets['station_selector'].visible = True
+            # self.widgets['station_selector'].visible = True
+            self.result_pane.visible = True
             # msg = f"...self.widgets['station_selector'].visible now set " \
             #     f"value={self.widgets['station_selector'].visible}"
             # logger.debug(msg)

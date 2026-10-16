@@ -47,45 +47,6 @@ precomp_stylesheet = """
 }
 """
 
-preconfsim_stylesheet = """
-:host(.precomp-left) {
-  font-size: 1.25em;
-  background: #C1D8E0;
-  border-radius: 5px;
-  border: 1px black solid;
-}
-
-:host(.precomp-right) {
-  font-size: 1.25em;
-  background: #D0EAF2;
-  border-radius: 5px;
-  border: 1px black solid;
-  max-width: 80%;
-}
-
-:host(.precomp-intro) {
-  font-size: 1.3em;
-#  background: #D0EAF2;
-  background: #D5EFF7;
-  border-radius: 5px;
-  border: 1px black solid;
-#  max-width: 600px;
-  max-width: 75%;
-  padding: 15px;
-}
-:host(.scenario-highlight) {
-  background-color: #e8f5e9;
-}
-:host(.green) .noUi-handle {
-  background-color: green
-}
-
-:host(.blue) .noUi-handle {
-  background-color: blue
-}
-"""
-
-
 runsettings_style = {
     'font-size': '1.25em',
     'background': '#BBE5F5',
