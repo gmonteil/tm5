@@ -151,7 +151,7 @@ simu_stylesheets = [
     background: #fafcff;
     border: 2px solid #ddd;
     border-radius: 8px;
-    max-width: 85%;
+/*    max-width: 85%;*/
     padding: 15px;
     }
     :host(.station-select) .bk-input {
