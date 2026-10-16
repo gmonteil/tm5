@@ -23,7 +23,8 @@
 - Documentation
     - [ ] properly setup github pages with mkdocs
 - Inversion
-    - [ ] first MV and then GM (2): to check whether the adjoint read the proper OH field     
+    - [ ] first MV and then GM (2): to check whether the adjoint read the proper OH field
+    - [ ] GM (3) to add stratospheric chemistry     
     - [ ] TXK/MV: draft a kind of tutorial guiding the user through one of the experiments
     - [ ] TXK to exclude spinup from target Jacobian  
             
