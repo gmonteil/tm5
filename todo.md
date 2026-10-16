@@ -10,6 +10,8 @@
     - [ ] (8) GM: Integrate some visualisation of the emission budget in configuration part of the GUI (to allow perform a quick sanity check)
     - [ ] (9) GM: to implement that option of making an uploaded emission file public (e.g. only show the user specific subdir in the emissions folder to that very user); maybe we also need to validate the file ourselves before it is allowed to be public
     - [ ] (10) GM: Add plot or table that indicates relative contribution of each sector to total signal at each site (only if we run sectors separately), this is not urgent, can be added later ...
+    - [ ] The 'coarsen_file' routine for the emissions expected dimensions 'lon'/'lat' in the file, while the upload form introduced 'longitude'/'latitude'.
+For now I have adapted this in the  upload_form.py, but eventually we probably should relax the naming conventions a bit.
 - GUI (extension)
     - [ ] try to extend the current logic that allows us to retrieve results from previous experiments beyond the current session (use checksum of config file)
 - TM5 speedup
