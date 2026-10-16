@@ -41,45 +41,19 @@ simu_stylesheets = [
     font-size: 1.3em;
     background: #D5EFF7;
     border-radius: 8px;
-    border: 2px #050505 solid;
-    /*max-width: 600px;*/
+/*    border: 2px #050505 solid;*/
+    border: 4px #CCE5ED solid;
     max-width: 75%;
     padding: 15px;
     }
     :host(.scenario-table) {
     font-size: 1.25em;
-    background: #D0EAF2;
+/*    background: #D0EAF2;*/
+    background: #D5EFF7;
     border-radius: 8px;
-    border: 2px #050505 solid;
+/*    border: 2px #050505 solid;*/
+    border: 4px #CCE5ED solid;
     max-width: 80%;
-    }
-    :host(.forward-button) .bk-btn {
-    background-color: #cfd9e2 !important;
-    border-color: #cfd9e2 !important;
-    color: white;
-    /*border: none;*/
-    font-size: 1.25em;
-    border: 1px solid #388E3C;
-    border-radius: 6px;
-    }
-    :host(.forward-button) .bk-btn:hover {
-/*    background-color: #1DB86D !important;*/
-/*    border-color: #1DB86D !important;*/
-    background-color: #A3D6B1 !important;
-    border-color: #050505 !important;
-    }
-    :host(.inversion-button) .bk-btn {
-    background-color: #cfd9e2 !important;
-    border-color: #cfd9e2 !important;
-    color: white;
-    border: none;
-    font-size: 1.25em;
-    border: 1px solid #388E3C;
-    border-radius: 6px;
-    }
-    :host(.inversion-button) .bk-btn:hover {
-    background-color: #A3D6B1 !important;
-    border-color: #050505 !important;
     }
     :host(.scenario-config-button) .bk-btn {
     background-color: #c8d9ea !important;
@@ -139,6 +113,34 @@ simu_stylesheets = [
     border-radius: 8px;
     max-width: 75%;
     padding: 15px;
+    }
+    :host(.forward-button) .bk-btn {
+    background-color: #cfd9e2 !important;
+    border-color: #cfd9e2 !important;
+    color: white;
+    /*border: none;*/
+    font-size: 1.25em;
+    border: 1px solid #388E3C;
+    border-radius: 6px;
+    }
+    :host(.forward-button) .bk-btn:hover {
+/*    background-color: #1DB86D !important;*/
+/*    border-color: #1DB86D !important;*/
+    background-color: #A3D6B1 !important;
+    border-color: #050505 !important;
+    }
+    :host(.inversion-button) .bk-btn {
+    background-color: #cfd9e2 !important;
+    border-color: #cfd9e2 !important;
+    color: white;
+    border: none;
+    font-size: 1.25em;
+    border: 1px solid #388E3C;
+    border-radius: 6px;
+    }
+    :host(.inversion-button) .bk-btn:hover {
+    background-color: #A3D6B1 !important;
+    border-color: #050505 !important;
     }
     :host(.running-feedback-pane) {
     min-width: 0;
@@ -796,7 +798,7 @@ class PreconfExperimentGUI(pn.viewable.Viewer):
         <li>perform an atmospheric transport inversion using the selected scenario as prior emission field.</li>
         </ul>
         <br>
-         For further background on the tool see <a href="https://fit-ic.inversion-lab.com">FIT-IC website</a>.
+         For further background on the tool see <a href="https://fit-ic.inversion-lab.com" target="_blank">FIT-IC website</a>.
          """
         intro_pane = pn.pane.Markdown(
             intro_text,
