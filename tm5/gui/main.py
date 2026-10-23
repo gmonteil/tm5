@@ -261,7 +261,7 @@ class ExperimentSetupGUI(pn.viewable.Viewer):
 
 
 class FitIC_UI(pn.viewable.Viewer):
-    def __init__(self, config_file: Path | str = 'gui.yml'):
+    def __init__(self, config_file: Path | str = '/data/fit_ic/config/fitic-gui_esa-event-2026.yml'):
         super().__init__()
         fix_env()
         if not Path(config_file).exists():
