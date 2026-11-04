@@ -1,6 +1,6 @@
 # Tasks (by order of priority)
 - GUI development steps
-    - [ ] (1) GM complete file upload, file to be stored in subdirectory guillaume, in /data/avengers/fit-ic ... emissions etc
+    - [ ] (1) There is a problem with the file upload from Notebooks on ICOS hub: When the file size passes a certain threshold (roughly 15MB), then it is not uploaded and no error message displayed. This is a Jupyter feature! A potential fix for us would be to use the upload tool separately and then access the uploaded file from our Notebook. But for now we can live with the restriction.
     - [ ] (2) MV/txk to adapt fortran code such that both the short demo version and the full one year version both rely on the same file for the Jacobian and the observations, the demo version just reads in and uses only the fraction needed to cover Jan 2021 for the obs and the period from Oct 2020 to Jan 2021 for the Jacobian (need to observe CPU time for the demo version, it should remain as quick as it is now)
     - [ ] (3) MV to make this line invisible to the user: "yamlfile='/srv/data/AVENGERS/fit_ic/gui/gui-new_ilabdesk.yml'"
     - [ ] (4) MV to adapt the GUI such that the choice of the configuration is between "Fast version Jan 2021" and "Slower version for full year 2021"
