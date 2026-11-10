@@ -511,7 +511,7 @@ contains
     ! >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
     ! from 'sources_sinks/trace_after_read
 
-#ifndef without_diffusion
+#if !defined(without_convection) && !defined(without_diffusion)
     ! setup diffusion fields:
     call Diffusion_Setup( t1, t2, status )
     IF_NOTOK_RETURN(status=1)
@@ -833,7 +833,7 @@ contains
 
         case ( 'd' )
 
-#ifndef without_diffusion
+#if !defined(without_convection) && !defined(without_diffusion)
 !          if ( vdiff_apply ) then
 
             !WP! data must be on tracers for convection

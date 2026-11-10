@@ -81,7 +81,7 @@ module dims_grid
   integer, parameter  :: yref(0:nregions) = (/ 1, 1, 2, 4/)
   integer, parameter  :: zref(0:nregions) = (/ 1, 1, 1, 1/)
   ! integer, parameter  :: tref(0:nregions) = (/ 1, 1, 2, 1/)!MVO:unclear whether this must be changed as well
-  integer, parameter  :: tref(0:nregions) = (/ 1, 1, 1, 1/)!MVO:unclear whether this must be changed as well
+  integer, parameter  :: tref(0:nregions) = [1, 1, 2, 4]
 
   ! Define the parent of each region. 
   ! Global region 2 should have parent 0 (globe single cell);

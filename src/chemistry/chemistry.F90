@@ -6,14 +6,14 @@
 
 module chemistry
 
-    use go,             only : TDate, readrc, T_Time_Window, operator(<), NewDate, TIncrDate, operator(+), IncrDate
+    use go,             only : TDate, readrc, T_Time_Window, operator(<), NewDate, TIncrDate, operator(+), IncrDate, date_min, operator(>=)
     use global_data,    only : rcf
     use chem_param,     only : ntracet, tracers, tracer_t, react_t, ntlow
-    use dims,           only : im, jm, lm, isr, ier, jsr, jer, nregions
+    use dims,           only : im, jm, lm, isr, ier, jsr, jer, nregions, revert
     use meteo,          only : pclim_dat
     use file_netcdf
-    use grid_type_ll,   only : init_grid => init, done_grid => done, tllgridinfo
-    use grid_type_hyb,  only : init_levels => init, done_levels => done, tlevelinfo
+    use grid_type_ll,   only : init_grid => init, tllgridinfo
+    use grid_type_hyb,  only : init_levels => init, tlevelinfo
     use grid_3d,        only : fill3d
     use go,             only : gol, goerr
     use tm5_geometry,   only : lli, levi
@@ -58,6 +58,7 @@ module chemistry
        real, dimension(:, :, :, :), allocatable :: conc ![molec / cm**3]
        type(tllgridinfo)                        :: lli
        type(tlevelinfo)                         :: levi
+       logical                                  :: initialized = .false.
     end type oh_input
     ! integer                                  :: cur_year=-1
     ! real, dimension(:, :, :, :), allocatable :: cur_ohfield_in
@@ -105,7 +106,7 @@ module chemistry
             do itr = 1, ntracet
                 if (tracers(itr)%has_chem) then
 
-                    call get_total_loss_rate(region, period, tracers(itr), loss_rate)
+                    call get_total_loss_rate(region, period, tracers(itr), loss_rate, status)
 
                     rm => mass_dat(region)%rm_t(is : ie, js : je, :, itr)
                     
@@ -132,8 +133,6 @@ module chemistry
         subroutine chemistry_done(status)
             integer, intent(out)    :: status
             status = 0
-            ! call ohinput_dispose('cams')
-            ! call ohinput_dispose('spiva')
         end subroutine chemistry_done
 
 
@@ -143,48 +142,7 @@ module chemistry
             status = 0
         end subroutine read_chemistry_fields
 
-        subroutine ohinput_dispose(version)
-          character(len=*), intent(in) :: version
-          character(len=*),parameter :: rname = mname//'/oh_dispose'
-          integer :: status
-          !
-          !-- dispose/reset data from previous year,
-          !   - for derived type cur_lli_in/cur_levi_in
-          !     we (*only*) check one single pointer-typed
-          !     component to decide whether data must be disposed.
-          !
-          select case(version)
-          case ('cams        ')
-!          case ('cams')
-                if( allocated(oh_cams%conc) ) then
-                   deallocate(oh_cams%conc)
-                endif
-                if( associated(oh_cams%lli%lon) ) then
-                   call done_grid(oh_cams%lli, status)
-                   IF_NOTOK_RETURN(status=1)
-                endif
-                if( associated(oh_cams%levi%a) ) then
-                   call done_levels(oh_cams%levi, status)
-                   IF_NOTOK_RETURN(status=1)
-                endif
-             case ('spivakovsky ')
-             case ('spiva')
-                if( allocated(oh_spiva%conc) ) then
-                   deallocate(oh_spiva%conc)
-                endif
-                if( associated(oh_spiva%lli%lon) ) then
-                   call done_grid(oh_spiva%lli, status)
-                   IF_NOTOK_RETURN(status=1)
-                endif
-                if( associated(oh_spiva%levi%a) ) then
-                   call done_levels(oh_spiva%levi, status)
-                   IF_NOTOK_RETURN(status=1)
-                endif
-             end select
-        end subroutine ohinput_dispose
-
-
-        subroutine get_total_loss_rate(region, period, tracer, loss_rate)
+        subroutine get_total_loss_rate(region, period, tracer, loss_rate, status)
             ! Get the total tracer loss (i.e. sum of reaction rate * mass * dtime) for a given tracer
 
             Type(TDate), dimension(2), intent(in)   :: period
@@ -192,6 +150,8 @@ module chemistry
             type(tracer_t), intent(inout)           :: tracer
             ! real, dimension(:, :, :), allocatable, intent(out)   :: loss_rate
             real, dimension(:, :, :), intent(out)   :: loss_rate
+            integer, intent(out)                    :: status
+
             integer                                 :: ireac
             real, dimension(:, :, :), allocatable   :: rrate
             character(len=*), parameter             :: rname = &
@@ -204,13 +164,13 @@ module chemistry
             do ireac = 1, tracer%nreact
 
                 ! Get the mass of the species the tracer reacts with
-                call get_conc_field(tracer%reactions(ireac), period, region)
+                call get_conc_field(tracer%reactions(ireac), period, region, status)
 
                 ! Calculate the reaction rate
                 rrate = get_rrate_field(tracer%reactions(ireac), region)
 
                 ! Make sure the reaction rate is set to 0 outside the region/vertical domain of application of the reaction
-                call apply_l_domain(rrate, tracer%reactions(ireac), region)
+                call apply_l_domain(rrate, tracer%reactions(ireac), region, status)
 
                 ! Calculate the loss rate
                 loss_rate = loss_rate + rrate * tracer%reactions(ireac)%conc(region)%values
@@ -246,8 +206,7 @@ module chemistry
         end function get_rrate_field
 
 
-        subroutine apply_l_domain(field, reaction, region)
-
+        subroutine apply_l_domain(field, reaction, region, status)
             ! domain :
             ! total  = total atmosphere
             ! tropo  = troposphere only
@@ -262,7 +221,8 @@ module chemistry
             real, dimension(:, :, :), intent(inout)     :: field
             type(react_t), intent(in)                   :: reaction
             integer, intent(in)                         :: region
-            integer                                     :: status
+            integer, intent(out)                        :: status
+
             integer                                     :: ilon, ilat, ilev
             real                                        :: lat
             real                                        :: pres, pres_tropopause
@@ -304,30 +264,34 @@ module chemistry
                     end do
                 end do
             end do
-
         end subroutine apply_l_domain
 
 
-        subroutine get_conc_field(reaction, period, region)
-
+        subroutine get_conc_field(reaction, period, region, status)
             type(react_t), intent(inout)                :: reaction
             type(TDate), dimension(2), intent(in)       :: period
             integer, intent(in)                         :: region
+            integer, intent(out)                        :: status
+
+            character(len=*), parameter                 :: rname = 'chemistry:get_conc_field'
 
             ! Check if we need to read new data (i.e. new period). Otherwise return what's already in memory
-            if (period(1) < reaction%data_period%t2) return
+            if ((revert == 1) .and. (period(1) < reaction%data_period%t2)) return
+            if ((revert == -1) .and. (period(2) >= reaction%data_period%t1)) return
 
             select case (reaction%version)
                 case ('cams        ')
-                    call get_conc_field_cams(reaction, period)
+                    call get_conc_field_cams(reaction, period, status)
                 case ('spivakovsky ')
-                    call get_conc_field_spivakovsky(reaction, period)
+                    call get_conc_field_spivakovsky(reaction, period, status)
+                case default
+                    write (gol,'("unsupported OH version: ",a)') trim(reaction%version); call goErr
+                    TRACEBACK; status=1; return
             end select
-
         end subroutine get_conc_field
 
 
-        subroutine get_conc_field_cams(reaction, period)
+        subroutine get_conc_field_cams(reaction, period, status)
 
             type(react_t), intent(inout)                :: reaction
             type(TDate), dimension(2), intent(in)       :: period
@@ -335,25 +299,26 @@ module chemistry
             real, dimension(:, :, :, :), allocatable    :: ohfield_in
             real, dimension(:), allocatable             :: hyb_a, hyb_b
             character(len=*), parameter                 :: rname = mname//'/get_conc_field_cams'
+            integer, intent(out)                        :: status
 
             integer             :: ncf
-            integer             :: status
             character(len=256)  :: reacfile
-            type(tllgridinfo)   :: lli_in
-            type(tlevelinfo)    :: levi_in
             integer             :: nlay
             integer             :: region
             integer             :: i_month
+            type(TDate)         :: period_start
+
+            period_start = date_min(period(1), period(2))
 
             reaction%climatology = .false.
             reaction%data_timestep = '1m'
-            reaction%data_period = get_new_period(period(1), reaction%data_timestep)
+            reaction%data_period = get_new_period(period_start, reaction%data_timestep)
 
             !
             ! int64 month(month) ;
             ! double OH(month, pressure_level, lat, lon) ;
             !     OH:_FillValue = NaN ;
-	    !     OH:units = "molec / cm ** 3" ;
+            !     OH:units = "molec / cm ** 3" ;
             !
             i_month = reaction%data_period%t1%month
 
@@ -361,42 +326,32 @@ module chemistry
             ! assumption is that OH files are annual,
             ! only re-loading file in case the year has changed!
             if (oh_cams%year /= reaction%data_period%t1%year) then
-               !
-               !-- dispose resources from previous year (if any)
-               !
-               call ohinput_dispose('cams')
-               !
-               !-- file name for current year
-               !
-               write(reacfile, '(a,i4,a)') trim(reaction%file)//'_', period(1)%year, '_monthly.nc'
-               print*, 'DEBUG@'//rname//':: reading OH from file ***'//&
-                    trim(reacfile)//'***'
-               ncf = nc_open(reacfile, 'r', status)
-               IF_NOTOK_RETURN(status=1)
-               ohfield_in = nc_read_var(ncf, 'OH', status)     ! needs to be pre-converted in molec/cm3!
-               IF_NOTOK_RETURN(status=1)
-               hyb_a = nc_read_var(ncf, 'z_a_grid', status)
-               IF_NOTOK_RETURN(status=1)
-               hyb_b = nc_read_var(ncf, 'z_b_grid', status)
-               IF_NOTOK_RETURN(status=1)
-               call nc_close(ncf)
+                write(reacfile, '(a,i4,a)') trim(reaction%file)//'_', reaction%data_period%t1%year, '_monthly.nc'
+                ncf = nc_open(reacfile, 'r', status)
+                IF_NOTOK_RETURN(status=1)
+                ohfield_in = nc_read_var(ncf, 'OH', status)     ! needs to be pre-converted in molec/cm3!
+                IF_NOTOK_RETURN(status=1)
+                hyb_a = nc_read_var(ncf, 'z_a_grid', status)
+                IF_NOTOK_RETURN(status=1)
+                hyb_b = nc_read_var(ncf, 'z_b_grid', status)
+                IF_NOTOK_RETURN(status=1)
+                call nc_close(ncf)
 
-               !-- update (global) CAMS OH input
-               oh_cams%year = reaction%data_period%t1%year
-               !--  move CAMS OH to global variable
-               call move_alloc(ohfield_in, oh_cams%conc)
-               
-               ! Create the horizontal and vertical grids for the input file
-               nlay = size(hyb_a) - 1
-               call init_grid(oh_cams%lli, -179.5, 1.0, 360, -89.5, 1.0, 180, status)
-               IF_NOTOK_RETURN(status=1)
-               
-               call init_levels(oh_cams%levi, nlay, hyb_a, hyb_b, status, name='OH')
-               IF_NOTOK_RETURN(status=1)
-               !
-               !-- dispose locally allocated variables
-               !
-               deallocate( hyb_a, hyb_b )
+                ! First timestep, need to initialize the grid
+                if (.not. oh_cams%initialized) then
+                    ! Create the horizontal and vertical grids for the input file
+                    nlay = size(hyb_a) - 1
+                    call init_grid(oh_cams%lli, -179.5, 1.0, 360, -89.5, 1.0, 180, status)
+                    IF_NOTOK_RETURN(status=1)
+                    call init_levels(oh_cams%levi, nlay, hyb_a, hyb_b, status, name='OH')
+                    IF_NOTOK_RETURN(status=1)
+                    oh_cams%initialized = .true.
+                endif
+
+                !-- update (global) CAMS OH input
+                oh_cams%year = reaction%data_period%t1%year
+                !--  move CAMS OH to global variable
+                call move_alloc(ohfield_in, oh_cams%conc)
             endif
 
             !-- MVO-TODO, 2026-03-24
@@ -426,22 +381,26 @@ module chemistry
         end subroutine get_conc_field_cams
 
 
-        subroutine get_conc_field_spivakovsky(reaction, period)! result(field3d)
+        subroutine get_conc_field_spivakovsky(reaction, period, status)
 
             ! Return the concentration field of a reactive species (in units of ...), during the requested time interval
             type(react_t), intent(inout)                :: reaction
             type(TDate), dimension(2), intent(in)       :: period
+            integer, intent(out)                        :: status
+
             real, dimension(:, :, :, :), allocatable    :: ohfield_in
             character(len=*), parameter                 :: rname = mname//'/get_conc_field_spivakovsky'
             integer             :: ncf
-            integer             :: status
             integer             :: region
+            type(TDate)         :: period_start
+            
+            period_start = date_min(period(1), period(2))
             
             ! Hard-coded stuff specific to the Spivakovsky OH field. Code below needs to be revised when more
             ! OH fields are implemented
             reaction%climatology = .true.
             reaction%data_timestep = '1m'
-            reaction%data_period = get_new_period(period(1), '1m')
+            reaction%data_period = get_new_period(period_start, '1m')
 
             ! GM, 14 oct 2024:
             ! Code adapted from https://sourceforge.net/p/tm5/cy3_4dvar/ci/d13c-ch4/tree/proj/tracer/d13CH4/src/import_chemistry_fields.F90#l232
@@ -451,24 +410,21 @@ module chemistry
             ! MACC OH in molec . cm ** -3
             ! Lrate(i,j,l) = rrates(kCH4OH, itemp(i,j,l) * OHconc(i,j,l))
 
-            if( .not. allocated(oh_spiva%conc) ) then
-               print*, 'DEBUG@'//rname//':: reading OH from file ***'//&
-                    trim(reaction%file)//'***'
-               ncf = nc_open(reaction%file, 'r', status)
-               IF_NOTOK_RETURN(status=1)
-               ohfield_in = nc_read_var(ncf, 'field', status)
-               IF_NOTOK_RETURN(status=1)
-               call nc_close(ncf)
+            if (.not. oh_spiva%initialized) then
+                ncf = nc_open(reaction%file, 'r', status)
+                IF_NOTOK_RETURN(status=1)
+                ohfield_in = nc_read_var(ncf, 'field', status)
+                IF_NOTOK_RETURN(status=1)
+                call nc_close(ncf)
 
-               !--  move CAMS OH to global variable
-               call  move_alloc(ohfield_in, oh_spiva%conc)
+                call  move_alloc(ohfield_in, oh_spiva%conc)
 
-               ! Create coordinates for the OH field
-               call init_grid(oh_spiva%lli, -179.5, 1.0, 360, -89.5, 1.0, 180, status)
-               IF_NOTOK_RETURN(status=1)
-               call init_levels(oh_spiva%levi, 'tm60', status)
-               IF_NOTOK_RETURN(status=1)
-               
+                ! Create coordinates for the OH field
+                call init_grid(oh_spiva%lli, -179.5, 1.0, 360, -89.5, 1.0, 180, status)
+                IF_NOTOK_RETURN(status=1)
+                call init_levels(oh_spiva%levi, 'tm60', status)
+                IF_NOTOK_RETURN(status=1)
+                oh_spiva%initialized = .true.
             endif
 
             ! Apply regridding

@@ -429,7 +429,7 @@ contains
     ! >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
     ! from 'sources_sinks/trace_after_read
 
-#ifndef without_diffusion
+#if !defined(without_convection) && !defined(without_diffusion)
     ! setup diffusion fields:
     call Diffusion_Setup( t1, t2, status )
     IF_NOTOK_RETURN(status=1)
@@ -694,7 +694,7 @@ contains
           !end if
 #endif
         case('d')
-#ifndef without_diffusion
+#if !defined(without_convection) && !defined(without_diffusion)
            !if ( vdiff_apply ) then
               ! matrix will be transposed 'on the fly' depending on revert=-1
               call Convec( region, next_step, tr, status )

@@ -56,7 +56,8 @@ contains
     call mix_edges( region, status )
     IF_NOTOK_RETURN(status=1)
 
-    call reconstruct_required_var_1(region)
+    call reconstruct_required_var_1( region, status )
+    IF_NOTOK_RETURN(status=1)
 
     ! ok
     status = 0
@@ -66,332 +67,696 @@ contains
 !===========================================================================================================
 !===========================================================================================================
 
-  subroutine reconstruct_required_var_1(region)
+  !
+  ! "A": exact reconstruction of the forward air masses in the edge (and halo) cells
+  ! of a zoom region, for the advection step that is about to be adjointed.
+  !
+  ! Called from adj_mix_edges at the start of an adjoint x/y/z advection step of
+  ! 'region'. On exit, the edge cells (region_dat%edge == -1) and the halo cells
+  ! (0, im+1, 0, jm+1) of m_dat(region)%data hold the forward air masses as they
+  ! were just after the forward advection loop of that step, before mix_edges
+  ! (for x and y: after uncompress). The core cells are not touched: the adjoint
+  ! already has them exactly.
+  !
+  ! Method. Within one parent half step ("block" of n_operators*tref_ child steps),
+  ! the forward air mass of the child edge cells is fully determined by:
+  !   o the parent put_xedges/put_yedges, done before the child block starts,
+  !     from the parent air masses at that moment. Those are recovered from the
+  !     current parent air mass by undoing the parent x/y/z mass fluxes:
+  !       parent order xyz : put_x before x, put_y after x  (then z)
+  !       parent order zyx : put_y after z, put_x after z,y
+  !     (during the adjoint of the child block, the parent air mass is the forward
+  !     one at the end of its advection triple);
+  !   o the child advection steps of the block up to the current one, applied to
+  !     the edge cells only, with the same rules as the forward code: scopes,
+  !     compress/uncompress (x,y), zeroing of the outer mass fluxes, and
+  !     mix_edges after each step.
+  ! Mass changes only depend on the mass fluxes, never on neighbouring masses, so
+  ! the core cells are not needed (they are kept at zero in the work array).
+  !
+  ! Assumptions, checked at run time (the adjoint stops with an error otherwise;
+  ! these configurations could not be tested):
+  !   o the zoom region is not cyclic / 360 degrees wide, does not touch a pole,
+  !     does not cross the date line, and is not refined vertically (zref = 1);
+  !   o no reduced grid in the zoom region, nor in the parent rows around it
+  !     (see below);
+  !   o the parent cells around the zoom region (one cell beyond its edges) are
+  !     in the core of the parent: not in the parent's own zoom edges, not in
+  !     the pole rows or across the date line of the global region.
+  !
+  ! Reduced grid (region.<name>.redgrid.* in the rc file):
+  !   o SUPPORTED: a reduced grid in the global (parent) region, as long as it
+  !     only covers latitudes away from the zoom region, i.e. the parent rows
+  !     jbeg-1 ... jend+1 around the zoom region are NOT reduced. This is the
+  !     usual case: the reduced grid is only applied close to the poles.
+  !   o NOT SUPPORTED (run stops with an error):
+  !       - a reduced grid in a zoom region itself (nred(region) /= 0): its
+  !         x-advection then works on merged cells, not on the cells assumed here;
+  !       - a reduced parent row next to (or under) the zoom region, i.e. the zoom
+  !         region extends to latitudes where the parent grid is reduced: the
+  !         parent air-mass change in such a row is not the plain flux difference
+  !         used below to recover the parent masses at put_xedges/put_yedges.
+  !     In both cases, either remove the reduced grid in the rows concerned, or
+  !     move the zoom region away from those latitudes.
+  !
+  ! Date line: zoom regions crossing the date line (ibeg > iend) are not supported.
+  ! The forward model does not support them consistently either: the 'zoomed' mask
+  ! built in initexit.F90 (blank_zoom_region) marks no parent cell as covered when
+  ! ibeg > iend, so the parent and the child would both apply the physics there.
+  !
 
-    use dims
-    use global_data, only: wind_dat, mass_dat
+  subroutine reconstruct_required_var_1( region, status )
+
+    use dims,        only : im, jm, lm
+    use dims,        only : parent, xref, yref, zref, tref
+    use dims,        only : ibeg, iend, jbeg, jend
+    use dims,        only : xcyc, touch_sp, touch_np, zoom2D
+    use dims,        only : nsplitsteps, n_operators, splitorderzoom
+    use dims,        only : rstatus => status
+    use global_data, only : wind_dat, region_dat
     use MeteoData  , only : m_dat
+    use redgridZoom, only : grid_reduced, nred, imred
 
     implicit none
 
     !__IO____________________________________________________________________
 
-    integer,intent(in)            ::  region
+    integer, intent(in)              ::  region
+    integer, intent(out)             ::  status
+
+    !__CONST_________________________________________________________________
+
+    character(len=*), parameter      ::  rname = mname//'/reconstruct_required_var_1'
 
     !__LOCAL_VARIABLES_______________________________________________________
 
-    real,dimension(:,:,:), pointer   :: mc,mp,amc,bmc,cmc,amp,bmp,cmp
-    integer                          :: my_parent,i,j,l, xref_, yref_, imc,jmc,imp,jmp,q
-    integer                          :: jp,ipw,ipe,step,jps,jpn,ip
-    character(len=n_operators)       :: stencil
-    logical                          :: xyz
-    real                             :: mpw, mpe, mps, mpn   ! parent masses east/west...south/north
-
+    real, dimension(:,:,:), pointer  ::  mc, mp, amp, bmp, cmp
+    integer, dimension(:,:), pointer ::  edge
+    ! work array: air mass of the child in its edge and halo cells
+    real, allocatable                ::  mass_edge(:,:,:)
+    ! parent air mass at the moment the parent copies it into the child's
+    ! west/east edge cells (put_xedges) and south/north edge cells (put_yedges):
+    real, allocatable                ::  parent_mass_x_edge(:,:,:)
+    real, allocatable                ::  parent_mass_y_edge(:,:,:)
+    ! change of the parent air mass in its own x, y and z advection steps:
+    real, allocatable                ::  parent_mass_change_x(:,:,:)
+    real, allocatable                ::  parent_mass_change_y(:,:,:)
+    real, allocatable                ::  parent_mass_change_z(:,:,:)
+    integer                          ::  my_parent, xref_, yref_, zref_, tref_
+    integer                          ::  imc, jmc, lmc, nblk, p, p0, k
+    integer                          ::  i, j, l, ip, jp
+    integer                          ::  ib, ie_, jb, je_
+    character(len=1)                 ::  op
+    character(len=n_operators)       ::  stencil
+    logical                          ::  xyz
+    integer                          ::  grandparent, xrefp, yrefp
+    integer                          ::  ipmin, ipmax, jpmin, jpmax
 
     !__START_SUBROUTINE______________________________________________________
 
-
-
-! mix_edges nevertheless distroys some information about the air masses.
-! mix_edges is called after each advection step. The masses alon the
-! x- and y-edges are 'mixed', which involves:
-!    o    m = sum over xref_, sum over yref_ (m_edge)   / xref_*yref_
-!
-! In the adjoint run, the masses on the edges have to be reconstructed and that is
-! done here. It involves:
-!     o a backintegration of the parent masses
-!     o a partial forward integration
-! The forward integration depends on
-!     o whether the parent has XYZ or ZYX sequence
-!     o the position in the child processes.
-!
+    status = 0
 
     my_parent = parent(region)
-    if(region == 1.or.my_parent ==0) return
+    if ( region == 1 .or. my_parent == 0 ) return
 
     xref_ = xref(region)/xref(my_parent)
     yref_ = yref(region)/yref(my_parent)
-    imp = im(my_parent) ; jmp = jm(my_parent)
-    imc = im(region)    ; jmc = jm(region)
-    amc => wind_dat(region)%am_t
-    bmc => wind_dat(region)%bm_t
-    cmc => wind_dat(region)%cm_t
-    mc  => m_dat(region)%data
-    amp => wind_dat(my_parent)%am_t
-    bmp => wind_dat(my_parent)%bm_t
-    cmp => wind_dat(my_parent)%cm_t
-    mp  => m_dat(my_parent)%data
-    q=(status(my_parent)-1)/((nsplitsteps/2))      ! find q - the place in the splitorderzoom of the parent
-    do i=1,n_operators
-      stencil(i:i)=splitorderzoom(my_parent,q*(nsplitsteps/2)+i)
-    enddo
-    ! find out if parent has order xyz, or zyx...
-    if( scan(stencil,'x') >  scan(stencil,'z')) then
-      xyz = .false.
+    zref_ = zref(region)/zref(my_parent)
+    tref_ = tref(region)/tref(my_parent)
+
+    ib = ibeg(region) ; ie_ = iend(region)
+    jb = jbeg(region) ; je_ = jend(region)
+
+    ! --- check the assumptions (configurations that could not be tested) ---
+
+    if ( (xcyc(region) == 1) .or. (im(region)/xref(region) == im(1)) ) then
+      write (gol,'("zoom region ",i0," is cyclic / 360 degrees wide: not supported")') region; call goErr
+      TRACEBACK; status=1; return
+    end if
+    if ( (touch_sp(region) == 1) .or. (touch_np(region) == 1) ) then
+      write (gol,'("zoom region ",i0," touches a pole: not supported")') region; call goErr
+      TRACEBACK; status=1; return
+    end if
+    if ( ib > ie_ ) then
+      write (gol,'("zoom region ",i0," crosses the date line: not supported")') region; call goErr
+      TRACEBACK; status=1; return
+    end if
+    if ( zref_ /= 1 ) then
+      write (gol,'("zoom region ",i0," is refined vertically (zref=",i0,"): not supported")') region, zref_; call goErr
+      TRACEBACK; status=1; return
+    end if
+    ! reduced grid in the zoom region itself (see "Reduced grid" in the header):
+    if ( grid_reduced .and. (nred(region) /= 0) ) then
+      write (gol,'("zoom region ",i0," uses a reduced grid: not supported")') region; call goErr
+      write (gol,'("  remove the reduced grid for this region (region.<name>.redgrid.* in the rc file)")'); call goErr
+      TRACEBACK; status=1; return
+    end if
+
+    ! parent cells used: one cell beyond the zoom region on each side;
+    ! they must be in the core of the parent, advected over the full scope:
+    grandparent = parent(my_parent)
+    if ( grandparent == 0 ) then
+      ! global parent: no wrap around the date line, no pole rows
+      ipmin = 1 ; ipmax = im(my_parent)
+      jpmin = 2 ; jpmax = jm(my_parent)-1
     else
-      xyz = .true.
-    endif
+      ! zoom parent: outside its own edge cells
+      xrefp = xref(my_parent)/xref(grandparent)
+      yrefp = yref(my_parent)/yref(grandparent)
+      ipmin = xrefp+1 ; ipmax = im(my_parent)-xrefp
+      jpmin = yrefp+1 ; jpmax = jm(my_parent)-yrefp
+    end if
+    if ( (ib-1 < ipmin) .or. (ie_+1 > ipmax) .or. (jb-1 < jpmin) .or. (je_+1 > jpmax) ) then
+      write (gol,'("zoom region ",i0," is too close to the edge of its parent ",i0,": not supported")') &
+             region, my_parent; call goErr
+      write (gol,'("  parent cells used : i ",i0,":",i0,", j ",i0,":",i0)') ib-1, ie_+1, jb-1, je_+1; call goErr
+      write (gol,'("  parent core       : i ",i0,":",i0,", j ",i0,":",i0)') ipmin, ipmax, jpmin, jpmax; call goErr
+      TRACEBACK; status=1; return
+    end if
+    ! reduced parent rows around the zoom region (see "Reduced grid" in the header);
+    ! a reduced grid elsewhere in the parent (e.g. near the poles) is fine:
+    if ( grid_reduced .and. (nred(my_parent) /= 0) ) then
+      do jp = jb-1, je_+1
+        if ( jp > size(imred,1) ) cycle
+        if ( imred(jp,my_parent) /= im(my_parent) ) then
+          write (gol,'("parent ",i0," of zoom region ",i0," has a reduced grid in row ",i0,": not supported")') &
+                 my_parent, region, jp; call goErr
+          write (gol,'("  the parent rows ",i0,":",i0," around the zoom region must not be reduced;")') &
+                 jb-1, je_+1; call goErr
+          write (gol,'("  limit the reduced grid of the parent to other latitudes, or move the zoom region")'); call goErr
+          TRACEBACK; status=1; return
+        end if
+      end do
+    end if
 
-    ! find out 'step' the position in the xyzzyx / zyxxyz operation sequence (1...6)
-    if (xyz) then
-      if( mod(status(region)-1,nsplitsteps) < n_operators ) then  ! first step of xyz...zyx
-        select case(splitorderzoom(region,status(region)))
-        case('x')
-          step = 1
-        case('y')
-          step = 2
-        case('z')
-          step = 3
-        end select
-      else
-        select case(splitorderzoom(region,status(region)))
-        case('x')
-          step = 6
-        case('y')
-          step = 5
-        case('z')
-          step = 4
-        end select
-      endif
+    imc = im(region) ; jmc = jm(region) ; lmc = lm(region)
+
+    mc   => m_dat(region)%data
+    mp   => m_dat(my_parent)%data
+    amp  => wind_dat(my_parent)%am_t
+    bmp  => wind_dat(my_parent)%bm_t
+    cmp  => wind_dat(my_parent)%cm_t
+    edge => region_dat(region)%edge
+
+    ! forward position of the step being adjointed (adjoint counter is one ahead),
+    ! and first position of the child block (= one parent half step):
+    p    = rstatus(region) - 1
+    nblk = n_operators * tref_
+    p0   = (p/nblk) * nblk
+
+    ! order of the parent advection triple = order of the first sub-block of the child block:
+    do i = 1, n_operators
+      stencil(i:i) = splitorderzoom(region, p0+i)
+    end do
+    xyz = ( index(stencil,'x') < index(stencil,'z') )
+
+    ! --- parent air masses at the moments of put_xedges / put_yedges ---
+
+    allocate( parent_mass_change_x(ib-1:ie_+1, jb-1:je_+1, lmc) )
+    allocate( parent_mass_change_y(ib-1:ie_+1, jb-1:je_+1, lmc) )
+    allocate( parent_mass_change_z(ib-1:ie_+1, jb-1:je_+1, lmc) )
+    allocate( parent_mass_x_edge(ib-1:ie_+1, jb-1:je_+1, lmc) )
+    allocate( parent_mass_y_edge(ib-1:ie_+1, jb-1:je_+1, lmc) )
+
+    do l = 1, lmc
+      do jp = jb-1, je_+1
+        do ip = ib-1, ie_+1
+          ! mass change of the parent cell in its x, y and z advection steps:
+          parent_mass_change_x(ip,jp,l) = amp(ip-1,jp,l) - amp(ip,jp,l)
+          parent_mass_change_y(ip,jp,l) = bmp(ip,jp,l)   - bmp(ip,jp+1,l)
+          parent_mass_change_z(ip,jp,l) = cmp(ip,jp,l-1) - cmp(ip,jp,l)
+        end do
+      end do
+    end do
+
+    if ( xyz ) then
+      ! parent: put_x | x | put_y | y | z  ; now = after z
+      parent_mass_x_edge = mp(ib-1:ie_+1, jb-1:je_+1, 1:lmc) - parent_mass_change_z - parent_mass_change_y - parent_mass_change_x
+      parent_mass_y_edge = mp(ib-1:ie_+1, jb-1:je_+1, 1:lmc) - parent_mass_change_z - parent_mass_change_y
     else
-      if( mod(status(region)-1,nsplitsteps) < n_operators ) then  ! first step of xyz...zyx
-        select case(splitorderzoom(region,status(region)))
-        case('x')
-          step = 3
-        case('y')
-          step = 2
-        case('z')
-          step = 1
-        end select
-      else
-        select case(splitorderzoom(region,status(region)))
-        case('x')
-          step = 4
-        case('y')
-          step = 5
-        case('z')
-          step = 6
-        end select
-      endif
-    endif
+      ! parent: z | put_y | y | put_x | x  ; now = after x
+      parent_mass_y_edge = mp(ib-1:ie_+1, jb-1:je_+1, 1:lmc) - parent_mass_change_x - parent_mass_change_y
+      parent_mass_x_edge = mp(ib-1:ie_+1, jb-1:je_+1, 1:lmc) - parent_mass_change_x
+    end if
 
-    if (okdebug) print *, 'in adj_mix_edges (region, parent)', region,my_parent, ' has ',stencil,xyz
-    if (okdebug) print *, 'in adj_mix_edges ', splitorderzoom(region,status(region)),mod(status(region)-1,nsplitsteps),step
+    ! --- child edge air masses just after the puts (same formulas as put_x/yedges) ---
 
-    if (xyz) then   ! first put_xedges, then put_yedges
-      ! x-edges:
-      if (xcyc(region)==0) then
+    allocate( mass_edge(0:imc+1, 0:jmc+1, 1:lmc) )
+    mass_edge = 0.0
 
-        do l=1,lm(region)
-          do j=1,jmc
-            jp = jbeg(region) + (j-1)/yref_
-            ipw = ibeg(region)
-            ipe = iend(region)
+    if ( xyz ) then
+      call set_xedges_from_parent( region, parent_mass_x_edge, mass_edge )
+      call set_yedges_from_parent( region, parent_mass_y_edge, mass_edge )
+    else
+      call set_yedges_from_parent( region, parent_mass_y_edge, mass_edge )
+      call set_xedges_from_parent( region, parent_mass_x_edge, mass_edge )
+    end if
 
-            select case(step)    ! calculate the parent mass that forms the basis for the child:
-            case(1)   ! x: advect parent fully back.
-              mpw = mp(ipw,jp,l) + amp(ipw,jp,l) - amp(ipw-1,jp,l) - bmp(ipw,jp,l) + bmp(ipw,jp+1,l) &
-                                                                   + cmp(ipw,jp,l) - cmp(ipw,jp,l-1)
-              mpw = (mpw/yref_ + amc(xref_-1,j,l) - amc(xref_,j,l))/xref_
-              mc(1:xref_,j,l) = mpw
-              mpe = mp(ipe,jp,l) + amp(ipe,jp,l) - amp(ipe-1,jp,l) - bmp(ipe,jp,l) + bmp(ipe,jp+1,l) &
-                                                                   + cmp(ipe,jp,l) - cmp(ipe,jp,l-1)
-              mpe = (mpe/yref_ - amc(imc-xref_+1,j,l) + amc(imc-xref_,j,l))/xref_
-              mc(imc-xref_+1:imc,j,l) = mpe
-            case(2)   ! y
-              mpw = mp(ipw,jp,l) + 0.5*amp(ipw  ,jp,l) - bmp(ipw,jp,l) + bmp(ipw,jp+1,l) + cmp(ipw,jp,l) - cmp(ipw,jp,l-1)
-              mpw = mpw/(xref_*yref_)
-              mpe = mp(ipe,jp,l) - 0.5*amp(ipe-1,jp,l) - bmp(ipe,jp,l) + bmp(ipe,jp+1,l) + cmp(ipe,jp,l) - cmp(ipe,jp,l-1)
-              mpe = mpe/(xref_*yref_)
-              do i=1,xref_
-                mc(i,j,l) = mpw + bmc(i,j,l)-bmc(i,j+1,l)
-                mc(imc-xref_+i,j,l) = mpe + bmc(imc-xref_+i,j,l)-bmc(imc-xref_+i,j+1,l)
-              enddo
-            case(3)   ! z
-              mpw = mp(ipw,jp,l) + 0.5*amp(ipw  ,jp,l) - 0.5*bmp(ipw,jp,l) + 0.5*bmp(ipw,jp+1,l) + cmp(ipw,jp,l) - cmp(ipw,jp,l-1)
-              mpw = mpw/(xref_*yref_)
-              mpe = mp(ipe,jp,l) - 0.5*amp(ipe-1,jp,l) - 0.5*bmp(ipe,jp,l) + 0.5*bmp(ipe,jp+1,l) + cmp(ipe,jp,l) - cmp(ipe,jp,l-1)
-              mpe = mpe/(xref_*yref_)
-              do i=1,xref_
-                mc(i,j,l) = mpw - cmc(i,j,l) + cmc(i,j,l-1)
-                mc(imc-xref_+i,j,l) = mpe - cmc(imc-xref_+i,j,l) + cmc(imc-xref_+i,j,l-1)
-              enddo
-            case(4)   ! z
-              mpw = mp(ipw,jp,l) + 0.5*amp(ipw  ,jp,l) - 0.5*bmp(ipw,jp,l) + 0.5*bmp(ipw,jp+1,l) &
-                                                       + 0.5*cmp(ipw,jp,l) - 0.5*cmp(ipw,jp,l-1)
-              mpw = mpw/(xref_*yref_)
-              mpe = mp(ipe,jp,l) - 0.5*amp(ipe-1,jp,l) - 0.5*bmp(ipe,jp,l) + 0.5*bmp(ipe,jp+1,l) &
-                                                       + 0.5*cmp(ipe,jp,l) - 0.5*cmp(ipe,jp,l-1)
-              mpe = mpe/(xref_*yref_)
-              do i=1,xref_
-                mc(i,j,l) = mpw - cmc(i,j,l) + cmc(i,j,l-1)
-                mc(imc-xref_+i,j,l) = mpe - cmc(imc-xref_+i,j,l) + cmc(imc-xref_+i,j,l-1)
-              enddo
-            case(5)   ! y
-              mpw = mp(ipw,jp,l) + 0.5*amp(ipw  ,jp,l) - 0.5*bmp(ipw,jp,l) + 0.5*bmp(ipw,jp+1,l)
-              mpw = mpw/(xref_*yref_)
-              mpe = mp(ipe,jp,l) - 0.5*amp(ipe-1,jp,l) - 0.5*bmp(ipe,jp,l) + 0.5*bmp(ipe,jp+1,l)
-              mpe = mpe/(xref_*yref_)
-              do i=1,xref_
-                mc(i,j,l) = mpw + bmc(i,j,l)-bmc(i,j+1,l)
-                mc(imc-xref_+i,j,l) = mpe + bmc(imc-xref_+i,j,l)-bmc(imc-xref_+i,j+1,l)
-              enddo
-            case(6)
-              mpw = mp(ipw,jp,l) + 0.5*amp(ipw  ,jp,l)
-              mpw = (mpw/yref_ - amc(xref_,j,l))/xref_
-              mc(1:xref_,j,l) = mpw
-              mpe = mp(ipe,jp,l) - 0.5*amp(ipe-1,jp,l)
-              mpe = (mpe/yref_  + amc(imc-xref_,j,l))/xref_
-              mc(imc-xref_+1:imc,j,l) = mpe
-            end select
-          enddo !j
-        enddo !l
-      endif !xcyc...
+    ! --- child advection steps of the block, up to and including the current one ---
 
-      ! now the y-edges:
-      do l=1,lm(region)
-        do i=1,imc
-          ip = ibeg(region) + (i-1)/xref_
-          jps = jbeg(region)
-          jpn = jend(region)
-          select case(step)
-          case(2)   ! y
-            if(touch_sp(region)==0) then
-              mps = mp(ip,jps,l) - bmp(ip,jps,l) + bmp(ip,jps+1,l) + cmp(ip,jps,l) - cmp(ip,jps,l-1)
-              mps = (mps/xref_ + bmc(i,yref_,l) - bmc(i,yref_+1,l) )/yref_
-              mc(i,1:yref_,l) = mps
-            endif
-            if(touch_np(region)==0) then
-              mpn = mp(ip,jpn,l) - bmp(ip,jpn,l) + bmp(ip,jpn+1,l) + cmp(ip,jpn,l) - cmp(ip,jpn,l-1)
-              mpn = (mpn/xref_ - bmc(i,jmc - yref_ + 2,l) + bmc(i,jmc - yref_ + 1,l) )/yref_
-              mc(i,jmc-yref_+1:jmc,l) = mpn
-            endif
-          case(3)   ! z
-            mps = mp(ip,jps,l) + 0.5*bmp(ip,jps+1,l) + cmp(ip,jps,l) - cmp(ip,jps,l-1)
-            mps = mps/(xref_*yref_)
-            mpn = mp(ip,jpn,l) - 0.5*bmp(ip,jpn  ,l) + cmp(ip,jpn,l) - cmp(ip,jpn,l-1)
-            mpn = mpn/(xref_*yref_)
-            do j=1,yref_
-              if(touch_sp(region)==0) mc(i,j,l) = mps - cmc(i,j,l) + cmc(i,j,l-1)
-              if(touch_np(region)==0) mc(i,jmc-yref_+j,l) = mpn - cmc(i,jmc-yref_+j,l) + cmc(i,jmc-yref_+j,l-1)
-            enddo
-          case(4)   ! z
-            mps = mp(ip,jps,l) + 0.5*bmp(ip,jps+1,l) + 0.5*cmp(ip,jps,l) - 0.5*cmp(ip,jps,l-1)
-            mps = mps/(xref_*yref_)
-            mpn = mp(ip,jpn,l) - 0.5*bmp(ip,jpn  ,l) + 0.5*cmp(ip,jpn,l) - 0.5*cmp(ip,jpn,l-1)
-            mpn = mpn/(xref_*yref_)
-            do j=1,yref_
-              if(touch_sp(region)==0) mc(i,j,l) = mps - cmc(i,j,l) + cmc(i,j,l-1)
-              if(touch_np(region)==0) mc(i,jmc-yref_+j,l) = mpn - cmc(i,jmc-yref_+j,l) + cmc(i,jmc-yref_+j,l-1)
-            enddo
-          case(5)   ! y
-            if(touch_sp(region)==0) then
-              mps = mp(ip,jps,l) + 0.5*bmp(ip,jps+1,l)
-              mps = (mps/xref_ - bmc(i,yref_+1,l) )/yref_
-              mc(i,1:yref_,l) = mps
-            endif
-            if( touch_np(region)==0) then
-              mpn = mp(ip,jpn,l) - 0.5*bmp(ip,jpn  ,l)
-              mpn = (mpn/xref_ + bmc(i,jmc - yref_ + 1,l) )/yref_
-              mc(i,jmc-yref_+1:jmc,l) = mpn
-            endif
-          case default
-          end select
-        enddo
-      enddo
-    else   !zyx
-      ! now first the y-edges:
-      do l=1,lm(region)
-        do i=1,imc
-          ip = ibeg(region) + (i-1)/xref_
-          jps = jbeg(region)
-          jpn = jend(region)
-          select case(step)
-          case(2)   ! y
-            if( touch_sp(region)==0) then
-              mps = mp(ip,jps,l) - bmp(ip,jps,l) + bmp(ip,jps+1,l) + amp(ip,jps,l) - amp(ip-1,jps,l)
-              mps = (mps/xref_ + bmc(i,yref_,l) - bmc(i,yref_+1,l) )/yref_
-              mc(i,1:yref_,l) = mps
-            endif
-            if( touch_np(region)==0) then
-              mpn = mp(ip,jpn,l) - bmp(ip,jpn,l) + bmp(ip,jpn+1,l) + amp(ip,jpn,l) - amp(ip-1,jpn,l)
-              mpn = (mpn/xref_ - bmc(i,jmc - yref_ + 2,l) + bmc(i,jmc - yref_ + 1,l) )/yref_
-              mc(i,jmc-yref_+1:jmc,l) = mpn
-            endif
-          case(3)   ! x
-            mps = mp(ip,jps,l) + 0.5*bmp(ip,jps+1,l) + amp(ip,jps,l) - amp(ip-1,jps,l)
-            mps = mps/(xref_*yref_)
-            mpn = mp(ip,jpn,l) - 0.5*bmp(ip,jpn  ,l) + amp(ip,jpn,l) - amp(ip-1,jpn,l)
-            mpn = mpn/(xref_*yref_)
-            do j=1,yref_
-              if(touch_sp(region)==0) mc(i,j,l) = mps - amc(i,j,l) + amc(i-1,j,l)
-              if(touch_np(region)==0) mc(i,jmc-yref_+j,l) = mpn - amc(i,jmc-yref_+j,l) + amc(i-1,jmc-yref_+j,l)
-            enddo
-          case(4)   ! x
-            mps = mp(ip,jps,l) + 0.5*bmp(ip,jps+1,l) + 0.5*amp(ip,jps,l) - 0.5*amp(ip-1,jps,l)
-            mps = mps/(xref_*yref_)
-            mpn = mp(ip,jpn,l) - 0.5*bmp(ip,jpn  ,l) + 0.5*amp(ip,jpn,l) - 0.5*amp(ip-1,jpn,l)
-            mpn = mpn/(xref_*yref_)
-            do j=1,yref_
-              if(touch_sp(region)==0) mc(i,j,l) = mps - amc(i,j,l) + amc(i-1,j,l)
-              if(touch_np(region)==0) mc(i,jmc-yref_+j,l) = mpn - amc(i,jmc-yref_+j,l) + amc(i-1,jmc-yref_+j,l)
-            enddo
-          case(5)   ! y
-            if( touch_sp(region)==0) then
-              mps = mp(ip,jps,l) + 0.5*bmp(ip,jps+1,l)
-              mps = (mps/xref_ - bmc(i,yref_+1,l) )/yref_
-              mc(i,1:yref_,l) = mps
-            endif
-            if( touch_np(region)==0) then
-              mpn = mp(ip,jpn,l) - 0.5*bmp(ip,jpn  ,l)
-              mpn = (mpn/xref_ + bmc(i,jmc - yref_ + 1,l) )/yref_
-              mc(i,jmc-yref_+1:jmc,l) = mpn
-            endif
-          case default
-          end select
-        enddo
-      enddo
-      ! and then the xedges:
-      if (xcyc(region)==0) then
+    do k = p0, p
+      op = splitorderzoom(region, k+1)
+      select case ( op )
+        case ( 'x' )
+          call advect_edges_x( region, k, mass_edge )
+        case ( 'y' )
+          call advect_edges_y( region, k, mass_edge )
+        case ( 'z' )
+          call advect_edges_z( region, k, mass_edge )
+        case default
+          cycle   ! no air-mass change
+      end select
+      ! mix_edges follows every advection step; for the current step the
+      ! adjoint needs the state before it:
+      if ( k < p ) call mix_edges_mass( region, mass_edge )
+    end do
 
-        do l=1,lm(region)
-          do j=1,jmc
-            jp = jbeg(region) + (j-1)/yref_
-            ipw = ibeg(region)
-            ipe = iend(region)
-            select case(step)    ! calculate the parent mass that forms the basis for the child:
-            case(3)   ! x
-              mpw = mp(ipw,jp,l) + amp(ipw,jp,l) - amp(ipw-1,jp,l)
-              mpw = (mpw/yref_ + amc(xref_-1,j,l) - amc(xref_,j,l))/xref_
-              mc(1:xref_,j,l) = mpw
-              mpe = mp(ipe,jp,l) + amp(ipe,jp,l) - amp(ipe-1,jp,l)
-              mpe = (mpe/yref_ - amc(imc-xref_+1,j,l) + amc(imc-xref_,j,l))/xref_
-              mc(imc-xref_+1:imc,j,l) = mpe
-            case(4)   ! x
-              mpw = mp(ipw,jp,l) + 0.5*amp(ipw  ,jp,l)
-              mpw = (mpw/yref_ - amc(xref_,j,l))/xref_
-              mc(1:xref_,j,l) = mpw
-              mpe = mp(ipe,jp,l) - 0.5*amp(ipe-1,jp,l)
-              mpe = (mpe/yref_  + amc(imc-xref_,j,l))/xref_
-              mc(imc-xref_+1:imc,j,l) = mpe
-            case default
-            end select
-          enddo !j
-        enddo !l
-      endif !xcyc...
+    ! --- store edge and halo cells ---
 
-    endif
+    do l = 1, lmc
+      do j = 1, jmc
+        do i = 1, imc
+          if ( edge(i,j) == -1 ) mc(i,j,l) = mass_edge(i,j,l)
+        end do
+      end do
+      mc(0      ,1:jmc,l) = mass_edge(0      ,1:jmc,l)
+      mc(imc+1  ,1:jmc,l) = mass_edge(imc+1  ,1:jmc,l)
+      mc(1:imc  ,0    ,l) = mass_edge(1:imc  ,0    ,l)
+      mc(1:imc  ,jmc+1,l) = mass_edge(1:imc  ,jmc+1,l)
+    end do
 
-    nullify(amc)
-    nullify(bmc)
-    nullify(cmc)
-    nullify(mc)
-    nullify(amp)
-    nullify(bmp)
-    nullify(cmp)
-    nullify(mp)
+    deallocate( mass_edge, parent_mass_x_edge, parent_mass_y_edge )
+    deallocate( parent_mass_change_x, parent_mass_change_y, parent_mass_change_z )
+    nullify( mc, mp, amp, bmp, cmp, edge )
 
   end subroutine reconstruct_required_var_1
+
+
+  !
+  ! Helper routines of reconstruct_required_var_1. They act on the work array
+  ! mass_edge(0:im+1,0:jm+1,1:lm) holding the air mass of the edge and halo cells of zoom
+  ! region 'region' (core cells are not used), and reproduce, for the air mass
+  ! only, what the forward routines named in their comments do.
+  !
+
+  ! put_xedges (advectx.F90): halo columns and x-wall cells from the parent air
+  ! mass at the moment of the put (parent_mass_x_edge, parent indices)
+
+  subroutine set_xedges_from_parent( region, parent_mass_x_edge, mass_edge )
+
+    use dims, only : im, jm, lm, parent, xref, yref, zref
+    use dims, only : ibeg, iend, jbeg
+
+    integer, intent(in)     ::  region
+    real, intent(in)        ::  parent_mass_x_edge(ibeg(region)-1:,jbeg(region)-1:,:)
+    real, intent(inout)     ::  mass_edge(0:,0:,:)
+
+    integer   ::  imc, jmc, lmc, xref_, yref_, zref_, ib, ie_, jb
+    integer   ::  j, l, jp
+
+    imc = im(region) ; jmc = jm(region) ; lmc = lm(region)
+    xref_ = xref(region)/xref(parent(region))
+    yref_ = yref(region)/yref(parent(region))
+    zref_ = zref(region)/zref(parent(region))
+    ib = ibeg(region) ; ie_ = iend(region) ; jb = jbeg(region)
+
+    do l = 1, lmc
+      do j = 1, jmc
+        jp = jb + (j-1)/yref_
+        mass_edge(0    ,j,l) = parent_mass_x_edge(ib-1 ,jp,l) / real(yref_*zref_)
+        mass_edge(imc+1,j,l) = parent_mass_x_edge(ie_+1,jp,l) / real(yref_*zref_)
+        mass_edge(1:xref_        ,j,l) = parent_mass_x_edge(ib ,jp,l) / real(xref_*yref_*zref_)
+        mass_edge(imc-xref_+1:imc,j,l) = parent_mass_x_edge(ie_,jp,l) / real(xref_*yref_*zref_)
+      end do
+    end do
+
+  end subroutine set_xedges_from_parent
+
+
+  ! put_yedges (advecty.F90): halo rows and y-wall cells from the parent air
+  ! mass at the moment of the put (parent_mass_y_edge, parent indices)
+
+  subroutine set_yedges_from_parent( region, parent_mass_y_edge, mass_edge )
+
+    use dims, only : im, jm, lm, parent, xref, yref, zref
+    use dims, only : ibeg, jbeg, jend
+
+    integer, intent(in)     ::  region
+    real, intent(in)        ::  parent_mass_y_edge(ibeg(region)-1:,jbeg(region)-1:,:)
+    real, intent(inout)     ::  mass_edge(0:,0:,:)
+
+    integer   ::  imc, jmc, lmc, xref_, yref_, zref_, ib, jb, je_
+    integer   ::  i, j, l, ip
+
+    imc = im(region) ; jmc = jm(region) ; lmc = lm(region)
+    xref_ = xref(region)/xref(parent(region))
+    yref_ = yref(region)/yref(parent(region))
+    zref_ = zref(region)/zref(parent(region))
+    ib = ibeg(region) ; jb = jbeg(region) ; je_ = jend(region)
+
+    do l = 1, lmc
+      do i = 1, imc
+        ip = ib + (i-1)/xref_
+        mass_edge(i,0    ,l) = parent_mass_y_edge(ip,jb-1 ,l) / real(xref_*zref_)
+        mass_edge(i,jmc+1,l) = parent_mass_y_edge(ip,je_+1,l) / real(xref_*zref_)
+        do j = 1, yref_
+          mass_edge(i,j      ,l) = parent_mass_y_edge(ip,jb ,l) / real(xref_*yref_*zref_)
+          mass_edge(i,jmc+1-j,l) = parent_mass_y_edge(ip,je_,l) / real(xref_*yref_*zref_)
+        end do
+      end do
+    end do
+
+  end subroutine set_yedges_from_parent
+
+
+  ! x advection at forward position k (advectxzoom + dynamu, air mass only)
+
+  subroutine advect_edges_x( region, k, mass_edge )
+
+    use dims,        only : im, jm, lm, parent, xref, yref, zref, tref
+    use dims,        only : ibeg, iend, jbeg
+    use dims,        only : zoom2D, nsplitsteps, n_operators, splitorderzoom
+    use global_data, only : wind_dat
+
+    integer, intent(in)     ::  region
+    integer, intent(in)     ::  k
+    real, intent(inout)     ::  mass_edge(0:,0:,:)
+
+    real, dimension(:,:,:), pointer  ::  amc, amp
+    integer   ::  imc, jmc, lmc, xref_, yref_, zref_, tref_, ib, ie_, jb
+    integer   ::  n, q, i, j, l, js, je, ls, le, is, ie, jp
+    logical   ::  enc, zero_outer
+    character ::  dir
+    real      ::  fw, fe
+
+    imc = im(region) ; jmc = jm(region) ; lmc = lm(region)
+    xref_ = xref(region)/xref(parent(region))
+    yref_ = yref(region)/yref(parent(region))
+    zref_ = zref(region)/zref(parent(region))
+    tref_ = tref(region)/tref(parent(region))
+    ib = ibeg(region) ; ie_ = iend(region) ; jb = jbeg(region)
+    amc => wind_dat(region)%am_t
+    amp => wind_dat(parent(region))%am_t
+
+    ! scope (advectxzoom):
+    js = 1 ; je = jmc ; ls = 1 ; le = lmc
+    q = k/((nsplitsteps/2)*tref_)
+    enc = .false.
+    do n = 1, n_operators
+      dir = splitorderzoom(region, q*(nsplitsteps/2)*tref_+n)
+      select case ( dir )
+        case ( 'x' )
+          enc = .true.
+        case ( 'y' )
+          if ( .not. enc ) then
+            js = 1 ; je = jmc
+          else
+            js = yref_+1 ; je = jmc-yref_
+          end if
+        case ( 'z' )
+          if ( .not. enc ) then
+            ls = 1 ; le = lmc
+          else
+            ls = zref_+1 ; le = lmc-zref_
+          end if
+          if ( zoom2D ) then
+            ls = 1 ; le = lmc
+          end if
+      end select
+    end do
+
+    ! slopes: no coarse fluxes through the outer x-walls after the first sub-step
+    ! (advectxzoom, only with slopes and without secmom):
+    zero_outer = .false.
+#ifdef slopes
+#ifndef secmom
+    zero_outer = ( mod(k,(nsplitsteps/2)*tref_) >= n_operators )
+#endif
+#endif
+
+    is = xref_ ; ie = imc-xref_+1
+    do l = ls, le
+      do j = js, je
+        ! compress_xedges:
+        if ( xref_ > 1 ) then
+          mass_edge(xref_      ,j,l) = sum(mass_edge(1:xref_,j,l))
+          mass_edge(xref_-1    ,j,l) = mass_edge(0,j,l)
+          mass_edge(imc-xref_+1,j,l) = sum(mass_edge(imc-xref_+1:imc,j,l))
+          mass_edge(imc-xref_+2,j,l) = mass_edge(imc+1,j,l)
+        end if
+        ! mass update (dynamu):
+        ! The fluxes through the outer x-walls of the child (amc(xref_-1) and
+        ! amc(imc-xref_+1)) are taken from the parent, as set by coarsen_ambm
+        ! (advect_tools.F90): the adjoint may have zeroed them temporarily in
+        ! amc for the current step (adj_advectxzoom), while earlier steps of
+        ! the block did use them.
+        jp = jb + (j-1)/yref_
+        do i = is, ie
+          fw = amc(i-1,j,l)
+          fe = amc(i  ,j,l)
+          if ( i-1 == xref_-1     ) fw = amp(ib-1,jp,l) / real(yref_*zref_)
+          if ( i   == imc-xref_+1 ) fe = amp(ie_ ,jp,l) / real(yref_*zref_)
+          if ( zero_outer ) then
+            if ( i-1 == xref_-1     ) fw = 0.0
+            if ( i   == imc-xref_+1 ) fe = 0.0
+          end if
+          mass_edge(i,j,l) = mass_edge(i,j,l) + fw - fe
+        end do
+        ! uncompress_xedges:
+        if ( xref_ > 1 ) then
+          mass_edge(1:xref_        ,j,l) = mass_edge(xref_      ,j,l) / real(xref_)
+          mass_edge(imc-xref_+1:imc,j,l) = mass_edge(imc-xref_+1,j,l) / real(xref_)
+        end if
+      end do
+    end do
+
+    nullify( amc, amp )
+
+  end subroutine advect_edges_x
+
+
+  ! y advection at forward position k (advectyzoom + dynamv, air mass only)
+
+  subroutine advect_edges_y( region, k, mass_edge )
+
+    use dims,        only : im, jm, lm, parent, xref, yref, zref, tref
+    use dims,        only : ibeg, jbeg, jend
+    use dims,        only : zoom2D, nsplitsteps, n_operators, splitorderzoom
+    use global_data, only : wind_dat
+
+    integer, intent(in)     ::  region
+    integer, intent(in)     ::  k
+    real, intent(inout)     ::  mass_edge(0:,0:,:)
+
+    real, dimension(:,:,:), pointer  ::  bmc, bmp
+    integer   ::  imc, jmc, lmc, xref_, yref_, zref_, tref_, ib, jb, je_
+    integer   ::  n, q, i, j, l, is, ie, ls, le, js, je, ip
+    logical   ::  enc, zero_outer
+    character ::  dir
+    real      ::  fs, fn
+
+    imc = im(region) ; jmc = jm(region) ; lmc = lm(region)
+    xref_ = xref(region)/xref(parent(region))
+    yref_ = yref(region)/yref(parent(region))
+    zref_ = zref(region)/zref(parent(region))
+    tref_ = tref(region)/tref(parent(region))
+    ib = ibeg(region) ; jb = jbeg(region) ; je_ = jend(region)
+    bmc => wind_dat(region)%bm_t
+    bmp => wind_dat(parent(region))%bm_t
+
+    ! scope (advectyzoom):
+    is = 1 ; ie = imc ; ls = 1 ; le = lmc
+    q = k/((nsplitsteps/2)*tref_)
+    enc = .false.
+    do n = 1, n_operators
+      dir = splitorderzoom(region, q*(nsplitsteps/2)*tref_+n)
+      select case ( dir )
+        case ( 'x' )
+          if ( .not. enc ) then
+            is = 1 ; ie = imc
+          else
+            is = xref_+1 ; ie = imc-xref_
+          end if
+        case ( 'y' )
+          enc = .true.
+        case ( 'z' )
+          if ( .not. enc ) then
+            ls = 1 ; le = lmc
+          else
+            ls = zref_+1 ; le = lmc-zref_
+          end if
+          if ( zoom2D ) then
+            ls = 1 ; le = lmc
+          end if
+      end select
+    end do
+
+    ! same for the outer y-walls (advectyzoom, only with slopes and without secmom):
+    zero_outer = .false.
+#ifdef slopes
+#ifndef secmom
+    zero_outer = ( mod(k,(nsplitsteps/2)*tref_) >= n_operators )
+#endif
+#endif
+
+    js = yref_ ; je = jmc-yref_+1
+    do l = ls, le
+      do i = is, ie
+        ! compress_yedges:
+        if ( yref_ > 1 ) then
+          mass_edge(i,yref_      ,l) = sum(mass_edge(i,1:yref_,l))
+          mass_edge(i,yref_-1    ,l) = mass_edge(i,0,l)
+          mass_edge(i,jmc-yref_+1,l) = sum(mass_edge(i,jmc-yref_+1:jmc,l))
+          mass_edge(i,jmc-yref_+2,l) = mass_edge(i,jmc+1,l)
+        end if
+        ! mass update (dynamv):
+        ! fluxes through the outer y-walls (bmc(:,yref_), bmc(:,jmc-yref_+2))
+        ! from the parent, as set by coarsen_ambm (see advect_edges_x):
+        ip = ib + (i-1)/xref_
+        do j = js, je
+          fs = bmc(i,j  ,l)
+          fn = bmc(i,j+1,l)
+          if ( j   == yref_       ) fs = bmp(ip,jb   ,l) / real(xref_*zref_)
+          if ( j+1 == jmc-yref_+2 ) fn = bmp(ip,je_+1,l) / real(xref_*zref_)
+          if ( zero_outer ) then
+            if ( j   == yref_       ) fs = 0.0
+            if ( j+1 == jmc-yref_+2 ) fn = 0.0
+          end if
+          mass_edge(i,j,l) = mass_edge(i,j,l) + fs - fn
+        end do
+        ! uncompress_yedges:
+        if ( yref_ > 1 ) then
+          mass_edge(i,1:yref_        ,l) = mass_edge(i,yref_      ,l) / real(yref_)
+          mass_edge(i,jmc-yref_+1:jmc,l) = mass_edge(i,jmc-yref_+1,l) / real(yref_)
+        end if
+      end do
+    end do
+
+    nullify( bmc, bmp )
+
+  end subroutine advect_edges_y
+
+
+  ! z advection at forward position k (advectzzoom + dynamw, air mass only)
+
+  subroutine advect_edges_z( region, k, mass_edge )
+
+    use dims,        only : im, jm, lm, parent, xref, yref, tref
+    use dims,        only : nsplitsteps, n_operators, splitorderzoom
+    use global_data, only : wind_dat
+
+    integer, intent(in)     ::  region
+    integer, intent(in)     ::  k
+    real, intent(inout)     ::  mass_edge(0:,0:,:)
+
+    real, dimension(:,:,:), pointer  ::  cmc
+    integer   ::  imc, jmc, lmc, xref_, yref_, tref_
+    integer   ::  n, q, i, j, l, is, ie, js, je
+    logical   ::  enc
+    character ::  dir
+
+    imc = im(region) ; jmc = jm(region) ; lmc = lm(region)
+    xref_ = xref(region)/xref(parent(region))
+    yref_ = yref(region)/yref(parent(region))
+    tref_ = tref(region)/tref(parent(region))
+    cmc => wind_dat(region)%cm_t
+
+    ! scope (advectzzoom):
+    is = 1 ; ie = imc ; js = 1 ; je = jmc
+    q = k/((nsplitsteps/2)*tref_)
+    enc = .false.
+    do n = 1, n_operators
+      dir = splitorderzoom(region, q*(nsplitsteps/2)*tref_+n)
+      select case ( dir )
+        case ( 'x' )
+          if ( .not. enc ) then
+            is = 1 ; ie = imc
+          else
+            is = xref_+1 ; ie = imc-xref_
+          end if
+        case ( 'y' )
+          if ( .not. enc ) then
+            js = 1 ; je = jmc
+          else
+            js = yref_+1 ; je = jmc-yref_
+          end if
+        case ( 'z' )
+          enc = .true.
+      end select
+    end do
+
+    do l = 1, lmc
+      do j = js, je
+        do i = is, ie
+          mass_edge(i,j,l) = mass_edge(i,j,l) + cmc(i,j,l-1) - cmc(i,j,l)
+        end do
+      end do
+    end do
+
+    nullify( cmc )
+
+  end subroutine advect_edges_z
+
+
+  ! mix_edges (zoom_tools.F90), air mass only
+
+  subroutine mix_edges_mass( region, mass_edge )
+
+    use dims,        only : im, jm, lm, parent, xref, yref
+    use global_data, only : region_dat
+
+    integer, intent(in)     ::  region
+    real, intent(inout)     ::  mass_edge(0:,0:,:)
+
+    integer, dimension(:,:), pointer  ::  edge
+    real, allocatable                 ::  tp(:,:)
+    integer   ::  imc, jmc, lmc, xref_, yref_, imp, jmp
+    integer   ::  i, j, l, ip, jp
+    real      ::  xyref
+
+    imc = im(region) ; jmc = jm(region) ; lmc = lm(region)
+    xref_ = xref(region)/xref(parent(region))
+    yref_ = yref(region)/yref(parent(region))
+    edge => region_dat(region)%edge
+
+    xyref = real(xref_*yref_)
+    imp = imc/xref_ ; jmp = jmc/yref_
+    allocate( tp(imp,jmp) )
+
+    do l = 1, lmc
+      tp = 0.0
+      do j = 1, jmc
+        jp = 1 + (j-1)/yref_
+        do i = 1, imc
+          if ( edge(i,j) /= -1 ) cycle
+          ip = 1 + (i-1)/xref_
+          tp(ip,jp) = tp(ip,jp) + mass_edge(i,j,l)/xyref
+        end do
+      end do
+      if ( xref_ > 1 ) then          ! x-walls (skipped by mix_edges when xref_ == 1)
+        do j = 1, jmc
+          jp = 1 + (j-1)/yref_
+          mass_edge(1:xref_        ,j,l) = tp(1  ,jp)
+          mass_edge(imc-xref_+1:imc,j,l) = tp(imp,jp)
+        end do
+      end if
+      do j = 1, yref_                ! south y-wall
+        do i = 1, imc
+          mass_edge(i,j,l) = tp(1+(i-1)/xref_,1)
+        end do
+      end do
+      do j = jmc-yref_+1, jmc        ! north y-wall
+        do i = 1, imc
+          mass_edge(i,j,l) = tp(1+(i-1)/xref_,jmp)
+        end do
+      end do
+    end do
+
+    deallocate( tp )
+    nullify( edge )
+
+  end subroutine mix_edges_mass
+
 
 !===========================================================================================================
 !===========================================================================================================
