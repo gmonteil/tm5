@@ -25,7 +25,8 @@ For now I have adapted this in the  upload_form.py, but eventually we probably s
 - Documentation
     - [ ] properly setup github pages with mkdocs
 - Inversion
-    - [ ] GM (3) to add stratospheric chemistry     
+    - [ ] GM (3) to add stratospheric chemistry
+    - [ ] MV (1) test Jacobian vs. full forward for an obs in Dec 2021.     
     - [ ] TXK/MV: draft a kind of tutorial guiding the user through one of the experiments
     - [ ] TXK to exclude spinup from target Jacobian  
             
