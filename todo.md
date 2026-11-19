@@ -6,28 +6,25 @@
     - [ ] (4) MV to adapt the GUI such that the choice of the configuration is between "Fast version Jan 2021" and "Slower version for full year 2021"
     - [ ] (5) MV/txk to adapt fortran code such that the choice under item (4) is read in and used
 - GUI (analysis)
-    - [x partly] Add Chi2 with sigma = sqrt (sigma_obs**2 + sigma_model **2), and sigma model from a crude approximation derived from short scale variability of the obs, or the variability of the meteo (representation error approximation from slopes may also be there ...
-    - [ ] (8) GM: Integrate some visualisation of the emission budget in configuration part of the GUI (to allow perform a quick sanity check)
+    - []  TK to come up with a strategy for this: Add Chi2 with sigma = sqrt (sigma_obs**2 + sigma_model **2), and sigma model from a crude approximation derived from short scale variability of the obs, or the variability of the meteo (representation error approximation from slopes may also be there ...
+    - [ ] (1) GM: big cleanup!
+    - [ ] (2) GM: Integrate some visualisation of the emission budget in configuration part of the GUI (to allow perform a quick sanity check)
     - [ ] (9) GM: to implement that option of making an uploaded emission file public (e.g. only show the user specific subdir in the emissions folder to that very user); maybe we also need to validate the file ourselves before it is allowed to be public
     - [ ] (10) GM: Add plot or table that indicates relative contribution of each sector to total signal at each site (only if we run sectors separately), this is not urgent, can be added later ...
     - [ ] The 'coarsen_file' routine for the emissions expected dimensions 'lon'/'lat' in the file, while the upload form introduced 'longitude'/'latitude'.
-For now I have adapted this in the  upload_form.py, but eventually we probably should relax the naming conventions a bit.
+For now I have adapted this in the  upload_form.py, but eventually we probably should relax the naming conventions a bit. (not urgent)
 - GUI (extension)
     - [ ] try to extend the current logic that allows us to retrieve results from previous experiments beyond the current session (use checksum of config file)
-- TM5 speedup
-    - [ ] GM: speedup reading emissions
-    - [ ] GM: 7200 seconds for 7 tracer run was much longer than for the single-tracer run (~4800 seconds) -> probably irrelevant of we use the Jacobian for the forward simulation 
-- TM5 analyses, open questions regarding our initial TM5 runs with prior emission fields: to be addressed with long run on COSMOS:
-    - [ ] implement and test reading of the CAMS reanalysis OH field (to be used for the troposhere, for the stratosphere we'll rather use Bruehl et al.), this should be the default, Spivakovsky is kept-
+TM5:
     - [ ] (10) MV: check how Vaganovo looks now in global 1 by 1 run (launch on COSMOS), not too urgent
-- Sensitivity Runs (the important point is that we want to see an effect and the comparison with CAMS clearly shows us which run is more consistent)
-    - [ ] (6) MV to further analyse the default vs regional cases by comparing signal from component fluxes offline (and without observations) and show these plots together with the plot using the sectoral totals and the observations that we already have in the tool
 - Documentation
     - [ ] properly setup github pages with mkdocs
 - Inversion
-    - [ ] GM (3) to add stratospheric chemistry     
+    - [ ] MV to extract the wrong and the corrected version of the TM5 subroutine (reconstruct_required_var_1) that was responsible for the error in the adjoint
+    - [ ] MV to test GM's update of stratospheric chemistry     
     - [ ] TXK/MV: draft a kind of tutorial guiding the user through one of the experiments
-    - [ ] TXK to exclude spinup from target Jacobian  
+    - [ ] TXK to exclude spinup from target Jacobian
+    - [ ] When we run the footprints for obs from Jan to Dec 2021 back to October 2020 emissions we do the following: For filtering of the footprints wrt to the network, we include the information about the the network into the observation table file  
             
 # Task ideas / discussion
 - avoid misuse through implementation of "accepted ranges" => *That's essentially built-in the GUI*
@@ -37,7 +34,5 @@ For now I have adapted this in the  upload_form.py, but eventually we probably s
   - mounting folder from additional VM on notebook
   - mounting folder from Jupyter hub on new VM not needed, because we would only need it to pass the yaml file to the VM, and that can be arranged differently ...
 - Note that the concentration calculation uses fine grid in the full zoom domain, but the emissions close to the boundary are using the coarse resolution (that is applied on the other side of the boundary). If we wanted to change that we would need to enlarge the zoom domain.
-- For each observation, the Jacobians quantify its sensitivity with respect to fluxes in the present and past months
 - For the global Jacobian we use the NOAA flask sampling network, but we compute the footprints for all flasks in Obspack.
-- When we run the footprints for obs from Jan to Dec 2021 back to October 2020 emissions we do the following: For filtering of the footprints wrt to the network, we include the information about the the network into the observation table file
 
