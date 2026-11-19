@@ -19,6 +19,7 @@ cosmos:
         oh:
           spivakovsky: /home/gmonteil/data/TM5/chemistry/OH_troposphere-Spivakovsky-2000-ml60-glb100x100.v2.nc
           cams: /home/gmonteil/lu2023-12-19/guillaume/TM5/CAMS/OH/oh_cams
+        strat: /lunarc/nobackup/projects/ghg_inv/michael/TM5/TM5-SF-data/SINKS
     data: /home/gmonteil/lu2023-12-19/guillaume/TM5
     initial_condition:
       CH4: /home/gmonteil/lu2023-12-19/michael/CAMS/ch4
@@ -26,7 +27,7 @@ cosmos:
 
 run :
   start : 1 jan 2021
-  end : 1 march 2021
+  end : 3 jan 2021
   name : background_${.zoom}
   verbose: no
   paths :
@@ -67,21 +68,24 @@ species :
         rate : [2.45e-12, -1775]
         domain : tropo
         scaling_factor : 1.
-#      ohstrat :
-#        file : /path/to/ohstrat
-#        rate : ${..oh.rate}
-#        domain : strato
-#      cl :
-#        file : /path/to/clfile
-#        rate : [7.3e-12, -1280]
-#        domain : strato
-#      o1d :
-#        file : /path/to/o1dfile
-#        rate : [1.5e-10, 0]
-#        domain : strato
+      ohstrat :
+        file : ${host.paths.chemistry.ch4.strat}/Bruehl_ECHAM_Lrate_CH4+OH.nc
+        version : bruehl_echam
+        domain : strato
+        scaling_factor : 1.
+      cl :
+        file : ${host.paths.chemistry.ch4.strat}/Bruehl_ECHAM_Lrate_CH4+Cl.nc
+        version : bruehl_echam
+        domain : strato
+        scaling_factor : 1.
+      o1d :
+        file : ${host.paths.chemistry.ch4.strat}/Bruehl_ECHAM_Lrate_CH4+OD.nc
+        version : bruehl_echam
+        domain : strato
+        scaling_factor : 1.
     flux_unit : TgCH4
     mix_unit : ppb
-    chemistry : yes
+    chemistry : true
     emissions : ${emissions.CH4}
 
 
@@ -92,6 +96,21 @@ tracers :
 emissions:
   CH4:
     prefix : ${run.paths.emissions}/ch4emis
+    categories:
+      wetland :
+        path : ${host.paths.emissions_archive}/cal_lpj_ch4_wetland_glb1x1_daily_2021.nc
+        field : ch4_wetland
+        regions : ${run.regions}
+        overwrite :
+          path : ${host.paths.emissions_archive}/avengers/cal_lpj_ch4_wetland_domain--10W-35Ex35N-71N_daily_2021.nc
+          field : ch4_wetland
+      mineral-sink :
+        path : ${host.paths.emissions_archive}/cal_lpj_ch4_mineral-sink_glb1x1_daily_2021.nc
+        field : ch4_mineral-sink
+        regions : ${run.regions}
+        overwrite :
+          path : ${host.paths.emissions_archive}/avengers/cal_lpj_ch4_mineral-sink_domain--10W-35Ex35N-71N_daily_2021.nc
+          field : ch4_mineral-sink
 
 
 initial_condition:

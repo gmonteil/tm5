@@ -10,6 +10,7 @@ module chem_param
     use os_specs,       only : MAX_FILENAME_LEN, MAX_RCVAL_LEN
     use go,             only : gol, goerr, T_Time_Window, NewDate
     use dims,           only : nregions
+    use grid_type_gg,   only : TggGridInfo
 
     implicit none
 
@@ -98,6 +99,18 @@ module chem_param
     integer, parameter  :: nthigh = 330
     integer, parameter  :: ntemp = nthigh - ntlow
 
+    ! Data and grid information of the loss rates from C. Bruehl (ECHAM/MESSy, gaussian latitudes), see chemistry.F90
+    type T_Lrate_GG
+        ! filename:
+        character(len=512)        ::  filename
+        ! current month:
+        integer                   ::  month = -1
+        ! grid definition:
+        logical                   ::  grid_is_initialized = .false.
+        integer                   ::  nlat, nlev
+        type(TggGridInfo)         ::  ggi
+    end type T_Lrate_GG
+
     type react_t
         character(len=MAX_FILENAME_LEN) :: file         ! path to the file storing the reactive species concentration
         character(len=20)               :: domain       ! domain of application of the reaction: total, tropo or strato
@@ -107,9 +120,11 @@ module chem_param
         logical                         :: climatology = .false.
         character(len=2)                        :: data_timestep
         type(T_Time_Window)                     :: data_period
-        type(conc_field), dimension(nregions)   :: conc ! in-memory field
-        character(len=12)               :: version      ! name of the implementation
-        real                            :: scalef = 1.  ! scaling factor for the reaction
+        character(len=12)                       :: version      ! name of the implementation
+        real                                    :: scalef = 1.  ! scaling factor for the reaction
+        logical                                 :: lossrate = .false.
+        type(conc_field), dimension(nregions)   :: conc              ! in-memory field
+        type(T_Lrate_GG)                        :: lossrate_field_gg ! in-memory field (loss rate, gaussian grid)
 
         !contains
         !    procedure init => init_reaction
@@ -131,6 +146,7 @@ module chem_param
 
         use global_data, only : rcf
         use go, only : readrc
+        use, intrinsic :: ieee_arithmetic, only : ieee_value, ieee_quiet_nan
 
         integer, intent(out) :: status
         integer :: itrac, ireac, nreac
@@ -208,11 +224,12 @@ module chem_param
                     IF_ERROR_RETURN(status=1)
                     call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.' // trim(reacnames_tmp(ireac)) // '.domain', tracers(itrac)%reactions(ireac)%domain, status)
                     IF_ERROR_RETURN(status=1)
-                    call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.' // trim(reacnames_tmp(ireac)) // '.rate', tracers(itrac)%reactions(ireac)%parameters, status)
+                    call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.' // trim(reacnames_tmp(ireac)) // '.rate', tracers(itrac)%reactions(ireac)%parameters, status, default=ieee_value(0., ieee_quiet_nan))
                     IF_ERROR_RETURN(status=1)
                     call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.' // trim(reacnames_tmp(ireac)) // '.scaling_factor', tracers(itrac)%reactions(ireac)%scalef, status, default=1.)
                     IF_ERROR_RETURN(status=1)
                     call readrc(rcf, 'tracers.' // trim(names(itrac)) // '.' // trim(reacnames_tmp(ireac)) // '.version', tracers(itrac)%reactions(ireac)%version, status)
+                    IF_ERROR_RETURN(status=1)
                     call init_reaction(tracers(itrac)%reactions(ireac))
                 end do
 
@@ -229,13 +246,17 @@ module chem_param
 
     subroutine init_reaction(self)
         !class(react_t), intent(inout)   :: self
+        use, intrinsic :: ieee_arithmetic, only : ieee_is_nan
         type(react_t), intent(inout)   :: self
         integer                         :: itemp
         real                            :: ztrec
-        do itemp = ntlow, nthigh
-            ztrec = 1. / real(itemp)
-            self%rate(itemp) = self%parameters(1) * exp(self%parameters(2) * ztrec)
-        end do
+        ! Rate constant as a function of temperature (only for reactions for which a rate was provided)
+        if (.not. ieee_is_nan(self%parameters(1))) then
+            do itemp = ntlow, nthigh
+                ztrec = 1. / real(itemp)
+                self%rate(itemp) = self%parameters(1) * exp(self%parameters(2) * ztrec)
+            end do
+        end if
         self%data_period%t1 = NewDate(year=3000, month=1, day=1)
         self%data_period%t2 = NewDate(year=1900, month=1, day=1)
     end subroutine init_reaction

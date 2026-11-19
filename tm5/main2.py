@@ -394,7 +394,10 @@ class TM5:
                 for reacname, reac in reactions.items():
                     self.settings[f'tracers.{tr}.{reacname}.file'] = reac.file
                     self.settings[f'tracers.{tr}.{reacname}.domain'] = reac.domain
-                    self.settings[f'tracers.{tr}.{reacname}.rate'] = reac.rate
+                    # "rate" only required for reactions where a reaction with a tracer is implemented (i.e.
+                    # not when a loss rate is passed directly).
+                    if 'rate' in reac:
+                        self.settings[f'tracers.{tr}.{reacname}.rate'] = reac.rate
                     self.settings[f'tracers.{tr}.{reacname}.scaling_factor'] = reac.scaling_factor
                     self.settings[f'tracers.{tr}.{reacname}.version'] = reac.version
             else:

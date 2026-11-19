@@ -14,9 +14,13 @@ module chemistry
     use file_netcdf
     use grid_type_ll,   only : init_grid => init, tllgridinfo
     use grid_type_hyb,  only : init_levels => init, tlevelinfo
+    use grid_type_gg,   only : init_gg => init
+    use grid_interpol,  only : aver
+    use num,            only : intervalquad_const
     use grid_3d,        only : fill3d
     use go,             only : gol, goerr
     use tm5_geometry,   only : lli, levi
+    use, intrinsic :: ieee_arithmetic, only : ieee_is_nan
 
     implicit none
 
@@ -25,34 +29,6 @@ module chemistry
 
     character(len=*), parameter   ::  mname = 'chemistry'
 
-    !
-    !-- IMPL-NOTE:
-    !   Internal variables to handle input CAMS OH field information
-    ! 
-    !   - currently supported are monthly CAMS OH concentrations
-    !     and Spivakovsky OH climatology
-    !   - IMPORTANT:
-    !     configuration with different OH fields for the tracers
-    !     (e.g. cams for first tracer, spivakovksy for second tracer)
-    !     are currently not supported!
-    !
-    !   Spivakovsky:
-    !   - get_conc_field_spivakovsky is responsible to fill
-    !     the monthly climatology, grid, and level information.
-    !     It assumes OH concentrations are provided with (NetCDF)
-    !     variable 'field' with units [molec cm-3]
-    !
-    !   CAMS:
-    !   - get_conc_field_cams is responsible for I/O and memory handling
-    !     and makes the assumption that OH concentrations are
-    !     provided at monthly time-resolution in annual NetCDF files.
-    !     OH concentration must be provided as variable 'OH'
-    !     and units [molec / cm ** 3]
-    !
-    ! IMPL-TODO:
-    ! - WE are currently missing to finally dispose memory
-    !   when the simulation has terminated.
-    !
     type oh_input
        integer                                  :: year = -1
        real, dimension(:, :, :, :), allocatable :: conc ![molec / cm**3]
@@ -107,6 +83,7 @@ module chemistry
                 if (tracers(itr)%has_chem) then
 
                     call get_total_loss_rate(region, period, tracers(itr), loss_rate, status)
+                    IF_NOTOK_RETURN(status=1)
 
                     rm => mass_dat(region)%rm_t(is : ie, js : je, :, itr)
                     
@@ -153,7 +130,7 @@ module chemistry
             integer, intent(out)                    :: status
 
             integer                                 :: ireac
-            real, dimension(:, :, :), allocatable   :: rrate
+            real, dimension(:, :, :), allocatable   :: lrate
             character(len=*), parameter             :: rname = &
                  mname//'/get_total_loss_rate'
 
@@ -163,21 +140,45 @@ module chemistry
 
             do ireac = 1, tracer%nreact
 
-                ! Get the mass of the species the tracer reacts with
-                call get_conc_field(tracer%reactions(ireac), period, region, status)
+                ! Loss rate (s-1) of this reaction in each grid cell
+                call get_lossrate(tracer%reactions(ireac), period, region, lrate, status)
+                IF_NOTOK_RETURN(status=1)
 
-                ! Calculate the reaction rate
-                rrate = get_rrate_field(tracer%reactions(ireac), region)
+                ! Make sure the loss rate is set to 0 outside the region/vertical domain of application of the reaction
+                call apply_l_domain(lrate, tracer%reactions(ireac), region, status)
+                IF_NOTOK_RETURN(status=1)
 
-                ! Make sure the reaction rate is set to 0 outside the region/vertical domain of application of the reaction
-                call apply_l_domain(rrate, tracer%reactions(ireac), region, status)
-
-                ! Calculate the loss rate
-                loss_rate = loss_rate + rrate * tracer%reactions(ireac)%conc(region)%values
+                ! Accumulate
+                loss_rate = loss_rate + lrate
 
             end do
 
         end subroutine get_total_loss_rate
+
+
+        subroutine get_lossrate(reaction, period, region, lrate, status)
+            ! Loss rate (s-1) of the tracer due to this reaction, in each grid cell of the region
+            ! (not yet restricted to the domain of application of the reaction)
+            type(react_t), intent(inout)                        :: reaction
+            type(TDate), dimension(2), intent(in)               :: period
+            integer, intent(in)                                 :: region
+            real, dimension(:, :, :), allocatable, intent(out)  :: lrate
+            integer, intent(out)                                :: status
+
+            character(len=*), parameter                 :: rname = mname//'/get_lossrate'
+
+            ! Read the input data (also tells us what they contain: loss rates or concentrations)
+            call read_fields(reaction, period, status)
+            IF_NOTOK_RETURN(status=1)
+
+            if (reaction%lossrate) then
+                ! The input data are already loss rates
+                lrate = reaction%conc(region)%values * reaction%scalef
+            else
+                ! The input data are concentrations of the reactive species: loss rate = k(T) * concentration
+                lrate = get_rrate_field(reaction, region) * reaction%conc(region)%values
+            end if
+        end subroutine get_lossrate
 
 
         function get_rrate_field(reaction, region) result(field3d)
@@ -267,13 +268,19 @@ module chemistry
         end subroutine apply_l_domain
 
 
-        subroutine get_conc_field(reaction, period, region, status)
+        subroutine read_fields(reaction, period, status)
+            ! Make sure that the input data of the reaction are in memory (reaction%conc) for the requested period.
+            ! Depending on the format of the input file (reaction%version), these are either
+            !   - concentrations of the species reacting with the tracer (reaction%lossrate = .false.), or
+            !   - loss rates of the tracer, in s-1 (reaction%lossrate = .true.)
+            ! The reader sets reaction%lossrate accordingly.
             type(react_t), intent(inout)                :: reaction
             type(TDate), dimension(2), intent(in)       :: period
-            integer, intent(in)                         :: region
             integer, intent(out)                        :: status
 
-            character(len=*), parameter                 :: rname = 'chemistry:get_conc_field'
+            character(len=*), parameter                 :: rname = mname//'/read_fields'
+
+            status = 0
 
             ! Check if we need to read new data (i.e. new period). Otherwise return what's already in memory
             if ((revert == 1) .and. (period(1) < reaction%data_period%t2)) return
@@ -284,11 +291,14 @@ module chemistry
                     call get_conc_field_cams(reaction, period, status)
                 case ('spivakovsky ')
                     call get_conc_field_spivakovsky(reaction, period, status)
+                case ('bruehl_echam')
+                    call get_lossrate_field_bruehl_echam(reaction, period, status)
                 case default
-                    write (gol,'("unsupported OH version: ",a)') trim(reaction%version); call goErr
+                    write (gol,'("unsupported reaction version: ",a)') trim(reaction%version); call goErr
                     TRACEBACK; status=1; return
             end select
-        end subroutine get_conc_field
+            IF_NOTOK_RETURN(status=1)
+        end subroutine read_fields
 
 
         subroutine get_conc_field_cams(reaction, period, status)
@@ -309,6 +319,12 @@ module chemistry
             type(TDate)         :: period_start
 
             period_start = date_min(period(1), period(2))
+
+            ! The rate constant is mandatory for these reactions (default in chem_param is NaN)
+            if (ieee_is_nan(reaction%parameters(1))) then
+                write (gol,'("reaction ",a," reads concentrations and requires a rate")') trim(reaction%name); call goErr
+                TRACEBACK; status=1; return
+            end if
 
             reaction%climatology = .false.
             reaction%data_timestep = '1m'
@@ -398,6 +414,12 @@ module chemistry
             
             ! Hard-coded stuff specific to the Spivakovsky OH field. Code below needs to be revised when more
             ! OH fields are implemented
+            ! The rate constant is mandatory for these reactions (default in chem_param is NaN)
+            if (ieee_is_nan(reaction%parameters(1))) then
+                write (gol,'("reaction ",a," reads concentrations and requires a rate")') trim(reaction%name); call goErr
+                TRACEBACK; status=1; return
+            end if
+
             reaction%climatology = .true.
             reaction%data_timestep = '1m'
             reaction%data_period = get_new_period(period_start, '1m')
@@ -442,6 +464,231 @@ module chemistry
             enddo
 
         end subroutine get_conc_field_spivakovsky
+
+
+        subroutine get_lossrate_field_bruehl_echam(reaction, period, status)
+            ! --- in/out ---------------------------------
+
+            type(react_t), intent(inout)                :: reaction
+            type(TDate), dimension(2), intent(in)       :: period
+            integer, intent(out)                        :: status
+
+            ! --- const ----------------------------------
+
+            character(len=*), parameter                 :: rname = mname//'/get_lossrate_field_bruehl_echam'
+
+            !--- local -----------------------------------
+
+            integer                          ::  region
+            integer                          ::  month
+            integer                          ::  ncf
+            logical                          ::  exist
+            character(len=32)                ::  units
+            real(4), allocatable             ::  lats(:)
+            real, allocatable                ::  lats_rev(:)
+            real, allocatable                ::  field(:,:)
+            real(4), allocatable             ::  field_3d(:,:,:)
+            real, allocatable                ::  rates(:,:)
+            real, allocatable                ::  fpres(:,:)
+            real, allocatable                ::  hpres(:,:)
+            real, allocatable                ::  rates_llz(:,:,:)
+            real, allocatable                ::  hpres_llz(:,:,:)
+            integer                          ::  imr, jmr, lmr
+            integer                          ::  i, j, k
+            integer                          ::  ilev
+            real                             ::  p1, p2
+            integer                          ::  ilast
+            type(TDate)                      ::  period_start
+
+            !--- begin -----------------------------------
+
+            period_start = date_min(period(1), period(2))
+            reaction%lossrate = .true.
+            reaction%climatology = .true.
+            reaction%data_timestep = '1m'
+            reaction%data_period = get_new_period(period_start, reaction%data_timestep)
+
+            ! extract current month:
+            month = reaction%data_period%t1%month
+
+            associate ( ds => reaction%lossrate_field_gg )
+
+            ! check ...
+            ds%filename = reaction%file
+            inquire( file=trim(ds%filename), exist=exist )
+            if ( .not. exist ) then
+              write (gol,'("Bruehl output file not found : ",a)') trim(ds%filename); call goErr
+              TRACEBACK; status=1; return
+            end if
+
+            ! open file:
+            ncf = nc_open(trim(ds%filename), 'r', status)
+            IF_NOTOK_RETURN(status=1)
+
+            ! no longitudes read yet ?
+            if ( .not. ds%grid_is_initialized ) then
+              ! latitudes:
+              ds%nlat = nc_get_dim(ncf, 'lat', status)
+              IF_NOTOK_RETURN(status=1)
+              ! read:
+              lats = nc_read_var(ncf, 'lat', status)
+              IF_NOTOK_RETURN(status=1)
+              ! units:
+              units = nc_get_attr(ncf, 'lat', 'units', status)
+              IF_NOTOK_RETURN(status=1)
+              ! convert if necessary:
+              select case ( trim(units) )
+                case ( 'degree', 'degree_north' )
+                case default
+                  write (gol,'("unsupported latitude units : ",a)') trim(units); call goErr
+                  TRACEBACK; status=1; return
+              end select
+              ! gaussian grid, N=number of lats on hemisphere average,
+              ! for N=64/2 it is to the values found in the ECHAM/MESSY files
+              ! for guassian grids the order is always north->south, so need to switch:
+              call init_gg( ds%ggi, ds%nlat/2, .false., status )
+              IF_NOTOK_RETURN(status=1)
+              ! reversed ax:
+              allocate( lats_rev(ds%nlat) )
+              do j = 1, ds%nlat
+                lats_rev(j) = lats(ds%nlat+1-j)
+              end do
+              ! check ...
+              if ( any( abs( ds%ggi%lat_deg - lats_rev ) > 1.0e-4 ) ) then
+                write (gol,'("lats in assumed gaussian grid do not match with file ...")'); call goErr
+                TRACEBACK; status=1; return
+              end if
+              ! clear:
+              deallocate( lats )
+              deallocate( lats_rev )
+
+              ! levels:
+              ds%nlev = nc_get_dim(ncf, 'level', status)
+              IF_NOTOK_RETURN(status=1)
+
+              ! reset flag:
+              ds%grid_is_initialized = .true.
+            end if
+
+            ! storage:
+            allocate( field(ds%nlat,ds%nlev) )
+
+            ! read:
+            field_3d = nc_read_var(ncf, 'Lrate', status)
+            IF_NOTOK_RETURN(status=1)
+            field = field_3d(:,:,month)
+            ! units:
+            units = nc_get_attr(ncf, 'Lrate', 'units', status)
+            IF_NOTOK_RETURN(status=1)
+            select case ( trim(units) )
+              case ( 's-1' ) ;
+                ! no conversion
+              case default
+                write (gol,'("unsupported rates units : ",a)') trim(units); call goErr
+                TRACEBACK; status=1; return
+            end select
+            ! storage for rates:
+            allocate( rates(ds%nlat,ds%nlev) )
+            ! revert:
+            do j = 1, ds%nlat
+              rates(j,:) = field(ds%nlat+1-j,:)
+            end do
+
+            ! read:
+            field_3d = nc_read_var(ncf, 'pressure', status)
+            IF_NOTOK_RETURN(status=1)
+            field = field_3d(:,:,month)
+            ! units:
+            units = nc_get_attr(ncf, 'pressure', 'units', status)
+            IF_NOTOK_RETURN(status=1)
+            select case ( trim(units) )
+              case ( 'Pa' ) ;
+                ! no conversion
+              case ( 'hPa' )
+                ! hPa to Pa:
+                field = field * 1.0e2  ! Pa
+              case default
+                write (gol,'("unsupported pressure units : ",a)') trim(units); call goErr
+                TRACEBACK; status=1; return
+            end select
+            ! storage for pressure, copy while reverting latitudes:
+            allocate( fpres(ds%nlat,1:ds%nlev) )
+            do j = 1, ds%nlat
+              fpres(j,:) = field(ds%nlat+1-j,:)
+            end do
+            ! extend to half level pressures:
+            allocate( hpres(ds%nlat,0:ds%nlev) )
+            hpres(:,0) = fpres(:,1) - 0.5*(fpres(:,2)-fpres(:,1))
+            do ilev = 1, ds%nlev-1
+              hpres(:,ilev) = 0.5 * ( fpres(:,ilev) + fpres(:,ilev+1) )
+            end do
+            hpres(:,ds%nlev) = 0.0 
+
+            ! close file:
+            call nc_close(ncf)
+
+            ! loop over regions:
+            do region = 1, nregions
+              ! dimensions:
+              imr = im(region) ; jmr = jm(region) ; lmr = lm(region)
+              if (.not. allocated(reaction%conc(region)%values)) allocate(reaction%conc(region)%values(imr, jmr, lmr))
+              ! average to horizontal target grid, levels original:
+              allocate( rates_llz(imr,jmr,ds%nlev) )
+              do ilev = 1, ds%nlev
+                call aver( ds%ggi, rates(:,ilev), lli(region), rates_llz(:,:,ilev) )
+              end do
+              ! idem for pressure:
+              allocate( hpres_llz(imr,jmr,0:ds%nlev) )
+              do ilev = 0, ds%nlev
+                call aver( ds%ggi, hpres(:,ilev), lli(region), hpres_llz(:,:,ilev) )
+              end do
+              ! vertical interpolation:
+              do j = 1, jmr
+                do i = 1, imr
+                  ilast = 1
+                  ! loop over target layers;
+                  ! use negative pressure to have increasing ax:
+                  do k = 1, lmr
+                    ! layer half level pressures:
+                    !AJS: don't use this! phlb not initialized correctly for adjoint run ...
+                    !     also problem that we use current pressue to interpolat monthly average,
+                    !     thus differences between forward and adjoint run 
+                    !     (might be zero if only stratosphere is used)
+                    !p1 = -1.0 * mass_dat(region)%phlb_t(i,j,k  )
+                    !p2 = -1.0 * mass_dat(region)%phlb_t(i,j,k+1)
+                    ! climatology:
+                    p1 = -1.0 * levi%p0(k-1)
+                    p2 = -1.0 * levi%p0(k)
+                    ! integral over interval [p1,p2], with rates constant withing layer:
+                    call intervalquad_const( -1.0*hpres_llz(i,j,:), rates_llz(i,j,:), &
+                                                p1, p2, reaction%conc(region)%values(i,j,k), &
+                                                ilast, status )
+                    IF_NOTOK_RETURN(status=1)
+                    ! average:
+                    reaction%conc(region)%values(i,j,k) = reaction%conc(region)%values(i,j,k) / (p2-p1)
+                  end do  ! layer
+                end do  ! i
+              end do  ! j
+              ! clear:
+              deallocate( rates_llz )
+              deallocate( hpres_llz )
+            end do
+
+            ! clear:
+            deallocate( rates )
+            deallocate( fpres )
+            deallocate( hpres )
+            deallocate( field )
+            deallocate( field_3d )
+
+            ! store current month:
+            ds%month = month
+
+            status = 0
+
+            end associate
+
+        end subroutine get_lossrate_field_bruehl_echam
 
 
         function get_new_period(date, tres) result(new_period)
